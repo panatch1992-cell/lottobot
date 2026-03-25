@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -16,15 +19,29 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (error) {
-      setError(error.message)
+    // Debug: check env vars
+    if (!supabaseUrl || !supabaseKey) {
+      setError('Supabase config missing. URL=' + (supabaseUrl ? 'OK' : 'EMPTY') + ' KEY=' + (supabaseKey ? 'OK' : 'EMPTY'))
       setLoading(false)
       return
     }
 
-    router.push('/dashboard')
+    try {
+      const supabase = createClient(supabaseUrl, supabaseKey)
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+        return
+      }
+
+      router.push('/dashboard')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setError('Login failed: ' + message)
+      setLoading(false)
+    }
   }
 
   return (
