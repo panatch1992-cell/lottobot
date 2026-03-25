@@ -1,10 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { BotSetting, LineGroup } from '@/types'
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin text-3xl">⚙️</div></div>}>
+      <SettingsContent />
+    </Suspense>
+  )
+}
+
+function SettingsContent() {
+  const searchParams = useSearchParams()
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [groups, setGroups] = useState<LineGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -12,8 +22,23 @@ export default function SettingsPage() {
   const [tgStatus, setTgStatus] = useState<string>('')
   const [showAddGroup, setShowAddGroup] = useState(false)
   const [newGroup, setNewGroup] = useState({ name: '', line_notify_token: '' })
+  const [showOAuth, setShowOAuth] = useState(false)
+  const [lineOAuthName, setLineOAuthName] = useState('')
+  const [lineMsg, setLineMsg] = useState('')
 
-  useEffect(() => { loadSettings() }, [])
+  useEffect(() => {
+    loadSettings()
+    // Handle LINE OAuth redirect result
+    const success = searchParams.get('line_success')
+    const error = searchParams.get('line_error')
+    if (success) {
+      setLineMsg(`✅ เชื่อมต่อ "${success}" สำเร็จ!`)
+      window.history.replaceState({}, '', '/settings')
+    } else if (error) {
+      setLineMsg(`❌ เชื่อมต่อไม่สำเร็จ: ${error}`)
+      window.history.replaceState({}, '', '/settings')
+    }
+  }, [searchParams])
 
   async function loadSettings() {
     const [settingsRes, groupsRes] = await Promise.all([
@@ -130,11 +155,44 @@ export default function SettingsPage() {
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">💬 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
-          <button onClick={() => setShowAddGroup(true)} className="btn-primary text-xs">+ เพิ่มกลุ่ม</button>
+          <div className="flex gap-1.5">
+            <button onClick={() => setShowAddGroup(true)} className="btn-outline text-xs">+ ใส่ Token</button>
+            <button onClick={() => { setShowOAuth(true); setLineOAuthName('') }} className="btn-primary text-xs">🔗 เชื่อมต่อ LINE</button>
+          </div>
         </div>
 
+        {lineMsg && (
+          <div className={`text-sm px-3 py-2 rounded-lg ${lineMsg.startsWith('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {lineMsg}
+          </div>
+        )}
+
+        {/* LINE OAuth — ใส่ชื่อกลุ่มแล้วกด เชื่อมต่อ */}
+        {showOAuth && (
+          <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-2">
+            <p className="text-sm font-medium text-green-800">🔗 เชื่อมต่อกลุ่ม LINE (กดอนุญาตอย่างเดียว)</p>
+            <input
+              value={lineOAuthName}
+              onChange={e => setLineOAuthName(e.target.value)}
+              className="input"
+              placeholder="ตั้งชื่อกลุ่ม เช่น VIP กลุ่ม 1"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setShowOAuth(false)} className="btn-outline text-xs flex-1">ยกเลิก</button>
+              <a
+                href={lineOAuthName ? `/api/line/oauth?group_name=${encodeURIComponent(lineOAuthName)}` : '#'}
+                className={`btn-primary text-xs flex-1 text-center inline-block ${!lineOAuthName ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                เชื่อมต่อ LINE →
+              </a>
+            </div>
+            <p className="text-xs text-green-600">ลูกค้า Login LINE → กดอนุญาต → Token เข้าระบบอัตโนมัติ</p>
+          </div>
+        )}
+
         {groups.length === 0 ? (
-          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม LINE</p>
+          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม LINE — กด &quot;เชื่อมต่อ LINE&quot; เพื่อเพิ่ม</p>
         ) : (
           <div className="divide-y divide-gray-50">
             {groups.map(group => (
@@ -157,9 +215,10 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Add Group Modal */}
+        {/* Add Group Manual */}
         {showAddGroup && (
           <div className="border-t border-gray-100 pt-3 space-y-2">
+            <p className="text-xs text-text-secondary">ใส่ Token เอง (สำหรับผู้ที่มี Token แล้ว)</p>
             <input value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} className="input" placeholder="ชื่อกลุ่ม LINE" />
             <input value={newGroup.line_notify_token} onChange={e => setNewGroup({ ...newGroup, line_notify_token: e.target.value })} className="input font-mono text-xs" placeholder="LINE Notify Token" />
             <div className="flex gap-2">
