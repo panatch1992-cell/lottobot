@@ -1,0 +1,90 @@
+// จัดรูปแบบข้อความ (TG HTML + LINE plain text)
+import type { Lottery, Result } from '@/types'
+
+function spaced(num: string): string {
+  return num.split('').join(' ')  // "034" → "0 3 4"
+}
+
+export function formatThaiDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+  const thaiYear = (d.getFullYear() + 543) % 100
+  return `${d.getDate()} ${months[d.getMonth()]} ${thaiYear}`
+}
+
+export function formatResult(lottery: Lottery, result: Result) {
+  const dateStr = formatThaiDate(result.draw_date)
+
+  // Telegram (HTML)
+  const tgLines = [
+    `${lottery.flag} <b>${lottery.name}</b>`,
+    `งวด ${dateStr} · ดึงจาก ${result.source_url || 'auto'}`,
+  ]
+  if (result.top_number) tgLines.push(`⬆️ บน : <code>${spaced(result.top_number)}</code>`)
+  if (result.bottom_number) tgLines.push(`⬇️ ล่าง : <code>${spaced(result.bottom_number)}</code>`)
+  if (result.full_number) tgLines.push(`🔢 เต็ม : <code>${spaced(result.full_number)}</code>`)
+
+  // LINE Notify (plain text)
+  const lineLines = [
+    `\n${lottery.flag}${lottery.flag} ${lottery.name} ${lottery.flag}${lottery.flag}`,
+    `งวดวันที่ ${dateStr}`,
+  ]
+  if (result.top_number) lineLines.push(`⬆️ บน : ${spaced(result.top_number)}`)
+  if (result.bottom_number) lineLines.push(`⬇️ ล่าง : ${spaced(result.bottom_number)}`)
+  if (result.full_number) lineLines.push(`🔢 เต็ม : ${spaced(result.full_number)}`)
+
+  return { tg: tgLines.join('\n'), line: lineLines.join('\n') }
+}
+
+export function formatCountdown(lottery: Lottery, minutes: number) {
+  const tg = [
+    `${lottery.flag} <b>${lottery.name}</b>`,
+    `⏰ <b>${minutes} นาทีสุดท้าย</b> ❗❗`,
+    `ส่งโพย ➕ สลิปโอน`,
+    `🏠 ส่งหลังบ้านได้เลยนะครับ`,
+  ].join('\n')
+
+  const line = [
+    `\n${lottery.flag}${lottery.flag} ${lottery.name} ${lottery.flag}${lottery.flag}`,
+    `⏰ ${minutes} นาทีสุดท้าย ❗❗`,
+    `ส่งโพย ➕ สลิปโอน`,
+    `🏠 ส่งหลังบ้านได้เลยนะครับ`,
+  ].join('\n')
+
+  return { tg, line }
+}
+
+export function formatStats(lottery: Lottery, results: Result[]) {
+  const header = `${lottery.flag} สถิติหวย${lottery.name} ${lottery.flag}`
+  const lines = results.map(r => {
+    const d = formatThaiDate(r.draw_date)
+    const num = [r.top_number, r.bottom_number].filter(Boolean).join('-')
+    return `${d} ${lottery.flag} ${num}`
+  })
+
+  const tg = [`<b>${header}</b>`, ...lines].join('\n')
+  const line = [`\n${header}`, ...lines].join('\n')
+
+  return { tg, line }
+}
+
+export function formatTgAdminLog(
+  lottery: Lottery,
+  result: Result,
+  lineGroupCount: number,
+  durationMs: number
+) {
+  const dateStr = formatThaiDate(result.draw_date)
+  const lines = [
+    `${lottery.flag} <b>${lottery.name}</b>`,
+    `งวด ${dateStr} · ดึงจาก ${result.source_url || 'auto'}`,
+  ]
+  if (result.top_number) lines.push(`⬆️ บน : <code>${spaced(result.top_number)}</code>`)
+  if (result.bottom_number) lines.push(`⬇️ ล่าง : <code>${spaced(result.bottom_number)}</code>`)
+  if (result.full_number) lines.push(`🔢 เต็ม : <code>${spaced(result.full_number)}</code>`)
+  lines.push('──────')
+  lines.push(`✓ ส่ง LINE แล้ว ${lineGroupCount} กลุ่ม (${(durationMs / 1000).toFixed(1)} วิ)`)
+
+  return lines.join('\n')
+}
