@@ -7,26 +7,19 @@ export async function middleware(req: NextRequest) {
   // Skip auth for login page, API routes, and static files
   if (
     req.nextUrl.pathname === '/login' ||
-    req.nextUrl.pathname.startsWith('/api/')
+    req.nextUrl.pathname.startsWith('/api/') ||
+    req.nextUrl.pathname === '/guide'
   ) {
     return res
   }
 
-  // Check for Supabase auth cookie
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    // No Supabase config — allow through (dev mode)
-    return res
-  }
-
-  // Look for auth token in cookies
-  const authCookie = req.cookies.getAll().find(c =>
-    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+  // Look for any auth token in cookies
+  const hasAuth = req.cookies.getAll().some(c =>
+    (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) ||
+    c.name === 'sb-access-token'
   )
 
-  if (!authCookie) {
+  if (!hasAuth) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
