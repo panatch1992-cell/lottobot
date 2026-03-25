@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -12,12 +11,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [info, setInfo] = useState('v5 | URL=' + (supabaseUrl ? 'OK' : 'EMPTY') + ' | KEY=' + (supabaseKey ? supabaseKey.substring(0, 10) + '...' : 'EMPTY'))
   const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
+    setInfo(prev => prev + ' | LOGIN...')
 
     if (!supabaseUrl || !supabaseKey) {
       setError('Supabase config missing!')
@@ -26,19 +27,34 @@ export default function LoginPage() {
     }
 
     try {
-      const supabase = createClient(supabaseUrl, supabaseKey)
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+      const res = await fetch(supabaseUrl + '/auth/v1/token?grant_type=password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-      if (authError) {
-        setError(authError.message)
+      const data = await res.json()
+      setInfo(prev => prev + ' | STATUS=' + res.status)
+
+      if (!res.ok) {
+        setError(data.error_description || data.msg || data.message || 'Login failed: ' + res.status)
         setLoading(false)
         return
       }
 
+      // Login success - set cookie manually for now
+      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=3600`
+      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=604800`
+      
+      setInfo(prev => prev + ' | SUCCESS!')
       router.push('/dashboard')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error'
-      setError('Login failed: ' + message)
+      setError('Network error: ' + message)
+      setInfo(prev => prev + ' | ERROR: ' + message)
       setLoading(false)
     }
   }
@@ -87,6 +103,8 @@ export default function LoginPage() {
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
+
+          <p className="text-xs text-gray-400 break-all">{info}</p>
         </form>
       </div>
     </div>
