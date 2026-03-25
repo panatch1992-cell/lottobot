@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/scrape",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/countdown",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/stats",
+      "schedule": "* * * * *"
+    }
+  ]
+}

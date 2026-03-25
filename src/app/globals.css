@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  min-height: 100dvh;
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card rounded-xl shadow-sm border border-gray-100 p-4;
+  }
+  .btn-primary {
+    @apply bg-gold text-white font-medium px-4 py-2 rounded-lg hover:opacity-90 active:scale-95 transition-all;
+  }
+  .btn-danger {
+    @apply bg-danger text-white font-medium px-4 py-2 rounded-lg hover:opacity-90 active:scale-95 transition-all;
+  }
+  .btn-outline {
+    @apply border border-gray-300 text-text-primary font-medium px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all;
+  }
+  .input {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold;
+  }
+  .label {
+    @apply block text-sm font-medium text-text-secondary mb-1;
+  }
+  .badge-success {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success;
+  }
+  .badge-warn {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warn/10 text-warn;
+  }
+  .badge-danger {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-danger/10 text-danger;
+  }
+  .badge-gray {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-text-secondary;
+  }
+}
