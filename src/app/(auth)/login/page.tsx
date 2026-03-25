@@ -12,6 +12,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [debug] = useState(
+    'URL=' + (supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : 'EMPTY') +
+    ' | KEY=' + (supabaseKey ? supabaseKey.substring(0, 20) + '...' : 'EMPTY')
+  )
   const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
@@ -19,19 +23,18 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Debug: check env vars
     if (!supabaseUrl || !supabaseKey) {
-      setError('Supabase config missing. URL=' + (supabaseUrl ? 'OK' : 'EMPTY') + ' KEY=' + (supabaseKey ? 'OK' : 'EMPTY'))
+      setError('Supabase config missing!')
       setLoading(false)
       return
     }
 
     try {
       const supabase = createClient(supabaseUrl, supabaseKey)
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
-      if (error) {
-        setError(error.message)
+      if (authError) {
+        setError(authError.message)
         setLoading(false)
         return
       }
@@ -88,6 +91,8 @@ export default function LoginPage() {
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
+
+          <p className="text-xs text-gray-400 break-all">{debug}</p>
         </form>
       </div>
     </div>
