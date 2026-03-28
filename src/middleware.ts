@@ -7,7 +7,8 @@ export async function middleware(req: NextRequest) {
   // Skip auth for login page, API routes, and static files
   if (
     req.nextUrl.pathname === '/login' ||
-    req.nextUrl.pathname.startsWith('/api/')
+    req.nextUrl.pathname.startsWith('/api/') ||
+    req.nextUrl.pathname === '/guide'
   ) {
     return res
   }
@@ -21,12 +22,13 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // Look for auth token in cookies
-  const authCookie = req.cookies.getAll().find(c =>
-    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+  // Look for auth token in cookies (supports both formats)
+  const hasAuth = req.cookies.getAll().some(c =>
+    (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) ||
+    c.name === 'sb-access-token'
   )
 
-  if (!authCookie) {
+  if (!hasAuth) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
