@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server'
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  // Skip auth for login page, API routes, and static files
+  // Skip auth for login page, API routes, and guide
   if (
     req.nextUrl.pathname === '/login' ||
     req.nextUrl.pathname.startsWith('/api/') ||
@@ -13,7 +13,7 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // Look for any auth token in cookies
+  // Look for auth token in cookies (supports both formats)
   const hasAuth = req.cookies.getAll().some(c =>
     (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) ||
     c.name === 'sb-access-token'

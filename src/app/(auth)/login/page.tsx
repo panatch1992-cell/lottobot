@@ -11,17 +11,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [info, setInfo] = useState('v5 | URL=' + (supabaseUrl ? 'OK' : 'EMPTY') + ' | KEY=' + (supabaseKey ? supabaseKey.substring(0, 10) + '...' : 'EMPTY'))
   const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
-    setInfo(prev => prev + ' | LOGIN...')
 
     if (!supabaseUrl || !supabaseKey) {
-      setError('Supabase config missing!')
+      setError('ระบบยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแล')
       setLoading(false)
       return
     }
@@ -35,26 +33,18 @@ export default function LoginPage() {
         },
         body: JSON.stringify({ email, password }),
       })
-
       const data = await res.json()
-      setInfo(prev => prev + ' | STATUS=' + res.status)
-
       if (!res.ok) {
-        setError(data.error_description || data.msg || data.message || 'Login failed: ' + res.status)
+        setError(data.error_description || data.msg || 'อีเมลหรือรหัสผ่านไม่ถูกต้อง')
         setLoading(false)
         return
       }
-
-      // Login success - set cookie manually for now
-      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=3600`
-      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=604800`
-      
-      setInfo(prev => prev + ' | SUCCESS!')
+      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=${data.expires_in}; SameSite=Lax`
+      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=604800; SameSite=Lax`
       router.push('/dashboard')
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      setError('Network error: ' + message)
-      setInfo(prev => prev + ' | ERROR: ' + message)
+      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+      setError('ไม่สามารถเชื่อมต่อได้: ' + message)
       setLoading(false)
     }
   }
@@ -103,8 +93,6 @@ export default function LoginPage() {
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
-
-          <p className="text-xs text-gray-400 break-all">{info}</p>
         </form>
       </div>
     </div>
