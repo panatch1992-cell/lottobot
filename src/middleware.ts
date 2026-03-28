@@ -4,21 +4,12 @@ import type { NextRequest } from 'next/server'
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  // Skip auth for login page, API routes, and static files
+  // Skip auth for login page, API routes, and guide
   if (
     req.nextUrl.pathname === '/login' ||
     req.nextUrl.pathname.startsWith('/api/') ||
     req.nextUrl.pathname === '/guide'
   ) {
-    return res
-  }
-
-  // Check for Supabase auth cookie
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    // No Supabase config — allow through (dev mode)
     return res
   }
 
