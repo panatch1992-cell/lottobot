@@ -2,8 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import type { BotSetting, LineGroup } from '@/types'
+import type { LineGroup } from '@/types'
 
 export default function SettingsPage() {
   return (
@@ -28,7 +27,6 @@ function SettingsContent() {
 
   useEffect(() => {
     loadSettings()
-    // Handle LINE OAuth redirect result
     const success = searchParams.get('line_success')
     const error = searchParams.get('line_error')
     if (success) {
@@ -41,24 +39,31 @@ function SettingsContent() {
   }, [searchParams])
 
   async function loadSettings() {
-    const [settingsRes, groupsRes] = await Promise.all([
-      supabase.from('bot_settings').select('*'),
-      supabase.from('line_groups').select('*').order('created_at'),
-    ])
-
-    const map: Record<string, string> = {}
-    ;(settingsRes.data || []).forEach((s: BotSetting) => { map[s.key] = s.value })
-    setSettings(map)
-    setGroups((groupsRes.data || []) as LineGroup[])
+    try {
+      const res = await fetch('/api/settings')
+      const data = await res.json()
+      const map: Record<string, string> = {}
+      ;(data.settings || []).forEach((s: { key: string; value: string }) => { map[s.key] = s.value })
+      setSettings(map)
+      setGroups(data.groups || [])
+    } catch {
+      console.error('Failed to load settings')
+    }
     setLoading(false)
   }
 
   async function saveSetting(key: string, value: string) {
     setSaving(true)
-    await supabase.from('bot_settings')
-      .update({ value, updated_at: new Date().toISOString() })
-      .eq('key', key)
-    setSettings(prev => ({ ...prev, [key]: value }))
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value }),
+      })
+      setSettings(prev => ({ ...prev, [key]: value }))
+    } catch {
+      console.error('Failed to save setting')
+    }
     setSaving(false)
   }
 
@@ -78,20 +83,32 @@ function SettingsContent() {
   }
 
   async function toggleGroup(id: string, current: boolean) {
-    await supabase.from('line_groups').update({ is_active: !current, updated_at: new Date().toISOString() }).eq('id', id)
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'toggle_group', id, is_active: !current }),
+    })
     setGroups(prev => prev.map(g => g.id === id ? { ...g, is_active: !current } : g))
   }
 
   async function addGroup() {
     if (!newGroup.name) return
-    await supabase.from('line_groups').insert(newGroup)
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_group', ...newGroup }),
+    })
     setNewGroup({ name: '', line_notify_token: '' })
     setShowAddGroup(false)
     loadSettings()
   }
 
   async function deleteGroup(id: string) {
-    await supabase.from('line_groups').delete().eq('id', id)
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_group', id }),
+    })
     setGroups(prev => prev.filter(g => g.id !== id))
   }
 
@@ -167,7 +184,7 @@ function SettingsContent() {
           </div>
         )}
 
-        {/* LINE OAuth — ใส่ชื่อกลุ่มแล้วกด เชื่อมต่อ */}
+        {/* LINE OAuth */}
         {showOAuth && (
           <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-2">
             <p className="text-sm font-medium text-green-800">🔗 เชื่อมต่อกลุ่ม LINE (กดอนุญาตอย่างเดียว)</p>
