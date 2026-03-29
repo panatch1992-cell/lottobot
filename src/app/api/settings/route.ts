@@ -24,8 +24,10 @@ export async function PATCH(req: NextRequest) {
 
     if (body.key && body.value !== undefined) {
       const { error } = await db.from('bot_settings')
-        .update({ value: body.value, updated_at: new Date().toISOString() })
-        .eq('key', body.key)
+        .upsert(
+          { key: body.key, value: body.value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        )
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 400 })
       }
