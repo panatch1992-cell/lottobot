@@ -90,7 +90,7 @@ function SettingsContent() {
   async function testLine() {
     setLineStatus('กำลังตรวจสอบ...')
     try {
-      const res = await fetch('/api/line/test')
+      const res = await fetch(`/api/line/test?t=${Date.now()}`)
       const data = await res.json()
       setLineStatus(data.valid ? '✅ Token ใช้งานได้' : `❌ ${data.error || 'Token ไม่ถูกต้อง'}`)
     } catch {

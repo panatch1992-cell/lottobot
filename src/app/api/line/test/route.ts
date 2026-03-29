@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { verifyChannelToken } from '@/lib/line-messaging'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const db = getServiceClient()
