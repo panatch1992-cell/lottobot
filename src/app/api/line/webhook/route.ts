@@ -3,6 +3,8 @@ import { getServiceClient } from '@/lib/supabase'
 import { getGroupSummary } from '@/lib/line-messaging'
 import crypto from 'crypto'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     const db = getServiceClient()
@@ -25,6 +27,7 @@ export async function POST(req: NextRequest) {
         .update(body)
         .digest('base64')
       if (hash !== signature) {
+        console.error('LINE webhook: Invalid signature')
         return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
       }
     }
@@ -33,18 +36,22 @@ export async function POST(req: NextRequest) {
     const events = parsed.events || []
 
     for (const event of events) {
+      console.log('LINE webhook event:', event.type, event.source?.type, event.source?.groupId)
+
       // Bot joined a group
       if (event.type === 'join' && event.source?.type === 'group') {
         const groupId = event.source.groupId
 
         // Get group info
         let groupName = `กลุ่ม ${groupId.slice(-6)}`
-        let memberCount = 0
 
         if (channelToken) {
-          const info = await getGroupSummary(channelToken, groupId)
-          if (info.name) groupName = info.name
-          if (info.memberCount) memberCount = info.memberCount
+          try {
+            const info = await getGroupSummary(channelToken, groupId)
+            if (info.name) groupName = info.name
+          } catch (e) {
+            console.error('LINE webhook: getGroupSummary error', e)
+          }
         }
 
         // Check if group already exists
@@ -55,12 +62,19 @@ export async function POST(req: NextRequest) {
           .maybeSingle()
 
         if (!existing) {
-          await db.from('line_groups').insert({
+          const { error: insertErr } = await db.from('line_groups').insert({
             name: groupName,
             line_group_id: groupId,
-            member_count: memberCount,
             is_active: true,
           })
+          if (insertErr) {
+            console.error('LINE webhook: insert error', insertErr.message)
+          }
+        } else {
+          // Reactivate if previously left
+          await db.from('line_groups')
+            .update({ is_active: true, name: groupName, updated_at: new Date().toISOString() })
+            .eq('line_group_id', groupId)
         }
       }
 
@@ -81,7 +95,32 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// LINE sends a verification GET request
+// LINE sends a verification GET request + diagnostic info
 export async function GET() {
-  return NextResponse.json({ status: 'ok' })
+  try {
+    const db = getServiceClient()
+
+    // Check settings
+    const { data: settingsData } = await db.from('bot_settings').select('key, value')
+    const settings: Record<string, string> = {}
+    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+
+    // Check groups
+    const { data: groups } = await db.from('line_groups').select('*').order('updated_at', { ascending: false }).limit(10)
+
+    return NextResponse.json({
+      status: 'ok',
+      webhook: 'active',
+      hasSecret: !!settings.line_channel_secret,
+      hasToken: !!settings.line_channel_access_token,
+      groups: (groups || []).map(g => ({
+        name: g.name,
+        line_group_id: g.line_group_id ? `...${g.line_group_id.slice(-8)}` : null,
+        is_active: g.is_active,
+        updated_at: g.updated_at,
+      })),
+    })
+  } catch (err) {
+    return NextResponse.json({ status: 'ok', error: err instanceof Error ? err.message : 'unknown' })
+  }
 }
