@@ -143,7 +143,8 @@ function SettingsContent() {
         <div>
           <label className="label">Channel Access Token</label>
           <input
-            type="password"
+            type="text"
+            autoComplete="off"
             value={settings.line_channel_access_token || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
             className="input font-mono text-xs"
@@ -153,7 +154,8 @@ function SettingsContent() {
         <div>
           <label className="label">Channel Secret</label>
           <input
-            type="password"
+            type="text"
+            autoComplete="off"
             value={settings.line_channel_secret || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
             className="input font-mono text-xs"
@@ -163,10 +165,19 @@ function SettingsContent() {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={async () => {
+              setLineStatus('')
               setSaving(true)
-              await saveSetting('line_channel_access_token', settings.line_channel_access_token || '')
-              await saveSetting('line_channel_secret', settings.line_channel_secret || '')
+              const token = settings.line_channel_access_token || ''
+              const secret = settings.line_channel_secret || ''
+              if (!token) {
+                setLineStatus('❌ กรุณาใส่ Channel Access Token')
+                setSaving(false)
+                return
+              }
+              await saveSetting('line_channel_access_token', token)
+              await saveSetting('line_channel_secret', secret)
               setSaving(false)
+              setLineStatus('✅ บันทึกแล้ว — กดทดสอบ Token ได้เลย')
             }}
             disabled={saving}
             className="btn-primary text-sm"
