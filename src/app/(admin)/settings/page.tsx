@@ -19,23 +19,10 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [tgStatus, setTgStatus] = useState<string>('')
-  const [showAddGroup, setShowAddGroup] = useState(false)
-  const [newGroup, setNewGroup] = useState({ name: '', line_notify_token: '' })
-  const [showOAuth, setShowOAuth] = useState(false)
-  const [lineOAuthName, setLineOAuthName] = useState('')
-  const [lineMsg, setLineMsg] = useState('')
+  const [lineStatus, setLineStatus] = useState<string>('')
 
   useEffect(() => {
     loadSettings()
-    const success = searchParams.get('line_success')
-    const error = searchParams.get('line_error')
-    if (success) {
-      setLineMsg(`✅ เชื่อมต่อ "${success}" สำเร็จ!`)
-      window.history.replaceState({}, '', '/settings')
-    } else if (error) {
-      setLineMsg(`❌ เชื่อมต่อไม่สำเร็จ: ${error}`)
-      window.history.replaceState({}, '', '/settings')
-    }
   }, [searchParams])
 
   async function loadSettings() {
@@ -91,18 +78,6 @@ function SettingsContent() {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, is_active: !current } : g))
   }
 
-  async function addGroup() {
-    if (!newGroup.name) return
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add_group', ...newGroup }),
-    })
-    setNewGroup({ name: '', line_notify_token: '' })
-    setShowAddGroup(false)
-    loadSettings()
-  }
-
   async function deleteGroup(id: string) {
     await fetch('/api/settings', {
       method: 'POST',
@@ -110,6 +85,17 @@ function SettingsContent() {
       body: JSON.stringify({ action: 'delete_group', id }),
     })
     setGroups(prev => prev.filter(g => g.id !== id))
+  }
+
+  async function testLine() {
+    setLineStatus('กำลังตรวจสอบ...')
+    try {
+      const res = await fetch('/api/line/test')
+      const data = await res.json()
+      setLineStatus(data.valid ? '✅ Token ใช้งานได้' : `❌ ${data.error || 'Token ไม่ถูกต้อง'}`)
+    } catch {
+      setLineStatus('❌ ไม่สามารถเชื่อมต่อได้')
+    }
   }
 
   if (loading) {
@@ -151,72 +137,60 @@ function SettingsContent() {
         </div>
       </div>
 
-      {/* n8n */}
+      {/* LINE Messaging API */}
       <div className="card space-y-3">
-        <h3 className="font-semibold">⚡ n8n Automation</h3>
+        <h3 className="font-semibold">💬 LINE Messaging API</h3>
         <div>
-          <label className="label">Webhook URL</label>
+          <label className="label">Channel Access Token</label>
           <input
-            type="url"
-            value={settings.n8n_webhook_url || ''}
-            onChange={e => setSettings(prev => ({ ...prev, n8n_webhook_url: e.target.value }))}
-            onBlur={e => saveSetting('n8n_webhook_url', e.target.value)}
+            type="password"
+            value={settings.line_channel_access_token || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
+            onBlur={e => saveSetting('line_channel_access_token', e.target.value)}
             className="input font-mono text-xs"
-            placeholder="https://n8n.example.com/webhook/xxxxx"
+            placeholder="Channel Access Token (Long-lived)"
           />
         </div>
-        <p className="text-xs text-text-secondary">n8n Workflow: Telegram Trigger → Parse ข้อความ → LINE Notify (ส่งทุกกลุ่ม)</p>
+        <div>
+          <label className="label">Channel Secret</label>
+          <input
+            type="password"
+            value={settings.line_channel_secret || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
+            onBlur={e => saveSetting('line_channel_secret', e.target.value)}
+            className="input font-mono text-xs"
+            placeholder="Channel Secret"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={testLine} className="btn-outline text-sm">🔍 ทดสอบ Token</button>
+          {lineStatus && <span className="text-xs">{lineStatus}</span>}
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
+          <p className="font-medium">Webhook URL (ใส่ใน LINE Developers Console):</p>
+          <code className="block bg-white rounded px-2 py-1 text-blue-900 break-all">
+            {typeof window !== 'undefined' ? `${window.location.origin}/api/line/webhook` : '/api/line/webhook'}
+          </code>
+          <p>เมื่อเพิ่ม Bot เข้ากลุ่ม LINE จะจับกลุ่มอัตโนมัติ</p>
+        </div>
       </div>
 
-      {/* LINE Groups */}
+      {/* LINE Groups (auto-detected) */}
       <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold">💬 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
-          <div className="flex gap-1.5">
-            <button onClick={() => setShowAddGroup(true)} className="btn-outline text-xs">+ ใส่ Token</button>
-            <button onClick={() => { setShowOAuth(true); setLineOAuthName('') }} className="btn-primary text-xs">🔗 เชื่อมต่อ LINE</button>
-          </div>
-        </div>
-
-        {lineMsg && (
-          <div className={`text-sm px-3 py-2 rounded-lg ${lineMsg.startsWith('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-            {lineMsg}
-          </div>
-        )}
-
-        {/* LINE OAuth */}
-        {showOAuth && (
-          <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-medium text-green-800">🔗 เชื่อมต่อกลุ่ม LINE (กดอนุญาตอย่างเดียว)</p>
-            <input
-              value={lineOAuthName}
-              onChange={e => setLineOAuthName(e.target.value)}
-              className="input"
-              placeholder="ตั้งชื่อกลุ่ม เช่น VIP กลุ่ม 1"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button onClick={() => setShowOAuth(false)} className="btn-outline text-xs flex-1">ยกเลิก</button>
-              <a
-                href={lineOAuthName ? `/api/line/oauth?group_name=${encodeURIComponent(lineOAuthName)}` : '#'}
-                className={`btn-primary text-xs flex-1 text-center inline-block ${!lineOAuthName ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                เชื่อมต่อ LINE →
-              </a>
-            </div>
-            <p className="text-xs text-green-600">ลูกค้า Login LINE → กดอนุญาต → Token เข้าระบบอัตโนมัติ</p>
-          </div>
-        )}
+        <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
+        <p className="text-xs text-text-secondary">กลุ่มจะเพิ่มอัตโนมัติเมื่อเชิญ Bot เข้ากลุ่ม LINE</p>
 
         {groups.length === 0 ? (
-          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม LINE — กด &quot;เชื่อมต่อ LINE&quot; เพื่อเพิ่ม</p>
+          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม — เพิ่ม Bot เข้ากลุ่ม LINE เพื่อเริ่มใช้งาน</p>
         ) : (
           <div className="divide-y divide-gray-50">
             {groups.map(group => (
               <div key={group.id} className="flex items-center justify-between py-2.5">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{group.name}</p>
-                  <p className="text-xs text-text-secondary font-mono truncate">{group.line_notify_token ? '••••' + group.line_notify_token.slice(-6) : 'ยังไม่มี Token'}</p>
+                  <p className="text-xs text-text-secondary font-mono truncate">
+                    {group.line_group_id ? `ID: ••••${group.line_group_id.slice(-8)}` : 'ไม่มี Group ID'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -229,19 +203,6 @@ function SettingsContent() {
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Add Group Manual */}
-        {showAddGroup && (
-          <div className="border-t border-gray-100 pt-3 space-y-2">
-            <p className="text-xs text-text-secondary">ใส่ Token เอง (สำหรับผู้ที่มี Token แล้ว)</p>
-            <input value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} className="input" placeholder="ชื่อกลุ่ม LINE" />
-            <input value={newGroup.line_notify_token} onChange={e => setNewGroup({ ...newGroup, line_notify_token: e.target.value })} className="input font-mono text-xs" placeholder="LINE Notify Token" />
-            <div className="flex gap-2">
-              <button onClick={() => setShowAddGroup(false)} className="btn-outline text-xs flex-1">ยกเลิก</button>
-              <button onClick={addGroup} disabled={!newGroup.name} className="btn-primary text-xs flex-1 disabled:opacity-50">เพิ่ม</button>
-            </div>
           </div>
         )}
       </div>

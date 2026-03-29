@@ -40,6 +40,7 @@ export interface LineGroup {
   id: string
   name: string
   line_notify_token: string | null
+  line_group_id: string | null
   member_count: number
   is_active: boolean
   created_at: string
