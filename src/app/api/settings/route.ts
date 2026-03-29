@@ -23,15 +23,17 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json()
 
     if (body.key && body.value !== undefined) {
-      const { error } = await db.from('bot_settings')
+      const valueToSave = String(body.value)
+      const { data, error } = await db.from('bot_settings')
         .upsert(
-          { key: body.key, value: body.value, updated_at: new Date().toISOString() },
+          { key: body.key, value: valueToSave, updated_at: new Date().toISOString() },
           { onConflict: 'key' }
         )
+        .select()
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 })
+        return NextResponse.json({ error: error.message, debug: { key: body.key, valueLength: valueToSave.length } }, { status: 400 })
       }
-      return NextResponse.json({ success: true })
+      return NextResponse.json({ success: true, debug: { key: body.key, valueLength: valueToSave.length, rows: data?.length } })
     }
 
     return NextResponse.json({ error: 'Missing key or value' }, { status: 400 })
