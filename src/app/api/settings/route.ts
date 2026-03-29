@@ -24,16 +24,30 @@ export async function PATCH(req: NextRequest) {
 
     if (body.key && body.value !== undefined) {
       const valueToSave = String(body.value)
-      const { data, error } = await db.from('bot_settings')
-        .upsert(
-          { key: body.key, value: valueToSave, updated_at: new Date().toISOString() },
-          { onConflict: 'key' }
-        )
+
+      // Try update first (key exists from seed data)
+      const { data: updated, error: updateError } = await db.from('bot_settings')
+        .update({ value: valueToSave, updated_at: new Date().toISOString() })
+        .eq('key', body.key)
         .select()
-      if (error) {
-        return NextResponse.json({ error: error.message, debug: { key: body.key, valueLength: valueToSave.length } }, { status: 400 })
+
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 400 })
       }
-      return NextResponse.json({ success: true, debug: { key: body.key, valueLength: valueToSave.length, rows: data?.length } })
+
+      // If no rows updated, insert new
+      if (!updated || updated.length === 0) {
+        const { data: inserted, error: insertError } = await db.from('bot_settings')
+          .insert({ key: body.key, value: valueToSave, updated_at: new Date().toISOString() })
+          .select()
+
+        if (insertError) {
+          return NextResponse.json({ error: insertError.message }, { status: 400 })
+        }
+        return NextResponse.json({ success: true, debug: { action: 'insert', key: body.key, valueLength: valueToSave.length, rows: inserted?.length } })
+      }
+
+      return NextResponse.json({ success: true, debug: { action: 'update', key: body.key, valueLength: valueToSave.length, rows: updated.length } })
     }
 
     return NextResponse.json({ error: 'Missing key or value' }, { status: 400 })
