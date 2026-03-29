@@ -146,8 +146,11 @@ export async function POST(req: NextRequest) {
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
         const startLine = Date.now()
-        // Send image + text (cartoon number style)
-        const lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
+        // Send image + text (cartoon number style), fallback to text-only
+        let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
+        if (!lineResult.success) {
+          lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        }
         sendResults.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
         if (lineResult.success) lineSent++
 
