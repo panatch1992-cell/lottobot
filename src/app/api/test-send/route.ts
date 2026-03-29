@@ -18,16 +18,10 @@ export async function GET() {
     }
 
     const testMsg = [
-      '🎰 <b>LottoBot — ทดสอบระบบ</b>',
+      '🔧 <b>ทดสอบระบบ</b>',
       '',
-      '✅ เชื่อมต่อ Telegram สำเร็จ!',
-      `📅 ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
-      '',
-      '🇯🇵 <b>นิเคอิเช้า VIP</b> (ตัวอย่าง)',
-      '⬆️ บน : <code>0 3 4</code>',
-      '⬇️ ล่าง : <code>9 7</code>',
-      '──────',
-      '✓ ระบบพร้อมใช้งาน',
+      'ข้อความนี้เป็นการทดสอบการเชื่อมต่อ Bot กับกลุ่ม',
+      'กรุณาอย่าสนใจข้อความนี้ครับ 🙏',
     ].join('\n')
 
     const result = await sendToTelegram(botToken, channelId, testMsg)
