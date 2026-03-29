@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage } from '@/lib/line-messaging'
+import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
 import type { Lottery, LineGroup } from '@/types'
 
 export async function GET() {
@@ -126,11 +126,28 @@ export async function POST(req: NextRequest) {
     const lineToken = settings.line_channel_access_token
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     let lineSent = 0
+
+    // Build image URL for cartoon number style
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://lottobot-chi.vercel.app'
+    const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
+    const imageParams = new URLSearchParams({
+      lottery_name: (lottery as Lottery).name,
+      flag: (lottery as Lottery).flag,
+      date: thaiDate,
+      ...(top_number ? { top_number } : {}),
+      ...(bottom_number ? { bottom_number } : {}),
+      ...(full_number ? { full_number } : {}),
+    })
+    const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
+
     if (lineToken) {
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
         const startLine = Date.now()
-        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        // Send image + text (cartoon number style)
+        const lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
         sendResults.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
         if (lineResult.success) lineSent++
 

@@ -35,6 +35,47 @@ export async function pushTextMessage(
   }
 }
 
+// Send text + image together (image first, then text caption)
+export async function pushImageAndText(
+  channelAccessToken: string,
+  to: string,
+  imageUrl: string,
+  text: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${LINE_API}/message/push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${channelAccessToken}`,
+      },
+      body: JSON.stringify({
+        to,
+        messages: [
+          {
+            type: 'image',
+            originalContentUrl: imageUrl,
+            previewImageUrl: imageUrl,
+          },
+          { type: 'text', text },
+        ],
+      }),
+    })
+
+    if (res.ok) {
+      return { success: true }
+    }
+
+    const data = await res.json().catch(() => ({}))
+    return {
+      success: false,
+      error: data.message || `HTTP ${res.status}`,
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 export async function getGroupSummary(
   channelAccessToken: string,
   groupId: string
