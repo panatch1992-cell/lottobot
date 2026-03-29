@@ -146,7 +146,6 @@ function SettingsContent() {
             type="password"
             value={settings.line_channel_access_token || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
-            onBlur={e => saveSetting('line_channel_access_token', e.target.value)}
             className="input font-mono text-xs"
             placeholder="Channel Access Token (Long-lived)"
           />
@@ -157,12 +156,23 @@ function SettingsContent() {
             type="password"
             value={settings.line_channel_secret || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
-            onBlur={e => saveSetting('line_channel_secret', e.target.value)}
             className="input font-mono text-xs"
             placeholder="Channel Secret"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={async () => {
+              setSaving(true)
+              await saveSetting('line_channel_access_token', settings.line_channel_access_token || '')
+              await saveSetting('line_channel_secret', settings.line_channel_secret || '')
+              setSaving(false)
+            }}
+            disabled={saving}
+            className="btn-primary text-sm"
+          >
+            {saving ? '...' : '💾 บันทึก'}
+          </button>
           <button onClick={testLine} className="btn-outline text-sm">🔍 ทดสอบ Token</button>
           {lineStatus && <span className="text-xs">{lineStatus}</span>}
         </div>
