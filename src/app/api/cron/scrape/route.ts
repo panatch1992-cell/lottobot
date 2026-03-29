@@ -3,7 +3,7 @@ import { getServiceClient } from '@/lib/supabase'
 import { scrapeWithFallback } from '@/lib/scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { sendLineNotify } from '@/lib/line-notify'
+import { pushTextMessage } from '@/lib/line-messaging'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import type { Lottery, ScrapeSource, LineGroup } from '@/types'
 
@@ -106,13 +106,14 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Send to LINE groups (fallback — normally n8n handles this from TG)
-    if (settings.fallback_enabled === 'true' || !settings.n8n_webhook_url) {
+    // Send to LINE groups via Messaging API
+    const lineToken = settings.line_channel_access_token
+    if (lineToken) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_notify_token) continue
+        if (!group.line_group_id) continue
         const startLine = Date.now()
-        const lineResult = await sendLineNotify(group.line_notify_token, formatted.line)
+        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
           result_id: savedResult.id,

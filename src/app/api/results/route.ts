@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { sendLineNotify } from '@/lib/line-notify'
+import { pushTextMessage } from '@/lib/line-messaging'
 import type { Lottery, LineGroup } from '@/types'
 
 export async function GET() {
@@ -122,27 +122,30 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Send to LINE groups
+    // Send to LINE groups via Messaging API
+    const lineToken = settings.line_channel_access_token
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     let lineSent = 0
-    for (const group of (groups || []) as LineGroup[]) {
-      if (!group.line_notify_token) continue
-      const startLine = Date.now()
-      const lineResult = await sendLineNotify(group.line_notify_token, formatted.line)
-      sendResults.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
-      if (lineResult.success) lineSent++
+    if (lineToken) {
+      for (const group of (groups || []) as LineGroup[]) {
+        if (!group.line_group_id) continue
+        const startLine = Date.now()
+        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        sendResults.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
+        if (lineResult.success) lineSent++
 
-      await db.from('send_logs').insert({
-        lottery_id,
-        result_id: savedResult.id,
-        line_group_id: group.id,
-        channel: 'line',
-        msg_type: 'result',
-        status: lineResult.success ? 'sent' : 'failed',
-        sent_at: new Date().toISOString(),
-        duration_ms: Date.now() - startLine,
-        error_message: lineResult.error || null,
-      })
+        await db.from('send_logs').insert({
+          lottery_id,
+          result_id: savedResult.id,
+          line_group_id: group.id,
+          channel: 'line',
+          msg_type: 'result',
+          status: lineResult.success ? 'sent' : 'failed',
+          sent_at: new Date().toISOString(),
+          duration_ms: Date.now() - startLine,
+          error_message: lineResult.error || null,
+        })
+      }
     }
 
     return NextResponse.json({
