@@ -26,62 +26,68 @@ function buildLotteryFlexMessage(params: {
 
   const t = themes[theme || 'macaroon'] || themes.macaroon
 
-  // Digit colors cycling
+  // Pastel colors matching LINE Emoji sticker style
   const digitColors = [
-    { bg: '#FFD1DC', text: '#D4526E' },
-    { bg: '#FFE5B4', text: '#CC8400' },
-    { bg: '#FFFACD', text: '#B8960C' },
-    { bg: '#C1F0C1', text: '#2D8B2D' },
-    { bg: '#B8E0FF', text: '#2E6DA4' },
-    { bg: '#E0C8FF', text: '#7B4DBF' },
+    { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' },
+    { bg: '#B8E0FF', text: '#4A90C4', border: '#8CC8F0' },
+    { bg: '#C1F0C1', text: '#4CAF50', border: '#8ED88E' },
+    { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' },
+    { bg: '#E0C8FF', text: '#8B5DBF', border: '#C89EFF' },
+    { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' },
+    { bg: '#FFB8C6', text: '#C0475D', border: '#FF8CA3' },
+    { bg: '#B8F0E8', text: '#2D8B7B', border: '#80DCC8' },
   ]
 
   // Build digit bubbles for top number
   const topDigits = top_number.split('').map((d, i) => {
-    const c = theme === 'macaroon' ? digitColors[i % digitColors.length] : { bg: t.digitBg, text: t.digitText }
+    const c = theme === 'macaroon' ? digitColors[i % digitColors.length] : { bg: t.digitBg, text: t.digitText, border: t.digitBg }
     return {
       type: 'box',
       layout: 'vertical',
       contents: [{
         type: 'text',
         text: d,
-        size: 'xxl',
+        size: '3xl',
         weight: 'bold',
         align: 'center',
         color: c.text,
       }],
-      width: '50px',
-      height: '50px',
-      cornerRadius: '14px',
+      width: '56px',
+      height: '56px',
+      cornerRadius: '28px',
       backgroundColor: c.bg,
+      borderWidth: '2px',
+      borderColor: c.border,
       justifyContent: 'center',
       alignItems: 'center',
-      margin: 'sm',
+      margin: 'md',
     }
   })
 
   // Build digit bubbles for bottom number
   const bottomDigits = bottom_number.split('').map((d, i) => {
     const idx = i + 3
-    const c = theme === 'macaroon' ? digitColors[idx % digitColors.length] : { bg: t.digitBg, text: t.digitText }
+    const c = theme === 'macaroon' ? digitColors[idx % digitColors.length] : { bg: t.digitBg, text: t.digitText, border: t.digitBg }
     return {
       type: 'box',
       layout: 'vertical',
       contents: [{
         type: 'text',
         text: d,
-        size: 'xxl',
+        size: '3xl',
         weight: 'bold',
         align: 'center',
         color: c.text,
       }],
-      width: '50px',
-      height: '50px',
-      cornerRadius: '14px',
+      width: '56px',
+      height: '56px',
+      cornerRadius: '28px',
       backgroundColor: c.bg,
+      borderWidth: '2px',
+      borderColor: c.border,
       justifyContent: 'center',
       alignItems: 'center',
-      margin: 'sm',
+      margin: 'md',
     }
   })
 
