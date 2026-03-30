@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
         if (sourceInfo) {
           const { data: browserSources } = await db.from('scrape_sources').select('selector_config').eq('lottery_id', lottery_id).eq('is_active', true).limit(1)
           const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {}
-          const browserRes = await browserScrape(sourceInfo.url, selectors)
+          const browserRes = await browserScrape(sourceInfo.url, selectors, sourceInfo.searchName)
           if (browserRes.success && browserRes.data) {
             return saveResultAndSend(db, lottery_id, {
               top_number: browserRes.data.top_number,

@@ -180,7 +180,7 @@ export async function GET(req: NextRequest) {
         const { data: browserSources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true).limit(1)
         const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {}
 
-        const browserRes = await browserScrape(sourceInfo.url, selectors)
+        const browserRes = await browserScrape(sourceInfo.url, selectors, sourceInfo.searchName)
 
         if (browserRes.success && browserRes.data) {
           const saveRes = await saveAndSend(db, lottery, {
