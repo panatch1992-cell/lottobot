@@ -118,7 +118,10 @@ insert into bot_settings (key, value, description) values
   ('fallback_enabled', 'true', 'ใช้แหล่งสำรองถ้าแหล่งหลักล่ม'),
   ('scrape_window_minutes', '30', 'หน้าต่างเวลาดึงผลหลังเวลาออก (นาที)'),
   ('scrape_max_retries', '3', 'จำนวนครั้งที่ retry ดึงผล'),
-  ('scrape_retry_delay_ms', '10000', 'หน่วงเวลาระหว่าง retry (ms)');
+  ('scrape_retry_delay_ms', '10000', 'หน่วงเวลาระหว่าง retry (ms)'),
+  ('default_theme', 'macaroon', 'ธีมรูปตัวเลขสำหรับผล auto (macaroon/candy/ocean/gold/dark)'),
+  ('default_font_style', 'rounded', 'สไตล์ตัวเลข auto (rounded/sharp/outline)'),
+  ('default_digit_size', 'm', 'ขนาดตัวเลข auto (s/m/l)');
 
 -- ============================================
 -- 8. Seed: 43 รายการหวย (จากลูกค้า)

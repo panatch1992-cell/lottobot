@@ -303,6 +303,105 @@ function SettingsContent() {
         </label>
       </div>
 
+      {/* Default Result Style */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold">🎨 สไตล์รูปตัวเลข (ผล auto)</h3>
+        <p className="text-xs text-text-secondary">เลือกธีม + สไตล์ตัวเลขสำหรับผลหวยที่ดึงอัตโนมัติ</p>
+
+        {/* Theme */}
+        <div>
+          <label className="label">ธีม</label>
+          <div className="grid grid-cols-5 gap-2">
+            {[
+              { id: 'macaroon', label: '🧁', colors: ['#FFD1DC', '#FFE5B4', '#FFFACD'] },
+              { id: 'candy', label: '🍬', colors: ['#FF6B8A', '#FF9F43', '#FFDD59'] },
+              { id: 'ocean', label: '🌊', colors: ['#2B6CB0', '#3182CE', '#4299E1'] },
+              { id: 'gold', label: '✨', colors: ['#F59E0B', '#FBBF24', '#FCD34D'] },
+              { id: 'dark', label: '🌙', colors: ['#E53E3E', '#DD6B20', '#D69E2E'] },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => saveSetting('default_theme', t.id)}
+                className={`p-2 rounded-lg border-2 transition-all ${
+                  (settings.default_theme || 'macaroon') === t.id
+                    ? 'border-gold shadow-sm scale-105'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-center text-lg mb-1">{t.label}</div>
+                <div className="flex justify-center gap-0.5">
+                  {t.colors.map((c, i) => (
+                    <span key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <p className="text-[9px] text-text-secondary mt-1 text-center capitalize">{t.id}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Font Style */}
+        <div>
+          <label className="label">สไตล์ตัวเลข</label>
+          <div className="flex gap-2">
+            {[
+              { id: 'rounded', label: '● มน', desc: 'นุ่มน่ารัก' },
+              { id: 'sharp', label: '◆ คม', desc: 'คมชัด' },
+              { id: 'outline', label: '○ เส้น', desc: 'โปร่งใส' },
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => saveSetting('default_font_style', f.id)}
+                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
+                  (settings.default_font_style || 'rounded') === f.id
+                    ? 'border-gold bg-gold/5'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium">{f.label}</div>
+                <div className="text-[10px] text-text-secondary">{f.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Digit Size */}
+        <div>
+          <label className="label">ขนาดตัวเลข</label>
+          <div className="flex gap-2">
+            {[
+              { id: 's', label: 'S', desc: 'เล็ก' },
+              { id: 'm', label: 'M', desc: 'กลาง' },
+              { id: 'l', label: 'L', desc: 'ใหญ่' },
+            ].map(s => (
+              <button
+                key={s.id}
+                onClick={() => saveSetting('default_digit_size', s.id)}
+                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
+                  (settings.default_digit_size || 'm') === s.id
+                    ? 'border-gold bg-gold/5'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-bold text-lg">{s.label}</div>
+                <div className="text-[10px] text-text-secondary">{s.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Preview */}
+        <div className="bg-gray-50 rounded-lg p-3 text-center">
+          <p className="text-[10px] text-text-secondary mb-2">ตัวอย่างรูปที่จะส่งไป LINE (ผล auto)</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=30 มี.ค. 69&top_number=123&bottom_number=45&theme=${settings.default_theme || 'macaroon'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}`}
+            alt="Preview"
+            className="mx-auto rounded-lg shadow-sm max-w-[280px]"
+          />
+        </div>
+      </div>
+
       {saving && <p className="text-xs text-text-secondary text-center">กำลังบันทึก...</p>}
     </div>
   )

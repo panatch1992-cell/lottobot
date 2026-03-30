@@ -80,6 +80,9 @@ async function saveResultAndSend(
       ...(resultData.top_number ? { top_number: resultData.top_number } : {}),
       ...(resultData.bottom_number ? { bottom_number: resultData.bottom_number } : {}),
       ...(resultData.full_number ? { full_number: resultData.full_number } : {}),
+      theme: settings.default_theme || 'macaroon',
+      font_style: settings.default_font_style || 'rounded',
+      digit_size: settings.default_digit_size || 'm',
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
