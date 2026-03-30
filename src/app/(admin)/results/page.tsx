@@ -11,6 +11,179 @@ interface ResultMap {
   }
 }
 
+// Theme definitions matching the server-side image generator
+const THEME_OPTIONS = [
+  {
+    id: 'macaroon',
+    label: 'Macaroon',
+    preview: ['#FFD1DC', '#FFE5B4', '#FFFACD', '#C1F0C1', '#B8E0FF', '#E0C8FF'],
+    bg: '#ffffff',
+    digits: [
+      { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' },
+      { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' },
+      { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' },
+      { bg: '#C1F0C1', text: '#2D8B2D', border: '#8ED88E' },
+      { bg: '#B8E0FF', text: '#2E6DA4', border: '#80C4FF' },
+      { bg: '#E0C8FF', text: '#7B4DBF', border: '#C89EFF' },
+    ],
+    titleColor: '#4a4a4a',
+    dateColor: '#aaa',
+    labelColor: '#999',
+  },
+  {
+    id: 'candy',
+    label: 'Candy',
+    preview: ['#FF6B8A', '#FF9F43', '#FFDD59'],
+    bg: '#FFF5F5',
+    digits: [
+      { bg: '#FF6B8A', text: '#fff', border: '#FF4D73' },
+      { bg: '#FF9F43', text: '#fff', border: '#FF8C1A' },
+      { bg: '#FFDD59', text: '#7C6800', border: '#FFD42A' },
+      { bg: '#FF6B8A', text: '#fff', border: '#FF4D73' },
+      { bg: '#FF9F43', text: '#fff', border: '#FF8C1A' },
+      { bg: '#FF6B8A', text: '#fff', border: '#FF4D73' },
+    ],
+    titleColor: '#E53E3E',
+    dateColor: '#FC8181',
+    labelColor: '#F687B3',
+  },
+  {
+    id: 'ocean',
+    label: 'Ocean',
+    preview: ['#2B6CB0', '#3182CE', '#4299E1', '#38B2AC'],
+    bg: '#EBF8FF',
+    digits: [
+      { bg: '#2B6CB0', text: '#fff', border: '#2C5282' },
+      { bg: '#3182CE', text: '#fff', border: '#2B6CB0' },
+      { bg: '#4299E1', text: '#fff', border: '#3182CE' },
+      { bg: '#0987A0', text: '#fff', border: '#086F83' },
+      { bg: '#38B2AC', text: '#fff', border: '#2C7A7B' },
+      { bg: '#4FD1C5', text: '#234E52', border: '#38B2AC' },
+    ],
+    titleColor: '#2B6CB0',
+    dateColor: '#63B3ED',
+    labelColor: '#90CDF4',
+  },
+  {
+    id: 'gold',
+    label: 'Gold',
+    preview: ['#F59E0B', '#FBBF24', '#FCD34D'],
+    bg: '#FFFBEB',
+    digits: [
+      { bg: '#F59E0B', text: '#fff', border: '#D97706' },
+      { bg: '#FBBF24', text: '#78350F', border: '#F59E0B' },
+      { bg: '#FCD34D', text: '#78350F', border: '#FBBF24' },
+      { bg: '#F59E0B', text: '#fff', border: '#D97706' },
+      { bg: '#FBBF24', text: '#78350F', border: '#F59E0B' },
+      { bg: '#FCD34D', text: '#78350F', border: '#FBBF24' },
+    ],
+    titleColor: '#92400E',
+    dateColor: '#D97706',
+    labelColor: '#B45309',
+  },
+  {
+    id: 'dark',
+    label: 'Dark',
+    preview: ['#E53E3E', '#DD6B20', '#D69E2E', '#38A169', '#3182CE'],
+    bg: '#1A202C',
+    digits: [
+      { bg: '#E53E3E', text: '#fff', border: '#C53030' },
+      { bg: '#DD6B20', text: '#fff', border: '#C05621' },
+      { bg: '#D69E2E', text: '#fff', border: '#B7791F' },
+      { bg: '#38A169', text: '#fff', border: '#2F855A' },
+      { bg: '#3182CE', text: '#fff', border: '#2B6CB0' },
+      { bg: '#805AD5', text: '#fff', border: '#6B46C1' },
+    ],
+    titleColor: '#F7FAFC',
+    dateColor: '#A0AEC0',
+    labelColor: '#718096',
+  },
+]
+
+function MiniDigit({ digit, index, theme }: { digit: string; index: number; theme: typeof THEME_OPTIONS[0] }) {
+  const c = theme.digits[index % theme.digits.length]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: c.bg,
+        border: `2px solid ${c.border}`,
+        color: c.text,
+        fontSize: 20,
+        fontWeight: 800,
+        margin: '0 2px',
+        fontFamily: 'monospace',
+      }}
+    >
+      {digit}
+    </span>
+  )
+}
+
+function PreviewCard({ lottery, form, date, theme }: {
+  lottery: Lottery
+  form: { top: string; bottom: string; full: string }
+  date: string
+  theme: typeof THEME_OPTIONS[0]
+}) {
+  const hasAny = form.top || form.bottom || form.full
+  if (!hasAny) return null
+
+  return (
+    <div className="mt-3 rounded-xl p-3 border border-gray-100" style={{ backgroundColor: '#f7f7f7' }}>
+      <p className="text-[10px] text-text-secondary mb-2 font-medium">ตัวอย่างที่จะส่งไป LINE กลุ่ม</p>
+      <div className="rounded-lg p-4 text-center" style={{ backgroundColor: theme.bg }}>
+        <p className="text-sm font-bold mb-0.5" style={{ color: theme.titleColor }}>
+          {lottery.flag} {lottery.name} {lottery.flag}
+        </p>
+        <p className="text-[11px] mb-3" style={{ color: theme.dateColor }}>
+          งวดวันที่ {date}
+        </p>
+
+        {form.top && (
+          <div className="mb-3">
+            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขบน</p>
+            <div className="flex justify-center">
+              {form.top.split('').map((d, i) => (
+                <MiniDigit key={`t${i}`} digit={d} index={i} theme={theme} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {form.bottom && (
+          <div className="mb-3">
+            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขล่าง</p>
+            <div className="flex justify-center">
+              {form.bottom.split('').map((d, i) => (
+                <MiniDigit key={`b${i}`} digit={d} index={i + 3} theme={theme} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {form.full && (
+          <div className="mb-3">
+            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขเต็ม</p>
+            <div className="flex justify-center flex-wrap">
+              {form.full.split('').map((d, i) => (
+                <MiniDigit key={`f${i}`} digit={d} index={i} theme={theme} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-[9px] mt-2" style={{ color: theme.dateColor, opacity: 0.5 }}>LottoBot</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ResultsPage() {
   const [lotteries, setLotteries] = useState<Lottery[]>([])
   const [results, setResults] = useState<ResultMap>({})
@@ -20,16 +193,13 @@ export default function ResultsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [search, setSearch] = useState('')
   const [showSentOnly, setShowSentOnly] = useState(false)
+  const [selectedTheme, setSelectedTheme] = useState('macaroon')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Form state per lottery
   const [forms, setForms] = useState<Record<string, { top: string; bottom: string; full: string }>>({})
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
-  // Auto-dismiss toast
   useEffect(() => {
     if (toast) {
       if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -90,6 +260,7 @@ export default function ResultsPage() {
           top_number: form.top || null,
           bottom_number: form.bottom || null,
           full_number: form.full || null,
+          theme: selectedTheme,
         }),
       })
 
@@ -122,7 +293,6 @@ export default function ResultsPage() {
     return !!(r?.top_number || r?.bottom_number || r?.full_number)
   }
 
-  // Filter & search
   const filtered = lotteries.filter(l => {
     if (showSentOnly && !hasExistingResult(l.id)) return false
     if (search) {
@@ -134,6 +304,11 @@ export default function ResultsPage() {
 
   const sentCount = lotteries.filter(l => hasExistingResult(l.id)).length
   const totalCount = lotteries.length
+  const currentTheme = THEME_OPTIONS.find(t => t.id === selectedTheme) || THEME_OPTIONS[0]
+
+  const thaiDate = date
+    ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+    : date
 
   if (loading) {
     return (
@@ -148,18 +323,16 @@ export default function ResultsPage() {
 
   return (
     <div className="space-y-3">
-      {/* Toast notification - fixed top */}
+      {/* Toast */}
       {toast && (
         <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium max-w-[90vw] animate-fade-in ${
-          toast.type === 'success'
-            ? 'bg-green-600 text-white'
-            : 'bg-red-600 text-white'
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.type === 'success' ? '✓' : '✗'} {toast.text}
         </div>
       )}
 
-      {/* Header with progress */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">กรอกผลหวย</h2>
@@ -167,16 +340,14 @@ export default function ResultsPage() {
             วันที่ {date} — ส่งแล้ว <span className="font-mono font-bold text-green-600">{sentCount}</span>/{totalCount}
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShowSentOnly(!showSentOnly)}
-            className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
-              showSentOnly ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-secondary'
-            }`}
-          >
-            {showSentOnly ? 'ส่งแล้ว' : 'ทั้งหมด'}
-          </button>
-        </div>
+        <button
+          onClick={() => setShowSentOnly(!showSentOnly)}
+          className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+            showSentOnly ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-secondary'
+          }`}
+        >
+          {showSentOnly ? 'ส่งแล้ว' : 'ทั้งหมด'}
+        </button>
       </div>
 
       {/* Progress bar */}
@@ -185,6 +356,35 @@ export default function ResultsPage() {
           className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500"
           style={{ width: `${totalCount > 0 ? (sentCount / totalCount) * 100 : 0}%` }}
         />
+      </div>
+
+      {/* Theme picker */}
+      <div className="card py-3">
+        <p className="text-[11px] text-text-secondary mb-2 font-medium">🎨 สไตล์ข้อความ</p>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {THEME_OPTIONS.map(theme => (
+            <button
+              key={theme.id}
+              onClick={() => setSelectedTheme(theme.id)}
+              className={`shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
+                selectedTheme === theme.id
+                  ? 'bg-gold/10 ring-2 ring-gold'
+                  : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex gap-0.5">
+                {theme.preview.slice(0, 4).map((color, i) => (
+                  <span
+                    key={i}
+                    className="w-4 h-4 rounded"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] font-medium">{theme.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search */}
@@ -301,13 +501,15 @@ export default function ResultsPage() {
                     ) : hasResult ? 'แก้ไข' : 'ส่งผล'}
                   </button>
                 </div>
+
+                {/* Live preview */}
+                <PreviewCard lottery={lottery} form={form} date={thaiDate} theme={currentTheme} />
               </div>
             )
           })}
         </div>
       )}
 
-      {/* Bottom spacing for nav */}
       <div className="h-4" />
     </div>
   )
