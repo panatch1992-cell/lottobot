@@ -430,7 +430,8 @@ function SettingsContent() {
 
         {/* Preview */}
         <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-[10px] text-text-secondary mb-2">ตัวอย่างรูปที่จะส่งไป LINE (ผล auto)</p>
+          <p className="text-xs font-medium text-text-secondary mb-1">👁 ตัวอย่างรูปที่จะส่งไป LINE จริง</p>
+          <p className="text-[10px] text-green-600 mb-2">ตั้งค่าครั้งเดียว → บันทึกถาวร ใช้กับผล auto ทุกรายการ</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'shopee'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'horizontal'}`}
@@ -438,35 +439,6 @@ function SettingsContent() {
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />
         </div>
-
-        {/* Send test Flex */}
-        <button
-          onClick={async () => {
-            setSaving(true)
-            try {
-              const res = await fetch('/api/test-flex', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: 'ลาว TV',
-                  flag: '🇱🇦',
-                  top_number: '167',
-                  bottom_number: '69',
-                  theme: settings.default_theme || 'shopee',
-                }),
-              })
-              const data = await res.json()
-              alert(data.success ? '✅ ส่ง Flex Message ไปกลุ่ม LINE แล้ว!' : `❌ ${data.error}`)
-            } catch {
-              alert('❌ ไม่สามารถส่งได้')
-            }
-            setSaving(false)
-          }}
-          disabled={saving}
-          className="btn-primary w-full text-sm disabled:opacity-50"
-        >
-          📤 ส่งตัวอย่าง Flex Message ไปกลุ่ม LINE
-        </button>
       </div>
 
       {saving && <p className="text-xs text-text-secondary text-center">กำลังบันทึก...</p>}
