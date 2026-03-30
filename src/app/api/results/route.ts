@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   try {
     const db = getServiceClient()
     const body = await req.json()
-    const { lottery_id, top_number, bottom_number, full_number, theme } = body
+    const { lottery_id, top_number, bottom_number, full_number, theme, font_style, digit_size } = body
 
     if (!lottery_id) {
       return NextResponse.json({ error: 'lottery_id required' }, { status: 400 })
@@ -140,6 +140,8 @@ export async function POST(req: NextRequest) {
       ...(bottom_number ? { bottom_number } : {}),
       ...(full_number ? { full_number } : {}),
       ...(theme ? { theme } : {}),
+      ...(font_style ? { font_style } : {}),
+      ...(digit_size ? { digit_size } : {}),
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
