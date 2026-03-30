@@ -230,19 +230,56 @@ function SettingsContent() {
 
       {/* Scraping */}
       <div className="card space-y-3">
-        <h3 className="font-semibold">🕷️ Scraping</h3>
+        <h3 className="font-semibold">🤖 ดึงผลอัตโนมัติ</h3>
+        <p className="text-xs text-text-secondary">ตั้งค่าพฤติกรรมการดึงผลหวยอัตโนมัติจากเว็บต้นทาง</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">หน้าต่างเวลาดึงผล (นาที)</label>
+            <input
+              type="number"
+              value={settings.scrape_window_minutes || '30'}
+              onChange={e => setSettings(prev => ({ ...prev, scrape_window_minutes: e.target.value }))}
+              onBlur={e => saveSetting('scrape_window_minutes', e.target.value)}
+              className="input"
+              min="5"
+              max="60"
+            />
+            <p className="text-[10px] text-text-secondary mt-0.5">ดึงผลได้ถึงกี่นาทีหลังเวลาออก</p>
+          </div>
+          <div>
+            <label className="label">จำนวน Retry</label>
+            <input
+              type="number"
+              value={settings.scrape_max_retries || '3'}
+              onChange={e => setSettings(prev => ({ ...prev, scrape_max_retries: e.target.value }))}
+              onBlur={e => saveSetting('scrape_max_retries', e.target.value)}
+              className="input"
+              min="1"
+              max="10"
+            />
+            <p className="text-[10px] text-text-secondary mt-0.5">ลองดึงซ้ำกี่ครั้งถ้าไม่สำเร็จ</p>
+          </div>
+        </div>
+
         <div>
-          <label className="label">ดึงผลทุกกี่วินาที</label>
+          <label className="label">หน่วงเวลาระหว่าง Retry (วินาที)</label>
           <input
             type="number"
-            value={settings.scrape_interval_seconds || '30'}
-            onChange={e => setSettings(prev => ({ ...prev, scrape_interval_seconds: e.target.value }))}
-            onBlur={e => saveSetting('scrape_interval_seconds', e.target.value)}
+            value={Math.round(parseInt(settings.scrape_retry_delay_ms || '10000') / 1000)}
+            onChange={e => {
+              const ms = String(Number(e.target.value) * 1000)
+              setSettings(prev => ({ ...prev, scrape_retry_delay_ms: ms }))
+            }}
+            onBlur={e => saveSetting('scrape_retry_delay_ms', String(Number(e.target.value) * 1000))}
             className="input w-24"
-            min="10"
-            max="120"
+            min="5"
+            max="60"
           />
         </div>
+
+        <hr className="border-gray-100" />
+
         <div>
           <label className="label">จำนวนงวดสถิติ</label>
           <input

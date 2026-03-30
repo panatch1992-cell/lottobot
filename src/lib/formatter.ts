@@ -16,10 +16,17 @@ export function formatThaiDate(dateStr: string): string {
 export function formatResult(lottery: Lottery, result: Result) {
   const dateStr = formatThaiDate(result.draw_date)
 
+  // Determine source label
+  const sourceLabel = result.source_url === 'manual'
+    ? '👤 กรอกมือ'
+    : result.source_url
+      ? `🤖 ${new URL(result.source_url).hostname}`
+      : '🤖 auto'
+
   // Telegram (HTML)
   const tgLines = [
     `${lottery.flag} <b>${lottery.name}</b>`,
-    `งวด ${dateStr} · ดึงจาก ${result.source_url || 'auto'}`,
+    `งวด ${dateStr} · ${sourceLabel}`,
   ]
   if (result.top_number) tgLines.push(`⬆️ บน : <code>${spaced(result.top_number)}</code>`)
   if (result.bottom_number) tgLines.push(`⬇️ ล่าง : <code>${spaced(result.bottom_number)}</code>`)
@@ -76,9 +83,15 @@ export function formatTgAdminLog(
   durationMs: number
 ) {
   const dateStr = formatThaiDate(result.draw_date)
+  const adminSourceLabel = result.source_url === 'manual'
+    ? '👤 กรอกมือ'
+    : result.source_url
+      ? `🤖 ${result.source_url}`
+      : '🤖 auto'
+
   const lines = [
     `${lottery.flag} <b>${lottery.name}</b>`,
-    `งวด ${dateStr} · ดึงจาก ${result.source_url || 'auto'}`,
+    `งวด ${dateStr} · ${adminSourceLabel}`,
   ]
   if (result.top_number) lines.push(`⬆️ บน : <code>${spaced(result.top_number)}</code>`)
   if (result.bottom_number) lines.push(`⬇️ ล่าง : <code>${spaced(result.bottom_number)}</code>`)

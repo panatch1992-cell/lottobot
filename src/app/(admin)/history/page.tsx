@@ -12,6 +12,7 @@ export default function HistoryPage() {
   const [groups, setGroups] = useState<Record<string, LineGroup>>({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'telegram' | 'line'>('all')
+  const [results, setResults] = useState<Record<string, { source_url: string | null }>>({})
 
   useEffect(() => { loadHistory() }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -20,11 +21,16 @@ export default function HistoryPage() {
     const startOfDay = `${date}T00:00:00`
     const endOfDay = `${date}T23:59:59`
 
-    const [logsRes, lotteriesRes, groupsRes] = await Promise.all([
+    const [logsRes, lotteriesRes, groupsRes, resultsRes] = await Promise.all([
       supabase.from('send_logs').select('*').gte('created_at', startOfDay).lte('created_at', endOfDay).order('created_at', { ascending: false }),
       supabase.from('lotteries').select('*'),
       supabase.from('line_groups').select('*'),
+      supabase.from('results').select('id, source_url').eq('draw_date', date),
     ])
+
+    const resultsMap: Record<string, { source_url: string | null }> = {}
+    ;(resultsRes.data || []).forEach((r: { id: string; source_url: string | null }) => { resultsMap[r.id] = r })
+    setResults(resultsMap)
 
     const lotteriesMap: Record<string, Lottery> = {}
     ;(lotteriesRes.data || []).forEach((l: Lottery) => { lotteriesMap[l.id] = l })
@@ -109,6 +115,15 @@ export default function HistoryPage() {
                         }`}>
                           {isTg ? '✈️ TG' : '💬 LINE'}
                         </span>
+                        {log.result_id && results[log.result_id] && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            results[log.result_id].source_url === 'manual'
+                              ? 'bg-amber-50 text-amber-600'
+                              : 'bg-purple-50 text-purple-600'
+                          }`}>
+                            {results[log.result_id].source_url === 'manual' ? '👤 มือ' : '🤖 อัตโนมัติ'}
+                          </span>
+                        )}
                         {group && <span className="text-[10px] text-text-secondary">{group.name}</span>}
                         {log.duration_ms && <span className="text-[10px] text-text-secondary">{(log.duration_ms / 1000).toFixed(1)}s</span>}
                       </div>
