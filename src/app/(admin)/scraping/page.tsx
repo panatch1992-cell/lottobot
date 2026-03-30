@@ -48,7 +48,14 @@ export default function ScrapingPage() {
 
   // Scrape now state
   const [scraping, setScraping] = useState<string | null>(null)
-  const [scrapeResult, setScrapeResult] = useState<{ success: boolean; error?: string; lottery?: string } | null>(null)
+  const [scrapeResult, setScrapeResult] = useState<{
+    success: boolean
+    error?: string
+    lottery?: string
+    lottery_id?: string
+    result?: { top_number?: string; bottom_number?: string; full_number?: string }
+    source_url?: string
+  } | null>(null)
 
   // Stock lottery map (lottery_id → stock info)
   const [stockMap, setStockMap] = useState<Record<string, { symbol: string; name: string }>>({})
@@ -141,10 +148,12 @@ export default function ScrapingPage() {
     loadData()
   }
 
-  async function handleDelete(sourceId: string) {
-    if (!selectedLottery) return
-    if (!confirm('ลบ source นี้?')) return
-    await fetch(`/api/scrape-sources?id=${sourceId}`, { method: 'DELETE' })
+  const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null)
+
+  async function confirmDeleteSource() {
+    if (!deleteSourceId || !selectedLottery) return
+    await fetch(`/api/scrape-sources?id=${deleteSourceId}`, { method: 'DELETE' })
+    setDeleteSourceId(null)
     loadLotterySources(selectedLottery.id)
     loadData()
   }
@@ -198,7 +207,18 @@ export default function ScrapingPage() {
         body: JSON.stringify({ action: 'scrape_now', lottery_id: lottery.id }),
       })
       const data = await res.json()
-      setScrapeResult({ success: data.success, error: data.error, lottery: lottery.name })
+      setScrapeResult({
+        success: data.success,
+        error: data.error,
+        lottery: lottery.name,
+        lottery_id: lottery.id,
+        result: data.result ? {
+          top_number: data.result.top_number,
+          bottom_number: data.result.bottom_number,
+          full_number: data.result.full_number,
+        } : undefined,
+        source_url: data.source_url,
+      })
     } catch {
       setScrapeResult({ success: false, error: 'Network error', lottery: lottery.name })
     }
@@ -262,17 +282,16 @@ export default function ScrapingPage() {
         </div>
       )}
 
-      {/* Scrape result toast */}
-      {scrapeResult && (
-        <div className={`card ${scrapeResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} border`}>
-          <p className="text-sm">
-            {scrapeResult.success
-              ? `✅ ดึงผล ${scrapeResult.lottery} สำเร็จ — บันทึก + ส่ง TG/LINE แล้ว`
-              : `❌ ${scrapeResult.lottery}: ${scrapeResult.error}`}
-          </p>
-          <button onClick={() => setScrapeResult(null)} className="text-xs text-text-secondary underline mt-1">ปิด</button>
+      {/* Link to style settings */}
+      <a href="/settings" className="block card bg-gradient-to-r from-purple-50 to-purple-50/50 border border-purple-200 hover:border-purple-300 transition-colors">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-purple-700">🎨 ตั้งค่าธีมรูปตัวเลข</p>
+            <p className="text-xs text-purple-500">เลือกธีม + สไตล์สำหรับรูปที่ส่งไป LINE (ทั้ง auto และกรอกมือ)</p>
+          </div>
+          <span className="text-purple-400">→</span>
         </div>
-      )}
+      </a>
 
       {/* Search */}
       <input
@@ -297,17 +316,17 @@ export default function ScrapingPage() {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xl">{lottery.flag}</span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{lottery.name}</p>
+                    <p className="text-sm font-medium truncate" title={lottery.name}>{lottery.name}</p>
                     <p className="text-xs text-text-secondary">{lottery.result_time} น. · {lottery.country || '-'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {stockMap[lottery.id] ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">📈 {stockMap[lottery.id].symbol}</span>
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full" title={`ดึงอัตโนมัติจาก ${stockMap[lottery.id].name}`}>📈 {stockMap[lottery.id].symbol}</span>
                   ) : count > 0 ? (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} source{count > 1 ? 's' : ''}</span>
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} แหล่ง</span>
                   ) : (
-                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">👤 กรอกมือ</span>
+                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full" title="ต้องกรอกผลมือจากหน้ากรอกผล">👤 กรอกมือ</span>
                   )}
                   <span className="text-xs text-text-secondary">{isSelected ? '▼' : '▶'}</span>
                 </div>
@@ -342,6 +361,55 @@ export default function ScrapingPage() {
                     )}
                   </div>
 
+                  {/* Scrape result inline */}
+                  {scrapeResult && scrapeResult.lottery_id === lottery.id && (
+                    <div className={`rounded-lg border p-3 ${scrapeResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      {scrapeResult.success && scrapeResult.result ? (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-green-700">
+                            ✅ ดึงผลสำเร็จ — บันทึก + ส่ง TG/LINE แล้ว
+                          </p>
+                          <div className="flex items-center gap-4 text-sm">
+                            {scrapeResult.result.top_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขบน</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.top_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                            {scrapeResult.result.bottom_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขล่าง</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.bottom_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                            {scrapeResult.result.full_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขเต็ม</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.full_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                          </div>
+                          {/* Preview image */}
+                          <div className="mt-2">
+                            <p className="text-[10px] text-text-secondary mb-1">ตัวอย่างรูปที่ส่งไป LINE:</p>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`/api/generate-image?lottery_name=${encodeURIComponent(lottery.name)}&flag=${encodeURIComponent(lottery.flag)}&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=${scrapeResult.result.top_number || ''}&bottom_number=${scrapeResult.result.bottom_number || ''}&full_number=${scrapeResult.result.full_number || ''}`}
+                              alt="Result preview"
+                              className="rounded-lg shadow-sm max-w-[240px]"
+                            />
+                          </div>
+                          {scrapeResult.source_url && (
+                            <p className="text-[10px] text-green-600">แหล่ง: {scrapeResult.source_url}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-red-700">❌ {scrapeResult.error}</p>
+                      )}
+                      <button onClick={() => setScrapeResult(null)} className="text-[10px] text-text-secondary underline mt-2">ปิด</button>
+                    </div>
+                  )}
+
                   {/* Sources list */}
                   {lotterySources.length === 0 && !stockMap[lottery.id] ? (
                     <p className="text-xs text-text-secondary italic">{'ยังไม่มี scrape source — กด "+ เพิ่ม Source" เพื่อตั้งค่า URL + CSS Selectors'}</p>
@@ -363,7 +431,7 @@ export default function ScrapingPage() {
                                 {source.is_active ? '🟢' : '🔴'}
                               </button>
                               <button onClick={() => openEditSource(source)} className="p-1" title="แก้ไข">✏️</button>
-                              <button onClick={() => handleDelete(source.id)} className="p-1" title="ลบ">🗑️</button>
+                              <button onClick={() => setDeleteSourceId(source.id)} className="p-1" title="ลบ">🗑️</button>
                             </div>
                           </div>
 
@@ -526,6 +594,20 @@ export default function ScrapingPage() {
               >
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteSourceId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setDeleteSourceId(null)}>
+          <div className="bg-white rounded-2xl p-5 max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold mb-2">ยืนยันลบ Source</h3>
+            <p className="text-sm text-text-secondary mb-4">ลบแหล่งดึงผลนี้? การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteSourceId(null)} className="btn-outline text-sm flex-1">ยกเลิก</button>
+              <button onClick={confirmDeleteSource} className="btn-danger text-sm flex-1">ลบ</button>
             </div>
           </div>
         </div>

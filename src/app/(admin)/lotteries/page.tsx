@@ -144,6 +144,9 @@ export default function LotteriesPage() {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => toggleStatus(lottery.id, lottery.status)}
+                role="switch"
+                aria-checked={lottery.status === 'active'}
+                aria-label={`${lottery.status === 'active' ? 'ปิด' : 'เปิด'} ${lottery.name}`}
                 className={`relative w-10 h-5 rounded-full transition-colors ${lottery.status === 'active' ? 'bg-success' : 'bg-gray-300'}`}
               >
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${lottery.status === 'active' ? 'left-5' : 'left-0.5'}`} />

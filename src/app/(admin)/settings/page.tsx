@@ -132,7 +132,7 @@ function SettingsContent() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={testTelegram} className="btn-outline text-sm">🔍 ทดสอบเชื่อมต่อ</button>
+          <button onClick={testTelegram} disabled={tgStatus === 'กำลังทดสอบ...'} className="btn-outline text-sm disabled:opacity-50">🔍 ทดสอบเชื่อมต่อ</button>
           {tgStatus && <span className="text-xs">{tgStatus}</span>}
         </div>
       </div>
@@ -143,7 +143,7 @@ function SettingsContent() {
         <div>
           <label className="label">Channel Access Token</label>
           <input
-            type="text"
+            type="password"
             autoComplete="off"
             value={settings.line_channel_access_token || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
@@ -154,7 +154,7 @@ function SettingsContent() {
         <div>
           <label className="label">Channel Secret</label>
           <input
-            type="text"
+            type="password"
             autoComplete="off"
             value={settings.line_channel_secret || ''}
             onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
@@ -184,7 +184,7 @@ function SettingsContent() {
           >
             {saving ? '...' : '💾 บันทึก'}
           </button>
-          <button onClick={testLine} className="btn-outline text-sm">🔍 ทดสอบ Token</button>
+          <button onClick={testLine} disabled={lineStatus === 'กำลังตรวจสอบ...'} className="btn-outline text-sm disabled:opacity-50">🔍 ทดสอบ Token</button>
           {lineStatus && <span className="text-xs">{lineStatus}</span>}
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
@@ -216,11 +216,14 @@ function SettingsContent() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => toggleGroup(group.id, group.is_active)}
+                    role="switch"
+                    aria-checked={group.is_active}
+                    aria-label={`${group.is_active ? 'ปิด' : 'เปิด'} กลุ่ม ${group.name}`}
                     className={`relative w-10 h-5 rounded-full transition-colors ${group.is_active ? 'bg-success' : 'bg-gray-300'}`}
                   >
                     <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${group.is_active ? 'left-5' : 'left-0.5'}`} />
                   </button>
-                  <button onClick={() => deleteGroup(group.id)} className="text-danger text-sm hover:bg-danger/10 rounded p-1">✕</button>
+                  <button onClick={() => deleteGroup(group.id)} aria-label={`ลบกลุ่ม ${group.name}`} className="text-danger text-sm hover:bg-danger/10 rounded p-1">✕</button>
                 </div>
               </div>
             ))}

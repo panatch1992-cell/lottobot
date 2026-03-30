@@ -248,7 +248,7 @@ function PreviewCard({ lottery, form, date, theme, fontStyle, digitSize }: {
           </div>
         )}
 
-        <p className="text-[9px] mt-2 transition-colors duration-300" style={{ color: theme.dateColor, opacity: 0.5 }}>LottoBot</p>
+        <p className="text-[9px] mt-2 transition-colors duration-300" style={{ color: theme.dateColor, opacity: 0.7 }}>LottoBot</p>
       </div>
     </div>
   )
@@ -408,7 +408,7 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium max-w-[90vw] animate-fade-in ${

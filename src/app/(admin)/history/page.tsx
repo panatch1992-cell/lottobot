@@ -50,7 +50,7 @@ export default function HistoryPage() {
   const failedCount = logs.filter(l => l.status === 'failed').length
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h2 className="text-lg font-semibold">ประวัติส่ง</h2>
 
       {/* Date + Filter */}
