@@ -205,13 +205,15 @@ export async function POST(req: NextRequest) {
 
     // Manual fetch — ดึงผลตอนนี้ (stock หรือ scrape)
     if (action === 'scrape_now') {
-      const { lottery_id } = body
+      const { lottery_id, preview_only } = body
       if (!lottery_id) {
         return NextResponse.json({ error: 'lottery_id required' }, { status: 400 })
       }
 
       const todayStr = today()
 
+      // preview_only ข้ามการเช็คผลเดิม (แค่ดึงตัวเลข ยังไม่บันทึก)
+      if (!preview_only) {
       // Check existing result
       const { data: existing } = await db.from('results')
         .select('id')
@@ -222,6 +224,7 @@ export async function POST(req: NextRequest) {
       if (existing) {
         return NextResponse.json({ error: 'วันนี้มีผลแล้ว ลบผลเดิมก่อนหรือใช้หน้ากรอกผลแทน' }, { status: 400 })
       }
+      } // end if (!preview_only)
 
       // Get lottery name
       const { data: lotteryInfo } = await db.from('lotteries').select('name').eq('id', lottery_id).single()
@@ -230,6 +233,9 @@ export async function POST(req: NextRequest) {
       if (lotteryInfo && isStockLottery(lotteryInfo.name)) {
         const stockRes = await fetchStockLotteryResult(lotteryInfo.name)
         if (stockRes.success && stockRes.top_number) {
+          if (preview_only) {
+            return NextResponse.json({ success: true, result: { top_number: stockRes.top_number, bottom_number: stockRes.bottom_number }, source_url: `stock://${stockRes.symbol}` })
+          }
           return saveResultAndSend(db, lottery_id, {
             top_number: stockRes.top_number,
             bottom_number: stockRes.bottom_number,
@@ -245,6 +251,9 @@ export async function POST(req: NextRequest) {
           const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {}
           const browserRes = await browserScrape(sourceInfo.url, selectors, sourceInfo.searchName)
           if (browserRes.success && browserRes.data) {
+            if (preview_only) {
+              return NextResponse.json({ success: true, result: browserRes.data, source_url: `browser://${sourceInfo.url}` })
+            }
             return saveResultAndSend(db, lottery_id, {
               top_number: browserRes.data.top_number,
               bottom_number: browserRes.data.bottom_number,
