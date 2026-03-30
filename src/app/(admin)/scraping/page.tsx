@@ -148,10 +148,12 @@ export default function ScrapingPage() {
     loadData()
   }
 
-  async function handleDelete(sourceId: string) {
-    if (!selectedLottery) return
-    if (!confirm('ลบ source นี้?')) return
-    await fetch(`/api/scrape-sources?id=${sourceId}`, { method: 'DELETE' })
+  const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null)
+
+  async function confirmDeleteSource() {
+    if (!deleteSourceId || !selectedLottery) return
+    await fetch(`/api/scrape-sources?id=${deleteSourceId}`, { method: 'DELETE' })
+    setDeleteSourceId(null)
     loadLotterySources(selectedLottery.id)
     loadData()
   }
@@ -314,17 +316,17 @@ export default function ScrapingPage() {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xl">{lottery.flag}</span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{lottery.name}</p>
+                    <p className="text-sm font-medium truncate" title={lottery.name}>{lottery.name}</p>
                     <p className="text-xs text-text-secondary">{lottery.result_time} น. · {lottery.country || '-'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {stockMap[lottery.id] ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">📈 {stockMap[lottery.id].symbol}</span>
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full" title={`ดึงอัตโนมัติจาก ${stockMap[lottery.id].name}`}>📈 {stockMap[lottery.id].symbol}</span>
                   ) : count > 0 ? (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} source{count > 1 ? 's' : ''}</span>
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} แหล่ง</span>
                   ) : (
-                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">👤 กรอกมือ</span>
+                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full" title="ต้องกรอกผลมือจากหน้ากรอกผล">👤 กรอกมือ</span>
                   )}
                   <span className="text-xs text-text-secondary">{isSelected ? '▼' : '▶'}</span>
                 </div>
@@ -429,7 +431,7 @@ export default function ScrapingPage() {
                                 {source.is_active ? '🟢' : '🔴'}
                               </button>
                               <button onClick={() => openEditSource(source)} className="p-1" title="แก้ไข">✏️</button>
-                              <button onClick={() => handleDelete(source.id)} className="p-1" title="ลบ">🗑️</button>
+                              <button onClick={() => setDeleteSourceId(source.id)} className="p-1" title="ลบ">🗑️</button>
                             </div>
                           </div>
 
@@ -592,6 +594,20 @@ export default function ScrapingPage() {
               >
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteSourceId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setDeleteSourceId(null)}>
+          <div className="bg-white rounded-2xl p-5 max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold mb-2">ยืนยันลบ Source</h3>
+            <p className="text-sm text-text-secondary mb-4">ลบแหล่งดึงผลนี้? การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteSourceId(null)} className="btn-outline text-sm flex-1">ยกเลิก</button>
+              <button onClick={confirmDeleteSource} className="btn-danger text-sm flex-1">ลบ</button>
             </div>
           </div>
         </div>
