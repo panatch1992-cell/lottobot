@@ -44,10 +44,11 @@ export default function DashboardPage() {
       const sentLogs = logs.filter(l => l.status === 'sent')
       const failedLogs = logs.filter(l => l.status === 'failed')
 
-      // Count auto-configured: stock lotteries + scrape sources
+      // Count auto-configured: stock + browser + scrape sources
       const stockIds = Object.keys(scrapeInfoRes.stockLotteries || {})
+      const browserIds = Object.keys(scrapeInfoRes.browserLotteries || {})
       const scrapeIds = (scrapeInfoRes.sources || []).map((s: { lottery_id: string }) => s.lottery_id)
-      const allAutoIds = new Set(stockIds.concat(scrapeIds))
+      const allAutoIds = new Set(stockIds.concat(browserIds).concat(scrapeIds))
       setAutoConfigured(allAutoIds.size)
 
       setStats({
@@ -86,7 +87,6 @@ export default function DashboardPage() {
   }
 
   const resultsWithData = todayStatuses.filter(s => s.result)
-  const pendingCount = todayStatuses.length - resultsWithData.length
 
   if (loading) {
     return (
@@ -125,22 +125,8 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-2">
         <Link
-          href="/results"
-          className="block card bg-gradient-to-r from-gold/10 to-gold/5 border-gold/20 hover:border-gold/40 transition-colors"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-sm">📝 กรอกผล</p>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {pendingCount > 0 ? `รอ ${pendingCount} รายการ` : 'ครบแล้ว'}
-              </p>
-            </div>
-            <span className="text-gold">→</span>
-          </div>
-        </Link>
-        <Link
           href="/scraping"
-          className="block card bg-gradient-to-r from-blue-50 to-blue-50/50 border-blue-200 hover:border-blue-300 transition-colors"
+          className="block card bg-gradient-to-r from-green-50 to-green-50/50 border-green-200 hover:border-green-300 transition-colors"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -149,7 +135,21 @@ export default function DashboardPage() {
                 {autoConfigured > 0 ? `auto ${autoConfigured}/${stats.activeLotteries} หวย` : 'ยังไม่ตั้งค่า'}
               </p>
             </div>
-            <span className="text-blue-500">→</span>
+            <span className="text-green-500">→</span>
+          </div>
+        </Link>
+        <Link
+          href="/settings"
+          className="block card bg-gradient-to-r from-purple-50 to-purple-50/50 border-purple-200 hover:border-purple-300 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-sm">🎨 ธีม + ตั้งค่า</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                TG / LINE / สไตล์รูป
+              </p>
+            </div>
+            <span className="text-purple-500">→</span>
           </div>
         </Link>
       </div>
