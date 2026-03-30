@@ -5,6 +5,16 @@ function spaced(num: string): string {
   return num.split('').join(' ')  // "034" → "0 3 4"
 }
 
+// แปลงตัวเลขเป็น emoji keycap: "167" → "1️⃣ 6️⃣ 7️⃣"
+const KEYCAP: Record<string, string> = {
+  '0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣',
+  '5': '5️⃣', '6': '6️⃣', '7': '7️⃣', '8': '8️⃣', '9': '9️⃣',
+}
+
+function emojiNum(num: string): string {
+  return num.split('').map(d => KEYCAP[d] || d).join(' ')
+}
+
 function getSourceLabel(sourceUrl: string | null): string {
   if (!sourceUrl) return '🤖 auto'
   if (sourceUrl === 'manual') return '👤 กรอกมือ'
@@ -53,9 +63,9 @@ export function formatResult(lottery: Lottery, result: Result) {
     `\n${lottery.flag}${lottery.flag} ${lottery.name} ${lottery.flag}${lottery.flag}`,
     `งวดวันที่ ${dateStr}`,
   ]
-  if (result.top_number) lineLines.push(`⬆️ บน : ${spaced(result.top_number)}`)
-  if (result.bottom_number) lineLines.push(`⬇️ ล่าง : ${spaced(result.bottom_number)}`)
-  if (result.full_number) lineLines.push(`🔢 เต็ม : ${spaced(result.full_number)}`)
+  if (result.top_number) lineLines.push(`⬆️ บน : ${emojiNum(result.top_number)}`)
+  if (result.bottom_number) lineLines.push(`⬇️ ล่าง : ${emojiNum(result.bottom_number)}`)
+  if (result.full_number) lineLines.push(`🔢 เต็ม : ${emojiNum(result.full_number)}`)
 
   return { tg: tgLines.join('\n'), line: lineLines.join('\n') }
 }
