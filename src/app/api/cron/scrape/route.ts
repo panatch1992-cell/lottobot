@@ -71,7 +71,10 @@ async function saveAndSend(
       ...(resultData.top_number ? { top_number: resultData.top_number } : {}),
       ...(resultData.bottom_number ? { bottom_number: resultData.bottom_number } : {}),
       ...(resultData.full_number ? { full_number: resultData.full_number } : {}),
-      theme: 'shopee',
+      theme: settings.default_theme || 'shopee',
+      font_style: settings.default_font_style || 'rounded',
+      digit_size: settings.default_digit_size || 'm',
+      layout: settings.default_layout || 'horizontal',
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
