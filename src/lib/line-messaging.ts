@@ -92,13 +92,16 @@ export async function pushFlexResult(
 ): Promise<{ success: boolean; error?: string }> {
   const { name, flag, date, top_number, bottom_number, full_number, theme } = params
 
+  // Pastel colors matching LINE Emoji sticker style
   const digitColors = [
-    { bg: '#FFD1DC', text: '#D4526E' },
-    { bg: '#FFE5B4', text: '#CC8400' },
-    { bg: '#FFFACD', text: '#B8960C' },
-    { bg: '#C1F0C1', text: '#2D8B2D' },
-    { bg: '#B8E0FF', text: '#2E6DA4' },
-    { bg: '#E0C8FF', text: '#7B4DBF' },
+    { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' },  // pink
+    { bg: '#B8E0FF', text: '#4A90C4', border: '#8CC8F0' },  // blue
+    { bg: '#C1F0C1', text: '#4CAF50', border: '#8ED88E' },  // green
+    { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' },  // orange
+    { bg: '#E0C8FF', text: '#8B5DBF', border: '#C89EFF' },  // purple
+    { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' },  // yellow
+    { bg: '#FFB8C6', text: '#C0475D', border: '#FF8CA3' },  // rose
+    { bg: '#B8F0E8', text: '#2D8B7B', border: '#80DCC8' },  // teal
   ]
 
   const themes: Record<string, { bg: string; accent: string; digitBg: string; digitText: string; title: string; sub: string }> = {
@@ -112,14 +115,16 @@ export async function pushFlexResult(
 
   function makeDigits(num: string, startIdx: number) {
     return num.split('').map((d, i) => {
-      const c = theme === 'macaroon' || !theme
-        ? digitColors[(startIdx + i) % digitColors.length]
-        : { bg: t.digitBg, text: t.digitText }
+      const c = digitColors[(startIdx + i) % digitColors.length]
       return {
         type: 'box', layout: 'vertical',
-        contents: [{ type: 'text', text: d, size: 'xxl', weight: 'bold', align: 'center', color: c.text }],
-        width: '50px', height: '50px', cornerRadius: '14px',
-        backgroundColor: c.bg, justifyContent: 'center', alignItems: 'center', margin: 'sm',
+        contents: [{
+          type: 'text', text: d, size: '3xl', weight: 'bold', align: 'center', color: c.text,
+        }],
+        width: '56px', height: '56px', cornerRadius: '28px',
+        backgroundColor: c.bg,
+        borderWidth: '2px', borderColor: c.border,
+        justifyContent: 'center', alignItems: 'center', margin: 'md',
       }
     })
   }
