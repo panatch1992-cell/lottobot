@@ -13,7 +13,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'telegram' | 'line'>('all')
 
-  useEffect(() => { loadHistory() }, [date])
+  useEffect(() => { loadHistory() }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadHistory() {
     setLoading(true)
@@ -41,82 +41,91 @@ export default function HistoryPage() {
   const filtered = filter === 'all' ? logs : logs.filter(l => l.channel === filter)
   const tgSent = logs.filter(l => l.channel === 'telegram' && l.status === 'sent').length
   const lineSent = logs.filter(l => l.channel === 'line' && l.status === 'sent').length
-  const lineGroups = new Set(logs.filter(l => l.channel === 'line' && l.status === 'sent').map(l => l.line_group_id)).size
   const failedCount = logs.filter(l => l.status === 'failed').length
 
-  function statusBadge(status: string) {
-    if (status === 'sent') return <span className="badge-success">✓ สำเร็จ</span>
-    if (status === 'sending') return <span className="badge-warn">● กำลังส่ง</span>
-    if (status === 'failed') return <span className="badge-danger">✗ ล้มเหลว</span>
-    return <span className="badge-gray">⏳ รอ</span>
-  }
-
-  function msgTypeBadge(type: string) {
-    if (type === 'result') return <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">ผล</span>
-    if (type === 'countdown') return <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">⏰</span>
-    if (type === 'stats') return <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">📊</span>
-    return null
-  }
-
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">📋 ประวัติส่ง</h2>
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">ประวัติส่ง</h2>
 
       {/* Date + Filter */}
       <div className="flex gap-2 items-center">
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input flex-1" />
-        <select value={filter} onChange={e => setFilter(e.target.value as typeof filter)} className="input w-auto">
-          <option value="all">ทั้งหมด</option>
-          <option value="telegram">Telegram</option>
-          <option value="line">LINE</option>
-        </select>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input flex-1 text-sm" />
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
+          {(['all', 'telegram', 'line'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                filter === f ? 'bg-white shadow-sm text-text-primary' : 'text-text-secondary'
+              }`}
+            >
+              {f === 'all' ? 'ทั้งหมด' : f === 'telegram' ? 'TG' : 'LINE'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Stats Summary */}
-      <div className="card bg-gradient-to-r from-gold/5 to-success/5">
-        <p className="text-sm font-medium">📊 สรุปวันนี้</p>
-        <p className="text-xs text-text-secondary mt-1">
-          ส่งสำเร็จ TG <span className="font-mono font-bold text-text-primary">{tgSent}</span> → LINE <span className="font-mono font-bold text-line-green">{lineSent}</span> ({lineGroups} กลุ่ม)
-          {failedCount > 0 && <span className="text-danger ml-2">· ล้มเหลว {failedCount}</span>}
-        </p>
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="card text-center py-2.5">
+          <p className="text-lg font-bold font-mono text-text-primary">{tgSent}</p>
+          <p className="text-[10px] text-text-secondary">✈️ Telegram</p>
+        </div>
+        <div className="card text-center py-2.5">
+          <p className="text-lg font-bold font-mono text-line-green">{lineSent}</p>
+          <p className="text-[10px] text-text-secondary">💬 LINE</p>
+        </div>
+        <div className="card text-center py-2.5">
+          <p className={`text-lg font-bold font-mono ${failedCount > 0 ? 'text-danger' : 'text-success'}`}>{failedCount}</p>
+          <p className="text-[10px] text-text-secondary">{failedCount > 0 ? '✗ ล้มเหลว' : '✓ ปกติ'}</p>
+        </div>
       </div>
 
       {/* Log List */}
       {loading ? (
-        <div className="text-center py-8"><div className="animate-spin text-2xl">📋</div></div>
+        <div className="text-center py-12"><div className="animate-spin text-2xl">📋</div></div>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-text-secondary text-center py-8">ไม่มีประวัติส่งในวันนี้</p>
+        <div className="text-center py-12 text-text-secondary">
+          <p className="text-3xl mb-2">📭</p>
+          <p className="text-sm">ไม่มีประวัติส่งในวันนี้</p>
+        </div>
       ) : (
         <div className="card p-0 divide-y divide-gray-50">
           {filtered.map(log => {
             const lottery = lotteries[log.lottery_id]
             const group = log.line_group_id ? groups[log.line_group_id] : null
+            const isTg = log.channel === 'telegram'
+
             return (
               <div key={log.id} className="px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <span className="text-lg">{lottery?.flag || '🎰'}</span>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium truncate">{lottery?.name || 'Unknown'}</p>
-                        {msgTypeBadge(log.msg_type)}
+                      <p className="text-sm font-medium truncate">{lottery?.name || 'Unknown'}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          isTg ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                        }`}>
+                          {isTg ? '✈️ TG' : '💬 LINE'}
+                        </span>
+                        {group && <span className="text-[10px] text-text-secondary">{group.name}</span>}
+                        {log.duration_ms && <span className="text-[10px] text-text-secondary">{(log.duration_ms / 1000).toFixed(1)}s</span>}
                       </div>
-                      <p className="text-xs text-text-secondary">
-                        {log.channel === 'telegram' ? '✈️ Telegram' : '💬 LINE'}
-                        {group && ` · ${group.name}`}
-                        {log.duration_ms && ` · ${(log.duration_ms / 1000).toFixed(1)}วิ`}
-                      </p>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-0.5 shrink-0">
-                    {statusBadge(log.status)}
+                    {log.status === 'sent' && <span className="text-[11px] font-medium text-green-600">✓ สำเร็จ</span>}
+                    {log.status === 'sending' && <span className="text-[11px] font-medium text-amber-500">● กำลังส่ง</span>}
+                    {log.status === 'failed' && <span className="text-[11px] font-medium text-red-500">✗ ล้มเหลว</span>}
+                    {log.status === 'pending' && <span className="text-[11px] text-text-secondary">⏳ รอ</span>}
                     <span className="text-[10px] text-text-secondary">
                       {log.sent_at ? new Date(log.sent_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—'}
                     </span>
                   </div>
                 </div>
                 {log.error_message && (
-                  <p className="text-xs text-danger mt-1 bg-danger/5 rounded px-2 py-1">{log.error_message}</p>
+                  <p className="text-xs text-red-500 mt-1.5 bg-red-50 rounded-lg px-2.5 py-1.5">{log.error_message}</p>
                 )}
               </div>
             )
