@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import type { Lottery } from '@/types'
 
 interface ResultMap {
@@ -16,6 +16,7 @@ const THEME_OPTIONS = [
   {
     id: 'macaroon',
     label: 'Macaroon',
+    emoji: '🧁',
     preview: ['#FFD1DC', '#FFE5B4', '#FFFACD', '#C1F0C1', '#B8E0FF', '#E0C8FF'],
     bg: '#ffffff',
     digits: [
@@ -33,6 +34,7 @@ const THEME_OPTIONS = [
   {
     id: 'candy',
     label: 'Candy',
+    emoji: '🍬',
     preview: ['#FF6B8A', '#FF9F43', '#FFDD59'],
     bg: '#FFF5F5',
     digits: [
@@ -50,6 +52,7 @@ const THEME_OPTIONS = [
   {
     id: 'ocean',
     label: 'Ocean',
+    emoji: '🌊',
     preview: ['#2B6CB0', '#3182CE', '#4299E1', '#38B2AC'],
     bg: '#EBF8FF',
     digits: [
@@ -67,6 +70,7 @@ const THEME_OPTIONS = [
   {
     id: 'gold',
     label: 'Gold',
+    emoji: '✨',
     preview: ['#F59E0B', '#FBBF24', '#FCD34D'],
     bg: '#FFFBEB',
     digits: [
@@ -84,6 +88,7 @@ const THEME_OPTIONS = [
   {
     id: 'dark',
     label: 'Dark',
+    emoji: '🌙',
     preview: ['#E53E3E', '#DD6B20', '#D69E2E', '#38A169', '#3182CE'],
     bg: '#1A202C',
     digits: [
@@ -101,19 +106,21 @@ const THEME_OPTIONS = [
 ]
 
 const FONT_OPTIONS = [
-  { id: 'rounded', label: 'มน' },
-  { id: 'sharp', label: 'คม' },
-  { id: 'outline', label: 'เส้น' },
+  { id: 'rounded', label: 'มน', icon: '●', desc: 'นุ่มน่ารัก' },
+  { id: 'sharp', label: 'คม', icon: '◆', desc: 'คมชัด' },
+  { id: 'outline', label: 'เส้น', icon: '○', desc: 'โปร่งใส' },
 ]
 
 const SIZE_OPTIONS = [
-  { id: 's', label: 'S', px: 28 },
-  { id: 'm', label: 'M', px: 36 },
-  { id: 'l', label: 'L', px: 44 },
+  { id: 's', label: 'S', px: 28, desc: 'เล็ก' },
+  { id: 'm', label: 'M', px: 36, desc: 'กลาง' },
+  { id: 'l', label: 'L', px: 44, desc: 'ใหญ่' },
 ]
 
-function MiniDigit({ digit, index, theme, fontStyle, size }: {
-  digit: string; index: number; theme: typeof THEME_OPTIONS[0]; fontStyle: string; size: string
+const SAMPLE_DIGITS = ['8', '8', '8']
+
+function MiniDigit({ digit, index, theme, fontStyle, size, animate }: {
+  digit: string; index: number; theme: typeof THEME_OPTIONS[0]; fontStyle: string; size: string; animate?: boolean
 }) {
   const c = theme.digits[index % theme.digits.length]
   const isOutline = fontStyle === 'outline'
@@ -123,6 +130,7 @@ function MiniDigit({ digit, index, theme, fontStyle, size }: {
 
   return (
     <span
+      className={animate ? 'animate-bounce-digit' : ''}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -138,10 +146,47 @@ function MiniDigit({ digit, index, theme, fontStyle, size }: {
         letterSpacing: fontStyle === 'sharp' ? 1 : 0,
         margin: '0 2px',
         fontFamily: 'monospace',
+        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}
     >
       {digit}
     </span>
+  )
+}
+
+// Fun mini preview in theme picker
+function ThemeMiniPreview({ theme, fontStyle }: {
+  theme: typeof THEME_OPTIONS[0]; fontStyle: string
+}) {
+  return (
+    <div
+      className="rounded-lg p-2 flex items-center justify-center gap-0.5 transition-all duration-300"
+      style={{ backgroundColor: theme.bg, minHeight: 44 }}
+    >
+      {SAMPLE_DIGITS.map((d, i) => {
+        const c = theme.digits[i % theme.digits.length]
+        const isOutline = fontStyle === 'outline'
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center justify-center transition-all duration-300"
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 6,
+              backgroundColor: isOutline ? 'transparent' : c.bg,
+              border: `1.5px solid ${c.border}`,
+              color: isOutline ? c.border : c.text,
+              fontSize: 13,
+              fontWeight: fontStyle === 'sharp' ? 900 : 700,
+              fontFamily: 'monospace',
+            }}
+          >
+            {d}
+          </span>
+        )
+      })}
+    </div>
   )
 }
 
@@ -157,22 +202,25 @@ function PreviewCard({ lottery, form, date, theme, fontStyle, digitSize }: {
   if (!hasAny) return null
 
   return (
-    <div className="mt-3 rounded-xl p-3 border border-gray-100" style={{ backgroundColor: '#f7f7f7' }}>
-      <p className="text-[10px] text-text-secondary mb-2 font-medium">ตัวอย่างที่จะส่งไป LINE กลุ่ม</p>
-      <div className="rounded-lg p-4 text-center" style={{ backgroundColor: theme.bg }}>
-        <p className="text-sm font-bold mb-0.5" style={{ color: theme.titleColor }}>
+    <div className="mt-3 rounded-xl overflow-hidden border border-gray-100 animate-slide-up">
+      <div className="px-3 py-1.5 bg-gradient-to-r from-gray-50 to-white flex items-center gap-1.5">
+        <span className="text-[10px]">👁</span>
+        <p className="text-[10px] text-text-secondary font-medium">ตัวอย่างที่จะส่งไป LINE กลุ่ม</p>
+      </div>
+      <div className="p-4 text-center transition-colors duration-300" style={{ backgroundColor: theme.bg }}>
+        <p className="text-sm font-bold mb-0.5 transition-colors duration-300" style={{ color: theme.titleColor }}>
           {lottery.flag} {lottery.name} {lottery.flag}
         </p>
-        <p className="text-[11px] mb-3" style={{ color: theme.dateColor }}>
+        <p className="text-[11px] mb-3 transition-colors duration-300" style={{ color: theme.dateColor }}>
           งวดวันที่ {date}
         </p>
 
         {form.top && (
           <div className="mb-3">
-            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขบน</p>
+            <p className="text-[10px] mb-1 transition-colors duration-300" style={{ color: theme.labelColor }}>เลขบน</p>
             <div className="flex justify-center">
               {form.top.split('').map((d, i) => (
-                <MiniDigit key={`t${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} />
+                <MiniDigit key={`t${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} animate />
               ))}
             </div>
           </div>
@@ -180,10 +228,10 @@ function PreviewCard({ lottery, form, date, theme, fontStyle, digitSize }: {
 
         {form.bottom && (
           <div className="mb-3">
-            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขล่าง</p>
+            <p className="text-[10px] mb-1 transition-colors duration-300" style={{ color: theme.labelColor }}>เลขล่าง</p>
             <div className="flex justify-center">
               {form.bottom.split('').map((d, i) => (
-                <MiniDigit key={`b${i}`} digit={d} index={i + 3} theme={theme} fontStyle={fontStyle} size={digitSize} />
+                <MiniDigit key={`b${i}`} digit={d} index={i + 3} theme={theme} fontStyle={fontStyle} size={digitSize} animate />
               ))}
             </div>
           </div>
@@ -191,16 +239,16 @@ function PreviewCard({ lottery, form, date, theme, fontStyle, digitSize }: {
 
         {form.full && (
           <div className="mb-3">
-            <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขเต็ม</p>
+            <p className="text-[10px] mb-1 transition-colors duration-300" style={{ color: theme.labelColor }}>เลขเต็ม</p>
             <div className="flex justify-center flex-wrap">
               {form.full.split('').map((d, i) => (
-                <MiniDigit key={`f${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} />
+                <MiniDigit key={`f${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} animate />
               ))}
             </div>
           </div>
         )}
 
-        <p className="text-[9px] mt-2" style={{ color: theme.dateColor, opacity: 0.5 }}>LottoBot</p>
+        <p className="text-[9px] mt-2 transition-colors duration-300" style={{ color: theme.dateColor, opacity: 0.5 }}>LottoBot</p>
       </div>
     </div>
   )
@@ -218,6 +266,8 @@ export default function ResultsPage() {
   const [selectedTheme, setSelectedTheme] = useState('macaroon')
   const [fontStyle, setFontStyle] = useState('rounded')
   const [digitSize, setDigitSize] = useState('m')
+  const [studioOpen, setStudioOpen] = useState(true)
+  const [wiggleKey, setWiggleKey] = useState(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [forms, setForms] = useState<Record<string, { top: string; bottom: string; full: string }>>({})
@@ -314,6 +364,16 @@ export default function ResultsPage() {
     }
   }
 
+  const randomizeStyle = useCallback(() => {
+    const themes = THEME_OPTIONS.map(t => t.id)
+    const fonts = FONT_OPTIONS.map(f => f.id)
+    const sizes = SIZE_OPTIONS.map(s => s.id)
+    setSelectedTheme(themes[Math.floor(Math.random() * themes.length)])
+    setFontStyle(fonts[Math.floor(Math.random() * fonts.length)])
+    setDigitSize(sizes[Math.floor(Math.random() * sizes.length)])
+    setWiggleKey(k => k + 1)
+  }, [])
+
   function hasExistingResult(lotteryId: string): boolean {
     const r = results[lotteryId]
     return !!(r?.top_number || r?.bottom_number || r?.full_number)
@@ -384,77 +444,159 @@ export default function ResultsPage() {
         />
       </div>
 
-      {/* Style controls */}
-      <div className="card">
-        {/* Theme row */}
-        <p className="text-[11px] text-text-secondary mb-2 font-medium">🎨 ธีมสี</p>
-        <div className="flex gap-2 overflow-x-auto p-1 -m-1">
-          {THEME_OPTIONS.map(theme => (
-            <button
-              key={theme.id}
-              onClick={() => setSelectedTheme(theme.id)}
-              className={`shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
-                selectedTheme === theme.id
-                  ? 'bg-gold/10 ring-2 ring-gold shadow-sm'
-                  : 'bg-gray-50 hover:bg-gray-100'
-              }`}
+      {/* ========== STYLE STUDIO ========== */}
+      <div className="card overflow-hidden">
+        {/* Studio header — clickable toggle */}
+        <button
+          onClick={() => setStudioOpen(!studioOpen)}
+          className="w-full flex items-center justify-between -mt-1 mb-2"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">🎨</span>
+            <span className="text-sm font-semibold">Style Studio</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 text-purple-600 font-medium">
+              {currentTheme.label}
+            </span>
+          </div>
+          <span className={`text-gray-400 text-xs transition-transform duration-200 ${studioOpen ? 'rotate-180' : ''}`}>
+            ▼
+          </span>
+        </button>
+
+        {studioOpen && (
+          <div className="animate-slide-up">
+            {/* Live preview strip — shows current style at a glance */}
+            <div
+              className="rounded-xl p-3 mb-4 text-center transition-all duration-300"
+              style={{ backgroundColor: currentTheme.bg }}
             >
-              <div className="flex gap-0.5">
-                {theme.preview.slice(0, 4).map((color, i) => (
-                  <span
-                    key={i}
-                    className="w-4 h-4 rounded"
-                    style={{ backgroundColor: color }}
+              <p className="text-[11px] font-bold mb-2 transition-colors duration-300" style={{ color: currentTheme.titleColor }}>
+                {currentTheme.emoji} ตัวอย่างสไตล์ {currentTheme.emoji}
+              </p>
+              <div key={wiggleKey} className="flex justify-center gap-1">
+                {['1', '2', '3', '4', '5'].map((d, i) => (
+                  <MiniDigit
+                    key={`demo-${i}`}
+                    digit={d}
+                    index={i}
+                    theme={currentTheme}
+                    fontStyle={fontStyle}
+                    size={digitSize}
+                    animate
                   />
                 ))}
               </div>
-              <span className="text-[10px] font-medium">{theme.label}</span>
+              <p className="text-[9px] mt-2 transition-colors duration-300" style={{ color: currentTheme.dateColor }}>
+                {FONT_OPTIONS.find(f => f.id === fontStyle)?.desc} · {SIZE_OPTIONS.find(s => s.id === digitSize)?.desc}
+              </p>
+            </div>
+
+            {/* Theme grid — visual cards */}
+            <div className="mb-4">
+              <p className="text-[11px] text-text-secondary mb-2 font-medium flex items-center gap-1">
+                🎭 เลือกธีม
+              </p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {THEME_OPTIONS.map(theme => (
+                  <button
+                    key={theme.id}
+                    onClick={() => {
+                      setSelectedTheme(theme.id)
+                      setWiggleKey(k => k + 1)
+                    }}
+                    className={`relative flex flex-col items-center gap-1 p-1.5 rounded-xl transition-all duration-200 ${
+                      selectedTheme === theme.id
+                        ? 'ring-2 ring-gold shadow-md scale-105 bg-gold/5'
+                        : 'bg-gray-50 hover:bg-gray-100 hover:scale-102'
+                    }`}
+                  >
+                    {selectedTheme === theme.id && (
+                      <span className="absolute -top-1 -right-1 text-[10px] animate-pop-in">✓</span>
+                    )}
+                    <ThemeMiniPreview theme={theme} fontStyle={fontStyle} />
+                    <span className="text-[9px] font-medium leading-none">{theme.emoji}</span>
+                    <span className="text-[9px] text-text-secondary leading-none">{theme.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Font style + Size — side by side with visual indicators */}
+            <div className="flex gap-3 mb-3">
+              {/* Font style */}
+              <div className="flex-1">
+                <p className="text-[11px] text-text-secondary mb-1.5 font-medium flex items-center gap-1">
+                  ✏️ ฟอนต์
+                </p>
+                <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
+                  {FONT_OPTIONS.map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        setFontStyle(f.id)
+                        setWiggleKey(k => k + 1)
+                      }}
+                      className={`flex-1 py-2 flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200 ${
+                        fontStyle === f.id
+                          ? 'bg-white shadow-sm scale-105'
+                          : 'hover:bg-white/50'
+                      }`}
+                    >
+                      <span className={`text-sm transition-all ${fontStyle === f.id ? 'scale-125' : 'opacity-50'}`}>
+                        {f.icon}
+                      </span>
+                      <span className={`text-[10px] font-medium ${fontStyle === f.id ? 'text-text-primary' : 'text-text-secondary'}`}>
+                        {f.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Size */}
+              <div className="flex-1">
+                <p className="text-[11px] text-text-secondary mb-1.5 font-medium flex items-center gap-1">
+                  📐 ขนาด
+                </p>
+                <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
+                  {SIZE_OPTIONS.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setDigitSize(s.id)
+                        setWiggleKey(k => k + 1)
+                      }}
+                      className={`flex-1 py-2 flex flex-col items-center gap-0.5 rounded-lg transition-all duration-200 ${
+                        digitSize === s.id
+                          ? 'bg-white shadow-sm scale-105'
+                          : 'hover:bg-white/50'
+                      }`}
+                    >
+                      <span
+                        className={`font-bold font-mono transition-all ${digitSize === s.id ? '' : 'opacity-40'}`}
+                        style={{ fontSize: s.id === 's' ? 12 : s.id === 'm' ? 16 : 20 }}
+                      >
+                        {s.label}
+                      </span>
+                      <span className={`text-[9px] ${digitSize === s.id ? 'text-text-primary' : 'text-text-secondary'}`}>
+                        {s.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Randomize button */}
+            <button
+              onClick={randomizeStyle}
+              className="w-full py-2 rounded-xl bg-gradient-to-r from-pink-50 via-purple-50 to-blue-50 hover:from-pink-100 hover:via-purple-100 hover:to-blue-100 text-xs font-medium text-purple-600 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+            >
+              <span className={wiggleKey > 0 ? 'animate-wiggle' : ''} key={wiggleKey}>🎲</span>
+              สุ่มสไตล์
             </button>
-          ))}
-        </div>
-
-        {/* Font style + Size row */}
-        <div className="flex gap-4 mt-4">
-          {/* Font style */}
-          <div className="flex-1">
-            <p className="text-[11px] text-text-secondary mb-1.5 font-medium">Aa สไตล์ฟอนต์</p>
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              {FONT_OPTIONS.map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setFontStyle(f.id)}
-                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
-                    fontStyle === f.id
-                      ? 'bg-white shadow-sm text-text-primary'
-                      : 'text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
           </div>
-
-          {/* Size */}
-          <div className="flex-1">
-            <p className="text-[11px] text-text-secondary mb-1.5 font-medium">↕ ขนาด</p>
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              {SIZE_OPTIONS.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => setDigitSize(s.id)}
-                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
-                    digitSize === s.id
-                      ? 'bg-white shadow-sm text-text-primary'
-                      : 'text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Search */}
