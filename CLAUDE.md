@@ -14,22 +14,20 @@
 - ส่งสถิติย้อนหลัง 10 งวดหลังออกผล
 - Admin Dashboard จัดการหวย / ดูประวัติ / ตั้งค่า
 
-**Flow การทำงาน:**
+**Flow การทำงาน (ปัจจุบัน):**
 ```
-🌐 เว็บผลหวย
-  ↓ (Scraping ทุก 30 วิ ก่อนเวลาออก)
+📝 Admin กรอกผลหวย (หน้าเว็บ)
+  ↓ (บันทึก DB)
 ✈️ Telegram Bot → Admin Channel (ดู log)
-  ↓ (n8n ตรวจจับข้อความ)
-⚡ n8n Automation
-  ↓ (ส่งต่อผ่าน LINE Notify)
-💬 LINE กลุ่ม (5+ กลุ่ม ส่งพร้อมกัน)
+  ↓ (ส่งพร้อมกัน)
+💬 LINE กลุ่ม (ผ่าน LINE Messaging API + รูปตัวเลขการ์ตูน)
 ```
 
-**ทำไมต้องผ่าน Telegram ก่อน?**
-- Telegram Bot API ฟรี ไม่จำกัดข้อความ
-- ใช้เป็น "สมอง" ดึงผล + ประมวลผล
-- LINE ได้รับข้อความแบบ official (LINE Notify) → ไม่เสี่ยงโดนแบน
-- Admin ดูสถานะหลังบ้านผ่าน Telegram ได้
+**หมายเหตุ:**
+- LINE Notify ปิดบริการ มี.ค. 2025 → เปลี่ยนเป็น LINE Messaging API
+- ไม่ใช้ n8n แล้ว → ส่ง LINE ตรงจาก API route
+- Bot เข้ากลุ่ม LINE → webhook จับ group ID อัตโนมัติ
+- ส่งผลพร้อมรูปตัวเลขการ์ตูน (ImageResponse from next/og)
 
 **กลุ่มผู้ใช้:**
 - **User (สมาชิกกลุ่ม LINE)** — รับผลหวย + Countdown + สถิติ ในกลุ่ม LINE
@@ -48,8 +46,8 @@
 | Database | Supabase PostgreSQL |
 | Auth | Supabase Auth (Admin login) |
 | Telegram | Telegram Bot API (ส่งผล + Admin log) |
-| Automation | n8n (TG → LINE bridge) |
-| LINE | LINE Notify (ส่งเข้ากลุ่ม) |
+| LINE | LINE Messaging API (push message + webhook) |
+| Image Gen | next/og ImageResponse (ตัวเลขการ์ตูน) |
 | Web Scraping | Cheerio + Axios (server-side) |
 | Deployment | Vercel |
 | Font | IBM Plex Sans Thai + Space Grotesk |

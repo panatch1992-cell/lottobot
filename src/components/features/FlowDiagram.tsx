@@ -2,10 +2,9 @@
 
 export default function FlowDiagram() {
   const steps = [
-    { icon: '🌐', label: 'เว็บผลหวย', sub: 'Scraping ทุก 30 วิ', color: 'bg-blue-500' },
-    { icon: '✈️', label: 'Telegram Bot', sub: 'Admin Channel', color: 'bg-[#1a222c]' },
-    { icon: '⚡', label: 'n8n', sub: 'Automation', color: 'bg-orange-500' },
-    { icon: '💬', label: 'LINE กลุ่ม', sub: '5+ กลุ่ม', color: 'bg-[#06c755]' },
+    { icon: '📝', label: 'Admin กรอกผล', sub: 'หน้าเว็บ', color: 'bg-blue-500' },
+    { icon: '✈️', label: 'Telegram', sub: 'Admin Log', color: 'bg-[#1a222c]' },
+    { icon: '💬', label: 'LINE กลุ่ม', sub: 'ส่งพร้อมรูป', color: 'bg-[#06c755]' },
   ]
 
   return (
