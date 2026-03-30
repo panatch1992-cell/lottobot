@@ -178,10 +178,7 @@ export async function GET(req: NextRequest) {
       if (sourceInfo) {
         // Get selectors from scrape_sources table (if configured)
         const { data: browserSources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true).limit(1)
-        const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {
-          top_selector: '.top-number, .three-top, [class*="3ตัวบน"], td:nth-child(2)',
-          bottom_selector: '.bottom-number, .two-bottom, [class*="2ตัวล่าง"], td:nth-child(5)',
-        }
+        const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {}
 
         const browserRes = await browserScrape(sourceInfo.url, selectors)
 
