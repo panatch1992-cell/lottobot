@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 
 const navItems = [
   { href: '/dashboard', label: 'หน้าหลัก', icon: '📊' },
-  { href: '/results', label: 'แก้ไขผล', icon: '✏️' },
+  { href: '/messages', label: 'ส่งข้อความ', icon: '💬' },
   { href: '/scraping', label: 'ดึงผล', icon: '🤖' },
   { href: '/lotteries', label: 'หวย', icon: '🎰' },
   { href: '/history', label: 'ประวัติ', icon: '📋' },
