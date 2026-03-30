@@ -160,7 +160,10 @@ export default function LotteriesPage() {
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowForm(false)}>
           <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-lg mb-4">{editingId ? '✏️ แก้ไขหวย' : '➕ เพิ่มหวยใหม่'}</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">{editingId ? '✏️ แก้ไขหวย' : '➕ เพิ่มหวยใหม่'}</h3>
+              <button onClick={() => setShowForm(false)} className="text-text-secondary hover:text-text-primary p-1" aria-label="ปิด">✕</button>
+            </div>
 
             <div className="space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -170,7 +173,7 @@ export default function LotteriesPage() {
                 </div>
                 <div className="col-span-3">
                   <label className="label">ชื่อหวย *</label>
-                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" placeholder="นิเคอิเช้า VIP" />
+                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" placeholder="นิเคอิเช้า VIP" aria-required="true" />
                 </div>
               </div>
 
@@ -182,7 +185,7 @@ export default function LotteriesPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="label">เวลาออกผล *</label>
-                  <input type="time" value={form.result_time} onChange={e => setForm({ ...form, result_time: e.target.value })} className="input" />
+                  <input type="time" value={form.result_time} onChange={e => setForm({ ...form, result_time: e.target.value })} className="input" aria-required="true" />
                 </div>
                 <div>
                   <label className="label">เวลาปิดรับ</label>
