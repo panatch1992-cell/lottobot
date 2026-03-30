@@ -5,7 +5,7 @@ interface TelegramPreviewProps {
 }
 
 export default function TelegramPreview({ message }: TelegramPreviewProps) {
-  const sample = message || `🇯🇵 <b>นิเคอิ(บ่าย) VIP</b>\nงวด 20 มี.ค. 69 · ดึงจาก nikkeivipstock.com\n⬆️ บน : <code>0 3 4</code>\n⬇️ ล่าง : <code>9 7</code>\n──────\n✓ ส่ง LINE แล้ว 5 กลุ่ม (0.8 วิ)`
+  const sample = message || `🇱🇦 <b>หวยลาว HD</b>\nงวด 30 มี.ค. 69\n⬆️ บน : <code>7 2 6</code>\n⬇️ ล่าง : <code>9 4</code>\n──────\n✓ ส่ง LINE แล้ว 1 กลุ่ม`
 
   // Simple HTML to displayable text
   const displayText = sample
