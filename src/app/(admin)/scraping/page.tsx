@@ -430,9 +430,10 @@ export default function ScrapingPage() {
                   )}
 
                   {/* Sources list */}
-                  {lotterySources.length === 0 && !stockMap[lottery.id] && !browserMap[lottery.id] ? (
+                  {lotterySources.length === 0 && !stockMap[lottery.id] && !browserMap[lottery.id] && (
                     <p className="text-xs text-text-secondary italic">{'ยังไม่มี scrape source — กด "+ เพิ่ม Source" เพื่อตั้งค่า URL + CSS Selectors'}</p>
-                  ) : lotterySources.length > 0 ? (
+                  )}
+                  {lotterySources.length > 0 && (
                     <div className="space-y-2">
                       {lotterySources.map(source => (
                         <div key={source.id} className={`card text-xs space-y-1 ${!source.is_active ? 'opacity-50' : ''}`}>
