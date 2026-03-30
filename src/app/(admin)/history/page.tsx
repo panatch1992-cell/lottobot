@@ -119,9 +119,13 @@ export default function HistoryPage() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                             results[log.result_id].source_url === 'manual'
                               ? 'bg-amber-50 text-amber-600'
-                              : 'bg-purple-50 text-purple-600'
+                              : results[log.result_id].source_url?.startsWith('stock://')
+                                ? 'bg-green-50 text-green-600'
+                                : 'bg-purple-50 text-purple-600'
                           }`}>
-                            {results[log.result_id].source_url === 'manual' ? '👤 มือ' : '🤖 อัตโนมัติ'}
+                            {results[log.result_id].source_url === 'manual' ? '👤 มือ'
+                              : results[log.result_id].source_url?.startsWith('stock://') ? '📈 หุ้น'
+                              : '🤖 scrape'}
                           </span>
                         )}
                         {group && <span className="text-[10px] text-text-secondary">{group.name}</span>}

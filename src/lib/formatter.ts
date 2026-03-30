@@ -5,6 +5,20 @@ function spaced(num: string): string {
   return num.split('').join(' ')  // "034" → "0 3 4"
 }
 
+function getSourceLabel(sourceUrl: string | null): string {
+  if (!sourceUrl) return '🤖 auto'
+  if (sourceUrl === 'manual') return '👤 กรอกมือ'
+  if (sourceUrl.startsWith('stock://')) {
+    const symbol = sourceUrl.replace('stock://', '')
+    return `📈 ${symbol}`
+  }
+  try {
+    return `🤖 ${new URL(sourceUrl).hostname}`
+  } catch {
+    return `🤖 ${sourceUrl}`
+  }
+}
+
 export function formatThaiDate(dateStr: string): string {
   const d = new Date(dateStr)
   const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
@@ -16,12 +30,7 @@ export function formatThaiDate(dateStr: string): string {
 export function formatResult(lottery: Lottery, result: Result) {
   const dateStr = formatThaiDate(result.draw_date)
 
-  // Determine source label
-  const sourceLabel = result.source_url === 'manual'
-    ? '👤 กรอกมือ'
-    : result.source_url
-      ? `🤖 ${new URL(result.source_url).hostname}`
-      : '🤖 auto'
+  const sourceLabel = getSourceLabel(result.source_url)
 
   // Telegram (HTML)
   const tgLines = [
@@ -83,11 +92,7 @@ export function formatTgAdminLog(
   durationMs: number
 ) {
   const dateStr = formatThaiDate(result.draw_date)
-  const adminSourceLabel = result.source_url === 'manual'
-    ? '👤 กรอกมือ'
-    : result.source_url
-      ? `🤖 ${result.source_url}`
-      : '🤖 auto'
+  const adminSourceLabel = getSourceLabel(result.source_url)
 
   const lines = [
     `${lottery.flag} <b>${lottery.name}</b>`,

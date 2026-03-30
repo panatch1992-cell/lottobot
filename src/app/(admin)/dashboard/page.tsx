@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [todayStatuses, setTodayStatuses] = useState<TodayLotteryStatus[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [scrapeConfigured, setScrapeConfigured] = useState(0)
+  const [autoConfigured, setAutoConfigured] = useState(0)
 
   useEffect(() => {
     loadDashboard()
@@ -27,12 +27,12 @@ export default function DashboardPage() {
     try {
       const todayStr = today()
 
-      const [lotteriesRes, groupsRes, resultsRes, logsRes, scrapeRes] = await Promise.all([
+      const [lotteriesRes, groupsRes, resultsRes, logsRes, scrapeInfoRes] = await Promise.all([
         supabase.from('lotteries').select('*').order('sort_order'),
         supabase.from('line_groups').select('*'),
         supabase.from('results').select('*').eq('draw_date', todayStr),
         supabase.from('send_logs').select('*').gte('created_at', todayStr),
-        supabase.from('scrape_sources').select('lottery_id').eq('is_active', true),
+        fetch('/api/scrape-sources').then(r => r.json()),
       ])
 
       const lotteries = (lotteriesRes.data || []) as Lottery[]
@@ -44,9 +44,11 @@ export default function DashboardPage() {
       const sentLogs = logs.filter(l => l.status === 'sent')
       const failedLogs = logs.filter(l => l.status === 'failed')
 
-      // Count unique lotteries with scrape sources
-      const scrapeLotteryIds = new Set((scrapeRes.data || []).map((s: { lottery_id: string }) => s.lottery_id))
-      setScrapeConfigured(scrapeLotteryIds.size)
+      // Count auto-configured: stock lotteries + scrape sources
+      const stockIds = Object.keys(scrapeInfoRes.stockLotteries || {})
+      const scrapeIds = (scrapeInfoRes.sources || []).map((s: { lottery_id: string }) => s.lottery_id)
+      const allAutoIds = new Set(stockIds.concat(scrapeIds))
+      setAutoConfigured(allAutoIds.size)
 
       setStats({
         totalLotteries: lotteries.length,
@@ -144,7 +146,7 @@ export default function DashboardPage() {
             <div>
               <p className="font-semibold text-sm">🤖 ดึงอัตโนมัติ</p>
               <p className="text-xs text-text-secondary mt-0.5">
-                {scrapeConfigured > 0 ? `ตั้งค่าแล้ว ${scrapeConfigured} หวย` : 'ยังไม่ตั้งค่า'}
+                {autoConfigured > 0 ? `auto ${autoConfigured}/${stats.activeLotteries} หวย` : 'ยังไม่ตั้งค่า'}
               </p>
             </div>
             <span className="text-blue-500">→</span>
