@@ -112,6 +112,22 @@ export const THEMES: Record<string, ThemeConfig> = {
       { bg: '#805AD5', text: '#fff', border: '#6B46C1' },
     ],
   },
+  shopee: {
+    name: 'Shopee',
+    background: '#FFF8E7',
+    titleColor: '#8B5E1A',
+    dateColor: '#B8860B',
+    labelColor: '#CC9933',
+    footerColor: '#D4A84B',
+    digits: [
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+    ],
+  },
 }
 
 function getTheme(name?: string): ThemeConfig {
@@ -137,6 +153,7 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
   const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
   const fs = FONT_STYLES[fontStyle as keyof typeof FONT_STYLES] || FONT_STYLES.rounded
   const isOutline = fontStyle === 'outline'
+  const isShopee = theme.name === 'Shopee'
 
   return React.createElement(
     'div',
@@ -145,14 +162,14 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: sz.box,
-        height: sz.box,
-        borderRadius: isOutline ? sz.radius : sz.radius,
+        width: isShopee ? sz.box * 1.1 : sz.box,
+        height: isShopee ? sz.box * 1.1 : sz.box,
+        borderRadius: isShopee ? sz.box : (isOutline ? sz.radius : sz.radius),
         backgroundColor: isOutline ? 'transparent' : c.bg,
-        border: `${sz.borderW}px solid ${c.border}`,
+        border: `${isShopee ? sz.borderW + 2 : sz.borderW}px solid ${c.border}`,
         color: isOutline ? c.border : c.text,
-        fontSize: sz.fontSize,
-        fontWeight: fs.fontWeight,
+        fontSize: isShopee ? sz.fontSize * 1.2 : sz.fontSize,
+        fontWeight: isShopee ? 900 : fs.fontWeight,
         letterSpacing: fs.letterSpacing,
         margin: `0 ${sz.gap}px`,
       },
