@@ -100,22 +100,42 @@ const THEME_OPTIONS = [
   },
 ]
 
-function MiniDigit({ digit, index, theme }: { digit: string; index: number; theme: typeof THEME_OPTIONS[0] }) {
+const FONT_OPTIONS = [
+  { id: 'rounded', label: 'มน' },
+  { id: 'sharp', label: 'คม' },
+  { id: 'outline', label: 'เส้น' },
+]
+
+const SIZE_OPTIONS = [
+  { id: 's', label: 'S', px: 28 },
+  { id: 'm', label: 'M', px: 36 },
+  { id: 'l', label: 'L', px: 44 },
+]
+
+function MiniDigit({ digit, index, theme, fontStyle, size }: {
+  digit: string; index: number; theme: typeof THEME_OPTIONS[0]; fontStyle: string; size: string
+}) {
   const c = theme.digits[index % theme.digits.length]
+  const isOutline = fontStyle === 'outline'
+  const sz = SIZE_OPTIONS.find(s => s.id === size) || SIZE_OPTIONS[1]
+  const fontSize = Math.round(sz.px * 0.56)
+  const radius = Math.round(sz.px * 0.28)
+
   return (
     <span
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: c.bg,
+        width: sz.px,
+        height: sz.px,
+        borderRadius: radius,
+        backgroundColor: isOutline ? 'transparent' : c.bg,
         border: `2px solid ${c.border}`,
-        color: c.text,
-        fontSize: 20,
-        fontWeight: 800,
+        color: isOutline ? c.border : c.text,
+        fontSize,
+        fontWeight: fontStyle === 'sharp' ? 900 : fontStyle === 'outline' ? 700 : 800,
+        letterSpacing: fontStyle === 'sharp' ? 1 : 0,
         margin: '0 2px',
         fontFamily: 'monospace',
       }}
@@ -125,11 +145,13 @@ function MiniDigit({ digit, index, theme }: { digit: string; index: number; them
   )
 }
 
-function PreviewCard({ lottery, form, date, theme }: {
+function PreviewCard({ lottery, form, date, theme, fontStyle, digitSize }: {
   lottery: Lottery
   form: { top: string; bottom: string; full: string }
   date: string
   theme: typeof THEME_OPTIONS[0]
+  fontStyle: string
+  digitSize: string
 }) {
   const hasAny = form.top || form.bottom || form.full
   if (!hasAny) return null
@@ -150,7 +172,7 @@ function PreviewCard({ lottery, form, date, theme }: {
             <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขบน</p>
             <div className="flex justify-center">
               {form.top.split('').map((d, i) => (
-                <MiniDigit key={`t${i}`} digit={d} index={i} theme={theme} />
+                <MiniDigit key={`t${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} />
               ))}
             </div>
           </div>
@@ -161,7 +183,7 @@ function PreviewCard({ lottery, form, date, theme }: {
             <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขล่าง</p>
             <div className="flex justify-center">
               {form.bottom.split('').map((d, i) => (
-                <MiniDigit key={`b${i}`} digit={d} index={i + 3} theme={theme} />
+                <MiniDigit key={`b${i}`} digit={d} index={i + 3} theme={theme} fontStyle={fontStyle} size={digitSize} />
               ))}
             </div>
           </div>
@@ -172,7 +194,7 @@ function PreviewCard({ lottery, form, date, theme }: {
             <p className="text-[10px] mb-1" style={{ color: theme.labelColor }}>เลขเต็ม</p>
             <div className="flex justify-center flex-wrap">
               {form.full.split('').map((d, i) => (
-                <MiniDigit key={`f${i}`} digit={d} index={i} theme={theme} />
+                <MiniDigit key={`f${i}`} digit={d} index={i} theme={theme} fontStyle={fontStyle} size={digitSize} />
               ))}
             </div>
           </div>
@@ -194,6 +216,8 @@ export default function ResultsPage() {
   const [search, setSearch] = useState('')
   const [showSentOnly, setShowSentOnly] = useState(false)
   const [selectedTheme, setSelectedTheme] = useState('macaroon')
+  const [fontStyle, setFontStyle] = useState('rounded')
+  const [digitSize, setDigitSize] = useState('m')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [forms, setForms] = useState<Record<string, { top: string; bottom: string; full: string }>>({})
@@ -261,6 +285,8 @@ export default function ResultsPage() {
           bottom_number: form.bottom || null,
           full_number: form.full || null,
           theme: selectedTheme,
+          font_style: fontStyle,
+          digit_size: digitSize,
         }),
       })
 
@@ -358,17 +384,18 @@ export default function ResultsPage() {
         />
       </div>
 
-      {/* Theme picker */}
-      <div className="card py-3">
-        <p className="text-[11px] text-text-secondary mb-2 font-medium">🎨 สไตล์ข้อความ</p>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* Style controls */}
+      <div className="card">
+        {/* Theme row */}
+        <p className="text-[11px] text-text-secondary mb-2 font-medium">🎨 ธีมสี</p>
+        <div className="flex gap-2 overflow-x-auto p-1 -m-1">
           {THEME_OPTIONS.map(theme => (
             <button
               key={theme.id}
               onClick={() => setSelectedTheme(theme.id)}
               className={`shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
                 selectedTheme === theme.id
-                  ? 'bg-gold/10 ring-2 ring-gold'
+                  ? 'bg-gold/10 ring-2 ring-gold shadow-sm'
                   : 'bg-gray-50 hover:bg-gray-100'
               }`}
             >
@@ -384,6 +411,49 @@ export default function ResultsPage() {
               <span className="text-[10px] font-medium">{theme.label}</span>
             </button>
           ))}
+        </div>
+
+        {/* Font style + Size row */}
+        <div className="flex gap-4 mt-4">
+          {/* Font style */}
+          <div className="flex-1">
+            <p className="text-[11px] text-text-secondary mb-1.5 font-medium">Aa สไตล์ฟอนต์</p>
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              {FONT_OPTIONS.map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setFontStyle(f.id)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    fontStyle === f.id
+                      ? 'bg-white shadow-sm text-text-primary'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Size */}
+          <div className="flex-1">
+            <p className="text-[11px] text-text-secondary mb-1.5 font-medium">↕ ขนาด</p>
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              {SIZE_OPTIONS.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setDigitSize(s.id)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    digitSize === s.id
+                      ? 'bg-white shadow-sm text-text-primary'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -503,7 +573,7 @@ export default function ResultsPage() {
                 </div>
 
                 {/* Live preview */}
-                <PreviewCard lottery={lottery} form={form} date={thaiDate} theme={currentTheme} />
+                <PreviewCard lottery={lottery} form={form} date={thaiDate} theme={currentTheme} fontStyle={fontStyle} digitSize={digitSize} />
               </div>
             )
           })}
