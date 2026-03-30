@@ -55,6 +55,7 @@ export default function ScrapingPage() {
     lottery_id?: string
     result?: { top_number?: string; bottom_number?: string; full_number?: string }
     source_url?: string
+    html_snippet?: string
   } | null>(null)
 
   // Stock + browser lottery maps
@@ -220,6 +221,7 @@ export default function ScrapingPage() {
           full_number: data.result.full_number,
         } : undefined,
         source_url: data.source_url,
+        html_snippet: data.html_snippet,
       })
     } catch {
       setScrapeResult({ success: false, error: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', lottery: lottery.name })
@@ -413,7 +415,15 @@ export default function ScrapingPage() {
                           )}
                         </div>
                       ) : (
-                        <p className="text-sm text-red-700">❌ {scrapeResult.error}</p>
+                        <div className="space-y-2">
+                          <p className="text-sm text-red-700">❌ {scrapeResult.error}</p>
+                          {scrapeResult.html_snippet && (
+                            <details className="text-xs">
+                              <summary className="cursor-pointer text-text-secondary hover:text-text-primary">ดูข้อความที่ Puppeteer เห็น</summary>
+                              <pre className="mt-1 bg-white rounded p-2 text-[10px] whitespace-pre-wrap max-h-[200px] overflow-y-auto border">{scrapeResult.html_snippet}</pre>
+                            </details>
+                          )}
+                        </div>
                       )}
                       <button onClick={() => setScrapeResult(null)} className="text-[10px] text-text-secondary underline mt-2">ปิด</button>
                     </div>
