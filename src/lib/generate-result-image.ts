@@ -115,17 +115,19 @@ export const THEMES: Record<string, ThemeConfig> = {
   shopee: {
     name: 'Shopee',
     background: '#FFF8E7',
-    titleColor: '#8B5E1A',
-    dateColor: '#B8860B',
-    labelColor: '#CC9933',
-    footerColor: '#D4A84B',
+    titleColor: '#5D4037',
+    dateColor: '#8D6E63',
+    labelColor: '#A1887F',
+    footerColor: '#BCAAA4',
     digits: [
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
-      { bg: '#FFF0CC', text: '#CC7700', border: '#CC7700' },
+      { bg: 'transparent', text: '#F48FB1', border: 'transparent' },  // pink
+      { bg: 'transparent', text: '#FFB74D', border: 'transparent' },  // orange
+      { bg: 'transparent', text: '#AED581', border: 'transparent' },  // green
+      { bg: 'transparent', text: '#81D4FA', border: 'transparent' },  // blue
+      { bg: 'transparent', text: '#CE93D8', border: 'transparent' },  // purple
+      { bg: 'transparent', text: '#FFF176', border: 'transparent' },  // yellow
+      { bg: 'transparent', text: '#EF9A9A', border: 'transparent' },  // rose
+      { bg: 'transparent', text: '#80CBC4', border: 'transparent' },  // teal
     ],
   },
 }
@@ -155,6 +157,13 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
   const isOutline = fontStyle === 'outline'
   const isShopee = theme.name === 'Shopee'
 
+  // Text-stroke effect via textShadow (Satori doesn't support -webkit-text-stroke)
+  const strokeColor = '#42210b'
+  const s = 3 // stroke width
+  const textStroke = isShopee
+    ? `${s}px ${s}px 0 ${strokeColor}, -${s}px -${s}px 0 ${strokeColor}, ${s}px -${s}px 0 ${strokeColor}, -${s}px ${s}px 0 ${strokeColor}, ${s}px 0 0 ${strokeColor}, -${s}px 0 0 ${strokeColor}, 0 ${s}px 0 ${strokeColor}, 0 -${s}px 0 ${strokeColor}`
+    : 'none'
+
   return React.createElement(
     'div',
     {
@@ -162,16 +171,18 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: isShopee ? sz.box * 1.1 : sz.box,
-        height: isShopee ? sz.box * 1.1 : sz.box,
-        borderRadius: isShopee ? sz.box : (isOutline ? sz.radius : sz.radius),
+        width: isShopee ? sz.box * 1.15 : sz.box,
+        height: isShopee ? sz.box * 1.15 : sz.box,
+        borderRadius: isShopee ? '50%' : sz.radius,
         backgroundColor: isOutline ? 'transparent' : c.bg,
-        border: `${isShopee ? sz.borderW + 2 : sz.borderW}px solid ${c.border}`,
+        border: isShopee ? 'none' : `${sz.borderW}px solid ${c.border}`,
         color: isOutline ? c.border : c.text,
-        fontSize: isShopee ? sz.fontSize * 1.2 : sz.fontSize,
-        fontWeight: isShopee ? 900 : fs.fontWeight,
-        fontFamily: isShopee ? 'Fredoka, sans-serif' : 'sans-serif',
-        margin: `0 ${sz.gap}px`,
+        fontSize: isShopee ? sz.fontSize * 1.3 : sz.fontSize,
+        fontWeight: 900,
+        fontFamily: isShopee ? 'Sniglet, sans-serif' : 'sans-serif',
+        letterSpacing: isShopee ? 0 : fs.letterSpacing,
+        textShadow: textStroke,
+        margin: `0 ${isShopee ? sz.gap + 2 : sz.gap}px`,
       },
     },
     digit
