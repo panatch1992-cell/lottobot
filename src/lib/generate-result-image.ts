@@ -170,7 +170,7 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
         color: isOutline ? c.border : c.text,
         fontSize: isShopee ? sz.fontSize * 1.2 : sz.fontSize,
         fontWeight: isShopee ? 900 : fs.fontWeight,
-        letterSpacing: fs.letterSpacing,
+        fontFamily: isShopee ? 'Fredoka, sans-serif' : 'sans-serif',
         margin: `0 ${sz.gap}px`,
       },
     },
