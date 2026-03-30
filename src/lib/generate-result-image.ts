@@ -1,5 +1,5 @@
 // LottoBot — Generate lottery result image JSX for ImageResponse (next/og)
-// Uses Satori under the hood — works on Vercel Edge Runtime with zero dependencies
+// Style: Macaroon pastel color digits (inspired by LINE Emoji sticker packs)
 
 import React from 'react'
 
@@ -12,21 +12,26 @@ export interface ResultImageData {
   full_number?: string
 }
 
-const BUBBLE_COLORS = [
-  '#FF6B8A', // pink
-  '#FF9F43', // orange
-  '#FFDD59', // yellow
-  '#5CE0D2', // teal
-  '#74B9FF', // blue
-  '#A29BFE', // purple
+// Macaroon pastel color palette — soft, cute, like LINE Emoji stickers
+const MACAROON_COLORS = [
+  { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' }, // pink
+  { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' }, // peach/orange
+  { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' }, // lemon yellow
+  { bg: '#C1F0C1', text: '#2D8B2D', border: '#8ED88E' }, // mint green
+  { bg: '#B8E0FF', text: '#2E6DA4', border: '#80C4FF' }, // sky blue
+  { bg: '#E0C8FF', text: '#7B4DBF', border: '#C89EFF' }, // lavender
+  { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' }, // pink (repeat for >6)
+  { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' }, // peach (repeat)
+  { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' }, // yellow (repeat)
+  { bg: '#C1F0C1', text: '#2D8B2D', border: '#8ED88E' }, // green (repeat)
 ]
 
-function getColor(index: number): string {
-  return BUBBLE_COLORS[index % BUBBLE_COLORS.length]
+function getColor(index: number) {
+  return MACAROON_COLORS[index % MACAROON_COLORS.length]
 }
 
 function DigitBubble({ digit, index }: { digit: string; index: number }) {
-  const bg = getColor(index)
+  const c = getColor(index)
   return React.createElement(
     'div',
     {
@@ -34,15 +39,16 @@ function DigitBubble({ digit, index }: { digit: string; index: number }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 90,
-        height: 90,
-        borderRadius: '50%',
-        backgroundColor: bg,
-        color: '#fff',
-        fontSize: 52,
+        width: 100,
+        height: 100,
+        borderRadius: 24,
+        backgroundColor: c.bg,
+        border: `4px solid ${c.border}`,
+        color: c.text,
+        fontSize: 60,
         fontWeight: 800,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        margin: '0 6px',
+        margin: '0 8px',
+        // Slight inner shadow effect via layered border
       },
     },
     digit
@@ -65,7 +71,7 @@ function NumberRow({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: 20,
       },
     },
     React.createElement(
@@ -74,9 +80,10 @@ function NumberRow({
         style: {
           display: 'flex',
           alignItems: 'center',
-          fontSize: 24,
-          color: '#666',
-          marginBottom: 10,
+          fontSize: 22,
+          color: '#999',
+          marginBottom: 12,
+          fontWeight: 500,
         },
       },
       label
@@ -114,9 +121,9 @@ export function buildResultImageJSX(data: ResultImageData) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 42,
+          fontSize: 38,
           fontWeight: 700,
-          color: '#333',
+          color: '#4a4a4a',
           marginBottom: 4,
         },
       },
@@ -132,27 +139,13 @@ export function buildResultImageJSX(data: ResultImageData) {
         key: 'date',
         style: {
           display: 'flex',
-          fontSize: 22,
-          color: '#888',
-          marginBottom: 24,
+          fontSize: 20,
+          color: '#aaa',
+          marginBottom: 28,
         },
       },
       `งวดวันที่ ${data.date}`
     )
-  )
-
-  // Separator
-  children.push(
-    React.createElement('div', {
-      key: 'sep1',
-      style: {
-        width: 500,
-        height: 2,
-        backgroundColor: '#e0e0e0',
-        marginBottom: 24,
-        borderRadius: 1,
-      },
-    })
   )
 
   // Top number
@@ -160,7 +153,7 @@ export function buildResultImageJSX(data: ResultImageData) {
     children.push(
       React.createElement(NumberRow, {
         key: 'top',
-        label: '⬆️ เลขบน',
+        label: 'เลขบน',
         number: data.top_number,
         colorOffset: 0,
       })
@@ -172,7 +165,7 @@ export function buildResultImageJSX(data: ResultImageData) {
     children.push(
       React.createElement(NumberRow, {
         key: 'bottom',
-        label: '⬇️ เลขล่าง',
+        label: 'เลขล่าง',
         number: data.bottom_number,
         colorOffset: 3,
       })
@@ -184,7 +177,7 @@ export function buildResultImageJSX(data: ResultImageData) {
     children.push(
       React.createElement(NumberRow, {
         key: 'full',
-        label: '🔢 เลขเต็ม',
+        label: 'เลขเต็ม',
         number: data.full_number,
         colorOffset: 0,
       })
@@ -199,17 +192,17 @@ export function buildResultImageJSX(data: ResultImageData) {
         key: 'footer',
         style: {
           display: 'flex',
-          fontSize: 14,
-          color: '#bbb',
+          fontSize: 13,
+          color: '#ccc',
           marginTop: 'auto',
           paddingTop: 16,
         },
       },
-      'LottoBot — ระบบส่งผลหวยอัตโนมัติ'
+      'LottoBot'
     )
   )
 
-  // Main container with gradient background
+  // Main container — clean white background
   return React.createElement(
     'div',
     {
@@ -220,7 +213,7 @@ export function buildResultImageJSX(data: ResultImageData) {
         justifyContent: 'center',
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%)',
+        background: '#ffffff',
         padding: 40,
         fontFamily: 'sans-serif',
       },
