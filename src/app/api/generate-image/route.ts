@@ -52,6 +52,7 @@ export async function GET(request: Request) {
     theme: url.searchParams.get('theme') || undefined,
     font_style: url.searchParams.get('font_style') || undefined,
     digit_size: url.searchParams.get('digit_size') || undefined,
+    layout: url.searchParams.get('layout') || undefined,
   }
 
   const [jsx, fontData] = await Promise.all([

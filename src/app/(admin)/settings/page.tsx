@@ -314,8 +314,9 @@ function SettingsContent() {
         {/* Theme */}
         <div>
           <label className="label">ธีม</label>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {[
+              { id: 'shopee', label: '🎀', colors: ['#F48FB1', '#FFB74D', '#AED581'] },
               { id: 'macaroon', label: '🧁', colors: ['#FFD1DC', '#FFE5B4', '#FFFACD'] },
               { id: 'candy', label: '🍬', colors: ['#FF6B8A', '#FF9F43', '#FFDD59'] },
               { id: 'ocean', label: '🌊', colors: ['#2B6CB0', '#3182CE', '#4299E1'] },
@@ -393,12 +394,34 @@ function SettingsContent() {
           </div>
         </div>
 
+        {/* Layout */}
+        <div>
+          <label className="label">เรียงตัวเลข</label>
+          <div className="flex gap-2">
+            {[
+              { id: 'horizontal', label: '➡️ แนวนอน', desc: '1 2 3' },
+              { id: 'vertical', label: '⬇️ แนวตั้ง', desc: 'ลงล่าง' },
+            ].map(l => (
+              <button
+                key={l.id}
+                onClick={() => saveSetting('default_layout', l.id)}
+                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
+                  (settings.default_layout || 'horizontal') === l.id ? 'border-gold bg-gold/5' : 'border-gray-200'
+                }`}
+              >
+                <div className="font-medium">{l.label}</div>
+                <div className="text-[10px] text-text-secondary">{l.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Preview */}
         <div className="bg-gray-50 rounded-lg p-3 text-center">
           <p className="text-[10px] text-text-secondary mb-2">ตัวอย่างรูปที่จะส่งไป LINE (ผล auto)</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'macaroon'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}`}
+            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'shopee'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'horizontal'}`}
             alt="Preview"
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />
@@ -417,7 +440,7 @@ function SettingsContent() {
                   flag: '🇱🇦',
                   top_number: '167',
                   bottom_number: '69',
-                  theme: settings.default_theme || 'macaroon',
+                  theme: settings.default_theme || 'shopee',
                 }),
               })
               const data = await res.json()

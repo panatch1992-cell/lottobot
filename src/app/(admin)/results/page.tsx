@@ -103,6 +103,24 @@ const THEME_OPTIONS = [
     dateColor: '#A0AEC0',
     labelColor: '#718096',
   },
+  {
+    id: 'shopee',
+    label: 'Shopee',
+    emoji: '🎀',
+    preview: ['#F48FB1', '#FFB74D', '#AED581', '#81D4FA', '#CE93D8'],
+    bg: '#FFF8E7',
+    digits: [
+      { bg: 'transparent', text: '#F48FB1', border: '#42210b' },
+      { bg: 'transparent', text: '#FFB74D', border: '#42210b' },
+      { bg: 'transparent', text: '#AED581', border: '#42210b' },
+      { bg: 'transparent', text: '#81D4FA', border: '#42210b' },
+      { bg: 'transparent', text: '#CE93D8', border: '#42210b' },
+      { bg: 'transparent', text: '#FFF176', border: '#42210b' },
+    ],
+    titleColor: '#5D4037',
+    dateColor: '#8D6E63',
+    labelColor: '#A1887F',
+  },
 ]
 
 const FONT_OPTIONS = [

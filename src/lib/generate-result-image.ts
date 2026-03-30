@@ -1,5 +1,6 @@
 // LottoBot — Generate lottery result image JSX for ImageResponse (next/og)
-// Multiple themes: Macaroon, Candy, Ocean, Gold, Dark
+// Themes: Macaroon, Candy, Ocean, Gold, Dark, Shopee (bubble sticker)
+// Layouts: horizontal (default), vertical
 
 import React from 'react'
 
@@ -10,9 +11,10 @@ export interface ResultImageData {
   top_number?: string
   bottom_number?: string
   full_number?: string
-  theme?: string // macaroon | candy | ocean | gold | dark
+  theme?: string
   font_style?: string // rounded | sharp | outline
   digit_size?: string // s | m | l
+  layout?: string // horizontal | vertical
 }
 
 interface DigitColor {
@@ -196,6 +198,7 @@ function NumberRow({
   theme,
   fontStyle,
   size,
+  layout,
 }: {
   label: string
   number: string
@@ -203,8 +206,10 @@ function NumberRow({
   theme: ThemeConfig
   fontStyle: string
   size: string
+  layout: string
 }) {
   const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
+  const isVertical = layout === 'vertical'
   return React.createElement(
     'div',
     {
@@ -234,8 +239,10 @@ function NumberRow({
       {
         style: {
           display: 'flex',
+          flexDirection: isVertical ? 'column' : 'row',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: isVertical ? 8 : 0,
         },
       },
       ...number.split('').map((digit, i) =>
@@ -256,6 +263,7 @@ export function buildResultImageJSX(data: ResultImageData) {
   const theme = getTheme(data.theme)
   const fontStyle = data.font_style || 'rounded'
   const digitSize = data.digit_size || 'm'
+  const layout = data.layout || 'horizontal'
   const children: React.ReactNode[] = []
 
   children.push(
@@ -303,6 +311,7 @@ export function buildResultImageJSX(data: ResultImageData) {
         theme,
         fontStyle,
         size: digitSize,
+        layout,
       })
     )
   }
@@ -317,6 +326,7 @@ export function buildResultImageJSX(data: ResultImageData) {
         theme,
         fontStyle,
         size: digitSize,
+        layout,
       })
     )
   }
@@ -331,6 +341,7 @@ export function buildResultImageJSX(data: ResultImageData) {
         theme,
         fontStyle,
         size: digitSize,
+        layout,
       })
     )
   }
