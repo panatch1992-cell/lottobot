@@ -48,7 +48,14 @@ export default function ScrapingPage() {
 
   // Scrape now state
   const [scraping, setScraping] = useState<string | null>(null)
-  const [scrapeResult, setScrapeResult] = useState<{ success: boolean; error?: string; lottery?: string } | null>(null)
+  const [scrapeResult, setScrapeResult] = useState<{
+    success: boolean
+    error?: string
+    lottery?: string
+    lottery_id?: string
+    result?: { top_number?: string; bottom_number?: string; full_number?: string }
+    source_url?: string
+  } | null>(null)
 
   // Stock lottery map (lottery_id → stock info)
   const [stockMap, setStockMap] = useState<Record<string, { symbol: string; name: string }>>({})
@@ -198,7 +205,18 @@ export default function ScrapingPage() {
         body: JSON.stringify({ action: 'scrape_now', lottery_id: lottery.id }),
       })
       const data = await res.json()
-      setScrapeResult({ success: data.success, error: data.error, lottery: lottery.name })
+      setScrapeResult({
+        success: data.success,
+        error: data.error,
+        lottery: lottery.name,
+        lottery_id: lottery.id,
+        result: data.result ? {
+          top_number: data.result.top_number,
+          bottom_number: data.result.bottom_number,
+          full_number: data.result.full_number,
+        } : undefined,
+        source_url: data.source_url,
+      })
     } catch {
       setScrapeResult({ success: false, error: 'Network error', lottery: lottery.name })
     }
@@ -262,17 +280,16 @@ export default function ScrapingPage() {
         </div>
       )}
 
-      {/* Scrape result toast */}
-      {scrapeResult && (
-        <div className={`card ${scrapeResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} border`}>
-          <p className="text-sm">
-            {scrapeResult.success
-              ? `✅ ดึงผล ${scrapeResult.lottery} สำเร็จ — บันทึก + ส่ง TG/LINE แล้ว`
-              : `❌ ${scrapeResult.lottery}: ${scrapeResult.error}`}
-          </p>
-          <button onClick={() => setScrapeResult(null)} className="text-xs text-text-secondary underline mt-1">ปิด</button>
+      {/* Link to style settings */}
+      <a href="/settings" className="block card bg-gradient-to-r from-purple-50 to-purple-50/50 border border-purple-200 hover:border-purple-300 transition-colors">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-purple-700">🎨 ตั้งค่าธีมรูปตัวเลข</p>
+            <p className="text-xs text-purple-500">เลือกธีม + สไตล์สำหรับรูปที่ส่งไป LINE (ทั้ง auto และกรอกมือ)</p>
+          </div>
+          <span className="text-purple-400">→</span>
         </div>
-      )}
+      </a>
 
       {/* Search */}
       <input
@@ -341,6 +358,55 @@ export default function ScrapingPage() {
                       </button>
                     )}
                   </div>
+
+                  {/* Scrape result inline */}
+                  {scrapeResult && scrapeResult.lottery_id === lottery.id && (
+                    <div className={`rounded-lg border p-3 ${scrapeResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      {scrapeResult.success && scrapeResult.result ? (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-green-700">
+                            ✅ ดึงผลสำเร็จ — บันทึก + ส่ง TG/LINE แล้ว
+                          </p>
+                          <div className="flex items-center gap-4 text-sm">
+                            {scrapeResult.result.top_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขบน</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.top_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                            {scrapeResult.result.bottom_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขล่าง</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.bottom_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                            {scrapeResult.result.full_number && (
+                              <div>
+                                <span className="text-[10px] text-text-secondary">เลขเต็ม</span>
+                                <p className="font-mono font-bold text-lg tracking-widest">{scrapeResult.result.full_number.split('').join(' ')}</p>
+                              </div>
+                            )}
+                          </div>
+                          {/* Preview image */}
+                          <div className="mt-2">
+                            <p className="text-[10px] text-text-secondary mb-1">ตัวอย่างรูปที่ส่งไป LINE:</p>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`/api/generate-image?lottery_name=${encodeURIComponent(lottery.name)}&flag=${encodeURIComponent(lottery.flag)}&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=${scrapeResult.result.top_number || ''}&bottom_number=${scrapeResult.result.bottom_number || ''}&full_number=${scrapeResult.result.full_number || ''}`}
+                              alt="Result preview"
+                              className="rounded-lg shadow-sm max-w-[240px]"
+                            />
+                          </div>
+                          {scrapeResult.source_url && (
+                            <p className="text-[10px] text-green-600">แหล่ง: {scrapeResult.source_url}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-red-700">❌ {scrapeResult.error}</p>
+                      )}
+                      <button onClick={() => setScrapeResult(null)} className="text-[10px] text-text-secondary underline mt-2">ปิด</button>
+                    </div>
+                  )}
 
                   {/* Sources list */}
                   {lotterySources.length === 0 && !stockMap[lottery.id] ? (
