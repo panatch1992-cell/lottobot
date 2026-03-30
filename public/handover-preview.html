@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ข้อความส่งมอบงาน LottoBot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    background: #f0f0f0;
+    padding: 20px;
+    color: #333;
+    line-height: 1.8;
+  }
+
+  .chat-container {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .chat-header {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #999;
+    font-size: 12px;
+  }
+
+  .bubble {
+    background: #fff;
+    border-radius: 18px;
+    border-top-left-radius: 4px;
+    padding: 16px 20px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    font-size: 15px;
+    max-width: 95%;
+  }
+
+  .bubble h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #1a1a2e;
+  }
+
+  .bubble h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    color: #1a1a2e;
+  }
+
+  .bubble p {
+    margin: 4px 0;
+    font-size: 14px;
+  }
+
+  .bubble a {
+    color: #3b82f6;
+    text-decoration: none;
+  }
+
+  .bubble .link-box {
+    background: #f0f7ff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+
+  .bubble .link-box .url {
+    color: #2563eb;
+    font-weight: 500;
+    word-break: break-all;
+  }
+
+  .bubble .link-box .desc {
+    color: #666;
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .done-list {
+    list-style: none;
+    margin: 8px 0;
+  }
+
+  .done-list li {
+    padding: 3px 0;
+    font-size: 14px;
+  }
+
+  .done-list li::before {
+    content: '✅ ';
+  }
+
+  .check-list {
+    list-style: none;
+    margin: 8px 0;
+  }
+
+  .check-list li {
+    padding: 4px 0;
+    font-size: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .check-list li .box {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid #e8e8e8;
+    margin: 14px 0;
+  }
+
+  .note-box {
+    background: #fff9e6;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    font-size: 13px;
+    color: #665a3a;
+  }
+
+  .payment-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 14px;
+  }
+
+  .payment-table td {
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .payment-table td:last-child {
+    text-align: right;
+    font-weight: 500;
+    font-family: 'Space Grotesk', monospace;
+  }
+
+  .payment-table tr:last-child td {
+    border-bottom: none;
+    font-weight: 700;
+    font-size: 16px;
+    color: #1a1a2e;
+    padding-top: 8px;
+  }
+
+  .time-stamp {
+    text-align: right;
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 4px;
+    margin-bottom: 16px;
+  }
+
+  .preview-label {
+    text-align: center;
+    background: #ffeb3b;
+    color: #333;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 20px;
+    display: inline-block;
+    margin: 0 auto 20px;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+</style>
+</head>
+<body>
+
+<div class="chat-container">
+
+  <div class="preview-label">ตัวอย่างข้อความ — ยังไม่ได้ส่ง</div>
+
+  <!-- Bubble 1: Greeting + Links -->
+  <div class="bubble">
+    <h3>สวัสดีครับ ส่งมอบระบบ LottoBot เรียบร้อยแล้วครับ 🙏</h3>
+
+    <div class="link-box">
+      <div class="url">🌐 lottobot-chi.vercel.app</div>
+      <div class="desc">ระบบพร้อมใช้งาน</div>
+    </div>
+
+    <div class="link-box">
+      <div class="url">📖 lottobot-chi.vercel.app/manual.html</div>
+      <div class="desc">คู่มือใช้งาน (กดปุ่ม 📖 มุมขวาบนก็ได้)</div>
+    </div>
+  </div>
+  <div class="time-stamp">ยังไม่ส่ง</div>
+
+  <!-- Bubble 2: What's done -->
+  <div class="bubble">
+    <h4>สิ่งที่ทำเสร็จแล้ว:</h4>
+    <ul class="done-list">
+      <li>ระบบกรอกผลหวย 43 รายการ — กรอกเลข กดส่ง ถึง TG + LINE ทันที</li>
+      <li>เชื่อมต่อ LINE Messaging API — Bot "หน้าบ้าน" อยู่ในกลุ่ม "บ้าน" แล้ว</li>
+      <li>ส่งผลพร้อมรูปตัวเลขสีสัน (การ์ตูน) เข้า LINE อัตโนมัติ</li>
+      <li>Webhook จับกลุ่ม LINE อัตโนมัติ — เชิญ bot เข้ากลุ่มไหน ก็ส่งไปกลุ่มนั้น</li>
+      <li>หน้า Dashboard / กรอกผล / ประวัติ / ตั้งค่า ปรับ UX ใหม่ ใช้งานง่าย</li>
+    </ul>
+  </div>
+  <div class="time-stamp">ยังไม่ส่ง</div>
+
+  <!-- Bubble 3: Checklist -->
+  <div class="bubble">
+    <h4>ขอให้ช่วยตรวจสอบ:</h4>
+    <ul class="check-list">
+      <li><span class="box"></span> ล็อกอินเข้าระบบได้ปกติ</li>
+      <li><span class="box"></span> กดแท็บ "กรอกผล" → กรอกเลขทดสอบ → กด "ส่งผล"</li>
+      <li><span class="box"></span> เช็ค Telegram ว่าได้รับข้อความ</li>
+      <li><span class="box"></span> เช็คกลุ่ม LINE "บ้าน" ว่าได้รับรูป + ข้อความ</li>
+      <li><span class="box"></span> ลองกด "แก้ไข" แก้เลขแล้วส่งใหม่</li>
+      <li><span class="box"></span> ลองค้นหาชื่อหวยในหน้ากรอกผล</li>
+      <li><span class="box"></span> เช็คหน้า "ประวัติ" ว่าแสดงสถานะส่งถูกต้อง</li>
+      <li><span class="box"></span> ถ้าต้องการเพิ่มกลุ่ม LINE → เชิญ bot "หน้าบ้าน" เข้ากลุ่มใหม่</li>
+    </ul>
+  </div>
+  <div class="time-stamp">ยังไม่ส่ง</div>
+
+  <!-- Bubble 4: Notes + Payment -->
+  <div class="bubble">
+    <div class="note-box">
+      💡 กดส่งผลแล้ว TG + LINE ได้รับ <strong>ทันที</strong> ไม่ต้องรอเวลาออกผล<br>
+      💡 ถ้ากรอกผิดกรอกใหม่ได้เลย ระบบทับอัตโนมัติ<br>
+      💡 รับประกันแก้ Bug ฟรี 30 วัน มีปัญหาแจ้งได้เลยครับ
+    </div>
+
+    <hr class="divider">
+
+    <h4>สรุปค่าบริการ:</h4>
+    <table class="payment-table">
+      <tr>
+        <td>ค่าพัฒนาทั้งหมด</td>
+        <td>฿13,000</td>
+      </tr>
+      <tr>
+        <td>ชำระแล้ว (งวดแรก)</td>
+        <td>฿6,500</td>
+      </tr>
+      <tr>
+        <td>คงเหลือ</td>
+        <td>฿6,500</td>
+      </tr>
+    </table>
+
+    <p style="font-size: 13px; color: #666; margin-top: 10px;">
+      รบกวนชำระส่วนที่เหลือ ฿6,500 หลังตรวจสอบระบบเรียบร้อยแล้วนะครับ ขอบคุณครับ 🙏
+    </p>
+  </div>
+  <div class="time-stamp">ยังไม่ส่ง</div>
+
+</div>
+
+</body>
+</html>
