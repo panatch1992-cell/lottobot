@@ -59,6 +59,8 @@ export async function GET(request: Request) {
     bottom_number: bottom_number || undefined,
     full_number: full_number || undefined,
     theme: url.searchParams.get('theme') || undefined,
+    font_style: url.searchParams.get('font_style') || undefined,
+    digit_size: url.searchParams.get('digit_size') || undefined,
   }
 
   const jsx = buildResultImageJSX(data)

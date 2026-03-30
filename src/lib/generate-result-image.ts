@@ -11,6 +11,8 @@ export interface ResultImageData {
   bottom_number?: string
   full_number?: string
   theme?: string // macaroon | candy | ocean | gold | dark
+  font_style?: string // rounded | sharp | outline
+  digit_size?: string // s | m | l
 }
 
 interface DigitColor {
@@ -116,8 +118,26 @@ function getTheme(name?: string): ThemeConfig {
   return THEMES[name || 'macaroon'] || THEMES.macaroon
 }
 
-function DigitBubble({ digit, index, theme }: { digit: string; index: number; theme: ThemeConfig }) {
+const SIZE_CONFIG = {
+  s: { box: 70, fontSize: 40, borderW: 3, radius: 16, gap: 6 },
+  m: { box: 100, fontSize: 60, borderW: 4, radius: 24, gap: 8 },
+  l: { box: 130, fontSize: 80, borderW: 5, radius: 30, gap: 10 },
+}
+
+const FONT_STYLES = {
+  rounded: { fontWeight: 800, letterSpacing: 0 },
+  sharp: { fontWeight: 900, letterSpacing: 2 },
+  outline: { fontWeight: 700, letterSpacing: 0 },
+}
+
+function DigitBubble({ digit, index, theme, fontStyle, size }: {
+  digit: string; index: number; theme: ThemeConfig; fontStyle: string; size: string
+}) {
   const c = theme.digits[index % theme.digits.length]
+  const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
+  const fs = FONT_STYLES[fontStyle as keyof typeof FONT_STYLES] || FONT_STYLES.rounded
+  const isOutline = fontStyle === 'outline'
+
   return React.createElement(
     'div',
     {
@@ -125,15 +145,16 @@ function DigitBubble({ digit, index, theme }: { digit: string; index: number; th
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 100,
-        height: 100,
-        borderRadius: 24,
-        backgroundColor: c.bg,
-        border: `4px solid ${c.border}`,
-        color: c.text,
-        fontSize: 60,
-        fontWeight: 800,
-        margin: '0 8px',
+        width: sz.box,
+        height: sz.box,
+        borderRadius: isOutline ? sz.radius : sz.radius,
+        backgroundColor: isOutline ? 'transparent' : c.bg,
+        border: `${sz.borderW}px solid ${c.border}`,
+        color: isOutline ? c.border : c.text,
+        fontSize: sz.fontSize,
+        fontWeight: fs.fontWeight,
+        letterSpacing: fs.letterSpacing,
+        margin: `0 ${sz.gap}px`,
       },
     },
     digit
@@ -145,12 +166,17 @@ function NumberRow({
   number,
   colorOffset,
   theme,
+  fontStyle,
+  size,
 }: {
   label: string
   number: string
   colorOffset: number
   theme: ThemeConfig
+  fontStyle: string
+  size: string
 }) {
+  const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
   return React.createElement(
     'div',
     {
@@ -158,7 +184,7 @@ function NumberRow({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: size === 'l' ? 24 : 20,
       },
     },
     React.createElement(
@@ -167,7 +193,7 @@ function NumberRow({
         style: {
           display: 'flex',
           alignItems: 'center',
-          fontSize: 22,
+          fontSize: sz.box < 80 ? 18 : 22,
           color: theme.labelColor,
           marginBottom: 12,
           fontWeight: 500,
@@ -190,6 +216,8 @@ function NumberRow({
           digit,
           index: i + colorOffset,
           theme,
+          fontStyle,
+          size,
         })
       )
     )
@@ -198,6 +226,8 @@ function NumberRow({
 
 export function buildResultImageJSX(data: ResultImageData) {
   const theme = getTheme(data.theme)
+  const fontStyle = data.font_style || 'rounded'
+  const digitSize = data.digit_size || 'm'
   const children: React.ReactNode[] = []
 
   children.push(
@@ -243,6 +273,8 @@ export function buildResultImageJSX(data: ResultImageData) {
         number: data.top_number,
         colorOffset: 0,
         theme,
+        fontStyle,
+        size: digitSize,
       })
     )
   }
@@ -255,6 +287,8 @@ export function buildResultImageJSX(data: ResultImageData) {
         number: data.bottom_number,
         colorOffset: 3,
         theme,
+        fontStyle,
+        size: digitSize,
       })
     )
   }
@@ -267,6 +301,8 @@ export function buildResultImageJSX(data: ResultImageData) {
         number: data.full_number,
         colorOffset: 0,
         theme,
+        fontStyle,
+        size: digitSize,
       })
     )
   }
