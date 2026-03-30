@@ -1,12 +1,15 @@
 // Browser Scraper — ใช้ Puppeteer + Chromium bypass Cloudflare
 // สำหรับหวย Hanoi/Laos ที่เว็บบล็อก axios
 //
-// ใช้ @sparticuz/chromium สำหรับ Vercel serverless
-// ต้องใช้ Vercel Pro (timeout 60s) เพราะ browser launch ใช้เวลา 3-5s
+// ใช้ @sparticuz/chromium-min + ดาวน์โหลด Chromium จาก CDN
+// ต้องใช้ Vercel Pro (timeout 60s) เพราะ browser launch ใช้เวลา 5-10s
 
 import puppeteer from 'puppeteer-core'
-import chromium from '@sparticuz/chromium'
+import chromium from '@sparticuz/chromium-min'
 import type { SelectorConfig } from '@/types'
+
+// Chromium binary CDN — ดาวน์โหลดอัตโนมัติตอน cold start
+const CHROMIUM_PACK_URL = 'https://github.com/nicholasgasior/puppeteer-lambda-chromium/releases/download/v131.0.0/chromium-v131.0.0-pack.tar'
 
 interface BrowserScrapeResult {
   success: boolean
@@ -32,7 +35,7 @@ export async function browserScrape(
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: { width: 1280, height: 720 },
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
       headless: true,
     })
 
@@ -104,7 +107,7 @@ export async function browserFetchHTML(url: string): Promise<{
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: { width: 1280, height: 720 },
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
       headless: true,
     })
 
