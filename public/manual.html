@@ -331,12 +331,10 @@
     justify-content: center;
     width: 44px;
     height: 44px;
-    border-radius: 50%;
-    color: #fff;
+    border-radius: 12px;
     font-size: 24px;
     font-weight: 800;
     margin: 0 3px;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.12);
   }
 
   .img-preview .row-label {
@@ -437,10 +435,15 @@
       <div class="section-title">📝 วิธีส่งผลหวย (ใช้ทุกวัน)</div>
       <ol class="step-list">
         <li>กดแท็บ <strong>"กรอกผล"</strong> ที่แถบด้านล่าง</li>
-        <li>หาหวยที่ต้องการ → กรอก <strong>เลขบน / เลขล่าง</strong></li>
+        <li>เลือก <strong>🎨 สไตล์ข้อความ</strong> ที่ต้องการ (Macaroon / Candy / Ocean / Gold / Dark)
+          <span class="sub">สีของตัวเลขจะเปลี่ยนตามสไตล์ที่เลือก</span>
+        </li>
+        <li>หาหวยที่ต้องการ → กรอก <strong>เลขบน / เลขล่าง</strong>
+          <span class="sub">ดู Preview ด้านล่างก่อนกดส่ง — เห็นได้เลยว่า LINE กลุ่มจะเห็นแบบไหน</span>
+        </li>
         <li>กดปุ่ม <strong>"ส่งผล"</strong></li>
         <li>ระบบส่งอัตโนมัติไปทั้ง Telegram และ LINE กลุ่ม
-          <span class="sub">LINE จะได้รับทั้งรูปตัวเลขสีสัน + ข้อความ</span>
+          <span class="sub">LINE จะได้รับรูปตัวเลขตามสไตล์ที่เลือก + ข้อความ</span>
         </li>
         <li>เช็คสถานะได้ที่หน้า <strong>"หน้าหลัก"</strong> (TG ✓ / LINE ✓)</li>
       </ol>
@@ -450,19 +453,20 @@
     <div class="section">
       <div class="section-title">👀 ตัวอย่างที่ LINE กลุ่มจะได้รับ</div>
 
-      <div class="img-preview">
-        <h3>🇱🇦 หวยลาว HD 🇱🇦</h3>
-        <div class="date">งวดวันที่ 30 มี.ค. 69</div>
-        <div class="row-label">⬆️ เลขบน</div>
+      <!-- Theme: Macaroon (default) -->
+      <div class="img-preview" style="background:#fff;">
+        <h3 style="color:#4a4a4a;">🇱🇦 หวยลาว HD 🇱🇦</h3>
+        <div class="date" style="color:#aaa;">งวดวันที่ 30 มี.ค. 69</div>
+        <div class="row-label" style="color:#999;">เลขบน</div>
         <div>
-          <span class="digit" style="background:#FF6B8A;">7</span>
-          <span class="digit" style="background:#FF9F43;">2</span>
-          <span class="digit" style="background:#FFDD59; color:#666;">6</span>
+          <span class="digit" style="background:#FFD1DC; color:#D4526E; border:2px solid #F8A5B8;">7</span>
+          <span class="digit" style="background:#FFE5B4; color:#CC8400; border:2px solid #FFD080;">2</span>
+          <span class="digit" style="background:#FFFACD; color:#B8960C; border:2px solid #FFE44D;">6</span>
         </div>
-        <div class="row-label">⬇️ เลขล่าง</div>
+        <div class="row-label" style="color:#999;">เลขล่าง</div>
         <div>
-          <span class="digit" style="background:#5CE0D2;">9</span>
-          <span class="digit" style="background:#74B9FF;">4</span>
+          <span class="digit" style="background:#C1F0C1; color:#2D8B2D; border:2px solid #8ED88E;">9</span>
+          <span class="digit" style="background:#B8E0FF; color:#2E6DA4; border:2px solid #80C4FF;">4</span>
         </div>
         <div style="font-size:10px; color:#ccc; margin-top:12px;">LottoBot — ระบบส่งผลหวยอัตโนมัติ</div>
       </div>
@@ -551,7 +555,8 @@
         <tr><td>เว็บ Admin</td><td>lottobot-chi.vercel.app</td></tr>
         <tr><td>จำนวนหวย</td><td>43 รายการ</td></tr>
         <tr><td>ส่งผลผ่าน</td><td>LINE Messaging API</td></tr>
-        <tr><td>รูปแบบ LINE</td><td>รูปตัวเลขการ์ตูน + ข้อความ</td></tr>
+        <tr><td>รูปแบบ LINE</td><td>รูปตัวเลข 5 สไตล์ + ข้อความ</td></tr>
+        <tr><td>สไตล์</td><td>Macaroon / Candy / Ocean / Gold / Dark</td></tr>
         <tr><td>กลุ่ม LINE</td><td>เพิ่มได้ไม่จำกัด</td></tr>
         <tr><td>รับประกัน</td><td>แก้ Bug ฟรี 30 วัน</td></tr>
       </table>
