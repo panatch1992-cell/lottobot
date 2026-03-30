@@ -5,10 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { today } from '@/lib/utils'
 import type { Lottery, Result, SendLog, LineGroup, TodayLotteryStatus, DashboardStats } from '@/types'
 import FlowDiagram from '@/components/features/FlowDiagram'
-import StatCard from '@/components/features/StatCard'
 import LottoStatusCard from '@/components/features/LottoStatusCard'
-import TelegramPreview from '@/components/features/TelegramPreview'
-import LinePreview from '@/components/features/LinePreview'
+import Link from 'next/link'
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
@@ -27,7 +25,6 @@ export default function DashboardPage() {
     try {
       const todayStr = today()
 
-      // Fetch all data in parallel
       const [lotteriesRes, groupsRes, resultsRes, logsRes] = await Promise.all([
         supabase.from('lotteries').select('*').order('sort_order'),
         supabase.from('line_groups').select('*'),
@@ -53,7 +50,6 @@ export default function DashboardPage() {
         todayFailed: failedLogs.length,
       })
 
-      // Build today statuses for active lotteries
       const statuses: TodayLotteryStatus[] = lotteries
         .filter(l => l.status === 'active')
         .map(lottery => {
@@ -80,6 +76,9 @@ export default function DashboardPage() {
     }
   }
 
+  const resultsWithData = todayStatuses.filter(s => s.result)
+  const pendingCount = todayStatuses.length - resultsWithData.length
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -96,16 +95,48 @@ export default function DashboardPage() {
       {/* Flow Diagram */}
       <FlowDiagram />
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard icon="🎰" label="หวยทั้งหมด" value={stats.activeLotteries} sub={`จาก ${stats.totalLotteries}`} />
-        <StatCard icon="💬" label="กลุ่ม LINE" value={stats.activeLineGroups} sub={`จาก ${stats.totalLineGroups}`} color="text-line-green" />
-        <StatCard icon="📨" label="ส่งวันนี้" value={stats.todaySent} sub={stats.todayFailed > 0 ? `ล้มเหลว ${stats.todayFailed}` : 'ปกติ'} color={stats.todayFailed > 0 ? 'text-danger' : 'text-success'} />
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="card text-center py-3">
+          <p className="text-2xl font-bold font-mono text-gold">{stats.activeLotteries}</p>
+          <p className="text-[11px] text-text-secondary">หวยทั้งหมด</p>
+        </div>
+        <div className="card text-center py-3">
+          <p className="text-2xl font-bold font-mono text-line-green">{stats.activeLineGroups}</p>
+          <p className="text-[11px] text-text-secondary">กลุ่ม LINE</p>
+        </div>
+        <div className="card text-center py-3">
+          <p className={`text-2xl font-bold font-mono ${stats.todayFailed > 0 ? 'text-danger' : 'text-success'}`}>{stats.todaySent}</p>
+          <p className="text-[11px] text-text-secondary">
+            {stats.todayFailed > 0 ? `ส่งแล้ว · ${stats.todayFailed} ล้มเหลว` : 'ส่งวันนี้'}
+          </p>
+        </div>
       </div>
+
+      {/* Quick Action */}
+      <Link
+        href="/results"
+        className="block card bg-gradient-to-r from-gold/10 to-gold/5 border-gold/20 hover:border-gold/40 transition-colors"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-sm">📝 กรอกผลหวย</p>
+            <p className="text-xs text-text-secondary mt-0.5">
+              {pendingCount > 0
+                ? `รอกรอกผล ${pendingCount} รายการ`
+                : 'ส่งผลครบแล้ววันนี้'}
+            </p>
+          </div>
+          <span className="text-xl text-gold">→</span>
+        </div>
+      </Link>
 
       {/* สถานะวันนี้ */}
       <div className="card">
-        <h3 className="font-semibold mb-3">📊 สถานะวันนี้</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm">สถานะวันนี้</h3>
+          <span className="text-xs text-text-secondary font-mono">{resultsWithData.length}/{todayStatuses.length}</span>
+        </div>
         {todayStatuses.length === 0 ? (
           <p className="text-sm text-text-secondary text-center py-4">ไม่มีหวยที่ active</p>
         ) : (
@@ -115,18 +146,6 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* Message Previews */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <h3 className="font-semibold mb-2">✈️ ตัวอย่าง Telegram</h3>
-          <TelegramPreview />
-        </div>
-        <div>
-          <h3 className="font-semibold mb-2">💬 ตัวอย่าง LINE</h3>
-          <LinePreview />
-        </div>
       </div>
     </div>
   )

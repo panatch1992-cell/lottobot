@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import type { Lottery } from '@/types'
 
 interface ResultMap {
@@ -17,7 +17,10 @@ export default function ResultsPage() {
   const [date, setDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState<string | null>(null)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [search, setSearch] = useState('')
+  const [showSentOnly, setShowSentOnly] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Form state per lottery
   const [forms, setForms] = useState<Record<string, { top: string; bottom: string; full: string }>>({})
@@ -25,6 +28,15 @@ export default function ResultsPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toast) {
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+      toastTimer.current = setTimeout(() => setToast(null), 4000)
+    }
+    return () => { if (toastTimer.current) clearTimeout(toastTimer.current) }
+  }, [toast])
 
   async function loadData() {
     try {
@@ -34,7 +46,6 @@ export default function ResultsPage() {
       setResults(data.results || {})
       setDate(data.date || '')
 
-      // Initialize forms from existing results
       const formState: Record<string, { top: string; bottom: string; full: string }> = {}
       for (const l of (data.lotteries || [])) {
         const r = data.results?.[l.id]
@@ -46,14 +57,13 @@ export default function ResultsPage() {
       }
       setForms(formState)
     } catch {
-      setMessage({ type: 'error', text: 'โหลดข้อมูลไม่สำเร็จ' })
+      setToast({ type: 'error', text: 'โหลดข้อมูลไม่สำเร็จ' })
     } finally {
       setLoading(false)
     }
   }
 
   function updateForm(lotteryId: string, field: 'top' | 'bottom' | 'full', value: string) {
-    // Allow only digits
     const clean = value.replace(/\D/g, '')
     setForms(prev => ({
       ...prev,
@@ -64,12 +74,12 @@ export default function ResultsPage() {
   async function handleSubmit(lottery: Lottery) {
     const form = forms[lottery.id]
     if (!form?.top && !form?.bottom && !form?.full) {
-      setMessage({ type: 'error', text: 'กรุณากรอกตัวเลขอย่างน้อย 1 ช่อง' })
+      setToast({ type: 'error', text: 'กรุณากรอกตัวเลขอย่างน้อย 1 ช่อง' })
       return
     }
 
     setSending(lottery.id)
-    setMessage(null)
+    setToast(null)
 
     try {
       const res = await fetch('/api/results', {
@@ -86,13 +96,12 @@ export default function ResultsPage() {
       const data = await res.json()
 
       if (!res.ok) {
-        setMessage({ type: 'error', text: data.error || 'เกิดข้อผิดพลาด' })
+        setToast({ type: 'error', text: data.error || 'เกิดข้อผิดพลาด' })
         return
       }
 
-      setMessage({ type: 'success', text: data.summary || 'บันทึกสำเร็จ' })
+      setToast({ type: 'success', text: `${lottery.flag} ${lottery.name} — ${data.summary || 'ส่งสำเร็จ'}` })
 
-      // Update results map
       setResults(prev => ({
         ...prev,
         [lottery.id]: {
@@ -102,7 +111,7 @@ export default function ResultsPage() {
         },
       }))
     } catch {
-      setMessage({ type: 'error', text: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' })
+      setToast({ type: 'error', text: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' })
     } finally {
       setSending(null)
     }
@@ -112,6 +121,19 @@ export default function ResultsPage() {
     const r = results[lotteryId]
     return !!(r?.top_number || r?.bottom_number || r?.full_number)
   }
+
+  // Filter & search
+  const filtered = lotteries.filter(l => {
+    if (showSentOnly && !hasExistingResult(l.id)) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return l.name.toLowerCase().includes(q) || (l.country || '').toLowerCase().includes(q) || l.flag.includes(q)
+    }
+    return true
+  })
+
+  const sentCount = lotteries.filter(l => hasExistingResult(l.id)).length
+  const totalCount = lotteries.length
 
   if (loading) {
     return (
@@ -125,55 +147,104 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">📝 กรอกผลหวย</h2>
-        <span className="text-sm text-text-secondary">{date}</span>
-      </div>
-
-      {message && (
-        <div className={`p-3 rounded-lg text-sm ${
-          message.type === 'success'
-            ? 'bg-green-50 text-green-700 border border-green-200'
-            : 'bg-red-50 text-red-700 border border-red-200'
+    <div className="space-y-3">
+      {/* Toast notification - fixed top */}
+      {toast && (
+        <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium max-w-[90vw] animate-fade-in ${
+          toast.type === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
         }`}>
-          {message.text}
+          {toast.type === 'success' ? '✓' : '✗'} {toast.text}
         </div>
       )}
 
-      {lotteries.length === 0 ? (
-        <div className="card text-center py-8 text-text-secondary">
-          ไม่มีหวยที่เปิดใช้งาน
+      {/* Header with progress */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">กรอกผลหวย</h2>
+          <p className="text-xs text-text-secondary">
+            วันที่ {date} — ส่งแล้ว <span className="font-mono font-bold text-green-600">{sentCount}</span>/{totalCount}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowSentOnly(!showSentOnly)}
+            className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+              showSentOnly ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-secondary'
+            }`}
+          >
+            {showSentOnly ? 'ส่งแล้ว' : 'ทั้งหมด'}
+          </button>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500"
+          style={{ width: `${totalCount > 0 ? (sentCount / totalCount) * 100 : 0}%` }}
+        />
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="ค้นหาหวย..."
+          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-gold focus:ring-1 focus:ring-gold outline-none bg-white"
+        />
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">✕</button>
+        )}
+      </div>
+
+      {/* Lottery list */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-12 text-text-secondary">
+          <p className="text-3xl mb-2">🔍</p>
+          <p className="text-sm">{search ? 'ไม่พบหวยที่ค้นหา' : 'ไม่มีหวยที่เปิดใช้งาน'}</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {lotteries.map(lottery => {
+        <div className="space-y-2">
+          {filtered.map(lottery => {
             const form = forms[lottery.id] || { top: '', bottom: '', full: '' }
             const hasResult = hasExistingResult(lottery.id)
             const isSending = sending === lottery.id
 
             return (
-              <div key={lottery.id} className="card">
-                <div className="flex items-center justify-between mb-3">
+              <div
+                key={lottery.id}
+                className={`card transition-all duration-200 ${
+                  hasResult ? 'border-green-200 bg-green-50/30' : ''
+                } ${isSending ? 'opacity-70 pointer-events-none' : ''}`}
+              >
+                {/* Lottery header */}
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">{lottery.flag}</span>
+                    <span className="text-lg">{lottery.flag}</span>
                     <div>
                       <span className="font-medium text-sm">{lottery.name}</span>
-                      <span className="text-xs text-text-secondary ml-2">{lottery.result_time} น.</span>
+                      <span className="text-xs text-text-secondary ml-1.5">{lottery.result_time}</span>
                     </div>
                   </div>
                   {hasResult && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      มีผลแล้ว
+                    <span className="flex items-center gap-1 text-[11px] text-green-600 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+                      ส่งแล้ว
                     </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 mb-3">
+                {/* Input row */}
+                <div className="flex items-end gap-2">
                   {(lottery.result_format === '3d_2d' || lottery.result_format === '3d_only') && (
                     <>
-                      <div>
-                        <label className="text-xs text-text-secondary block mb-1">เลขบน</label>
+                      <div className="flex-1">
+                        <label className="text-[11px] text-text-secondary mb-0.5 block">เลขบน</label>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -181,12 +252,12 @@ export default function ResultsPage() {
                           value={form.top}
                           onChange={e => updateForm(lottery.id, 'top', e.target.value)}
                           placeholder="xxx"
-                          className="w-full px-2 py-1.5 text-center text-lg font-mono border border-gray-200 rounded-lg focus:border-gold focus:ring-1 focus:ring-gold outline-none"
+                          className="w-full px-2 py-2 text-center text-lg font-mono font-bold border border-gray-200 rounded-lg focus:border-gold focus:ring-2 focus:ring-gold/30 outline-none transition-shadow"
                         />
                       </div>
                       {lottery.result_format === '3d_2d' && (
-                        <div>
-                          <label className="text-xs text-text-secondary block mb-1">เลขล่าง</label>
+                        <div className="flex-1">
+                          <label className="text-[11px] text-text-secondary mb-0.5 block">เลขล่าง</label>
                           <input
                             type="text"
                             inputMode="numeric"
@@ -194,15 +265,15 @@ export default function ResultsPage() {
                             value={form.bottom}
                             onChange={e => updateForm(lottery.id, 'bottom', e.target.value)}
                             placeholder="xx"
-                            className="w-full px-2 py-1.5 text-center text-lg font-mono border border-gray-200 rounded-lg focus:border-gold focus:ring-1 focus:ring-gold outline-none"
+                            className="w-full px-2 py-2 text-center text-lg font-mono font-bold border border-gray-200 rounded-lg focus:border-gold focus:ring-2 focus:ring-gold/30 outline-none transition-shadow"
                           />
                         </div>
                       )}
                     </>
                   )}
                   {(lottery.result_format === '6d' || lottery.result_format === 'custom') && (
-                    <div className="col-span-2">
-                      <label className="text-xs text-text-secondary block mb-1">เลขเต็ม</label>
+                    <div className="flex-[2]">
+                      <label className="text-[11px] text-text-secondary mb-0.5 block">เลขเต็ม</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -210,31 +281,34 @@ export default function ResultsPage() {
                         value={form.full}
                         onChange={e => updateForm(lottery.id, 'full', e.target.value)}
                         placeholder="xxxxxx"
-                        className="w-full px-2 py-1.5 text-center text-lg font-mono border border-gray-200 rounded-lg focus:border-gold focus:ring-1 focus:ring-gold outline-none"
+                        className="w-full px-2 py-2 text-center text-lg font-mono font-bold border border-gray-200 rounded-lg focus:border-gold focus:ring-2 focus:ring-gold/30 outline-none transition-shadow"
                       />
                     </div>
                   )}
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => handleSubmit(lottery)}
-                      disabled={isSending}
-                      className={`w-full py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                        isSending
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : hasResult
-                            ? 'bg-amber-500 text-white hover:bg-amber-600'
-                            : 'bg-gold text-white hover:bg-gold/90'
-                      }`}
-                    >
-                      {isSending ? '...' : hasResult ? 'แก้ไข' : 'ส่งผล'}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleSubmit(lottery)}
+                    disabled={isSending}
+                    className={`shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-all active:scale-95 ${
+                      isSending
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : hasResult
+                          ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm'
+                          : 'bg-gold text-white hover:bg-gold/90 shadow-sm shadow-gold/20'
+                    }`}
+                  >
+                    {isSending ? (
+                      <span className="inline-block animate-spin">⏳</span>
+                    ) : hasResult ? 'แก้ไข' : 'ส่งผล'}
+                  </button>
                 </div>
               </div>
             )
           })}
         </div>
       )}
+
+      {/* Bottom spacing for nav */}
+      <div className="h-4" />
     </div>
   )
 }
