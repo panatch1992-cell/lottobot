@@ -194,7 +194,7 @@ export default function ScrapingPage() {
       const data = await res.json()
       setTestResult(data)
     } catch {
-      setTestResult({ success: false, error: 'Network error' })
+      setTestResult({ success: false, error: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' })
     }
     setTesting(false)
   }
@@ -222,7 +222,7 @@ export default function ScrapingPage() {
         source_url: data.source_url,
       })
     } catch {
-      setScrapeResult({ success: false, error: 'Network error', lottery: lottery.name })
+      setScrapeResult({ success: false, error: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', lottery: lottery.name })
     }
     setScraping(null)
   }
@@ -429,18 +429,18 @@ export default function ScrapingPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                               {source.is_primary && (
-                                <span className="bg-gold/20 text-gold px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0">PRIMARY</span>
+                                <span className="bg-gold/20 text-gold px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0" title="แหล่งดึงผลหลัก — ดึงก่อนแหล่งอื่น">หลัก</span>
                               )}
                               <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 truncate hover:underline">
                                 {source.url}
                               </a>
                             </div>
                             <div className="flex items-center gap-1 shrink-0 ml-2">
-                              <button onClick={() => handleToggle(source)} className="p-1" title={source.is_active ? 'ปิด' : 'เปิด'}>
+                              <button onClick={() => handleToggle(source)} className="p-1" title={source.is_active ? 'ปิด' : 'เปิด'} aria-label={source.is_active ? 'ปิด source' : 'เปิด source'}>
                                 {source.is_active ? '🟢' : '🔴'}
                               </button>
-                              <button onClick={() => openEditSource(source)} className="p-1" title="แก้ไข">✏️</button>
-                              <button onClick={() => setDeleteSourceId(source.id)} className="p-1" title="ลบ">🗑️</button>
+                              <button onClick={() => openEditSource(source)} className="p-1" title="แก้ไข" aria-label="แก้ไข source">✏️</button>
+                              <button onClick={() => setDeleteSourceId(source.id)} className="p-1" title="ลบ" aria-label="ลบ source">🗑️</button>
                             </div>
                           </div>
 
@@ -483,9 +483,12 @@ export default function ScrapingPage() {
       {showForm && selectedLottery && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowForm(false)}>
           <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-lg mb-1">
-              {editingId ? '✏️ แก้ไข Source' : '➕ เพิ่ม Scrape Source'}
-            </h3>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-lg">
+                {editingId ? '✏️ แก้ไข Source' : '➕ เพิ่ม Scrape Source'}
+              </h3>
+              <button onClick={() => setShowForm(false)} className="text-text-secondary hover:text-text-primary p-1" aria-label="ปิด">✕</button>
+            </div>
             <p className="text-xs text-text-secondary mb-4">
               {selectedLottery.flag} {selectedLottery.name}
             </p>

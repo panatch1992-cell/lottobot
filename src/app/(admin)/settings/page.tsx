@@ -63,7 +63,7 @@ function SettingsContent() {
         body: JSON.stringify({ test: true }),
       })
       const data = await res.json()
-      setTgStatus(data.success ? `✅ เชื่อมต่อสำเร็จ (${data.username || 'OK'})` : `❌ ${data.error}`)
+      setTgStatus(data.success ? `✅ เชื่อมต่อสำเร็จ (${data.username || 'ระบบ'})` : `❌ ${data.error}`)
     } catch {
       setTgStatus('❌ ไม่สามารถเชื่อมต่อได้')
     }
@@ -398,7 +398,7 @@ function SettingsContent() {
           <p className="text-[10px] text-text-secondary mb-2">ตัวอย่างรูปที่จะส่งไป LINE (ผล auto)</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=30 มี.ค. 69&top_number=123&bottom_number=45&theme=${settings.default_theme || 'macaroon'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}`}
+            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'macaroon'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}`}
             alt="Preview"
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />
