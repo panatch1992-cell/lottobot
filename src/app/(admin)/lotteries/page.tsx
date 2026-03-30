@@ -112,6 +112,15 @@ export default function LotteriesPage() {
         <button onClick={openAdd} className="btn-primary text-sm">+ เพิ่มหวย</button>
       </div>
 
+      {/* Guide */}
+      <div className="card bg-blue-50 border border-blue-200 text-xs text-blue-700 space-y-1">
+        <p className="font-medium">วิธีใช้งาน:</p>
+        <p>• <b>เปิด/ปิด</b> — กดปุ่มสีเขียวขวามือ เพื่อเปิดหรือปิดหวยแต่ละตัว</p>
+        <p>• <b>แก้ไข</b> — กดที่ชื่อหวยเพื่อแก้ไขรายละเอียด (ชื่อ, เวลาออก, ประเทศ ฯลฯ)</p>
+        <p>• <b>เพิ่มใหม่</b> — กดปุ่ม {'"+ เพิ่มหวย"'} ด้านบนขวา</p>
+        <p>• หวยที่ปิดอยู่จะไม่ถูกดึงผลและไม่ส่งไป LINE/Telegram</p>
+      </div>
+
       {/* Search */}
       <input
         type="text"
