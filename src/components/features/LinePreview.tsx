@@ -5,7 +5,7 @@ interface LinePreviewProps {
 }
 
 export default function LinePreview({ message }: LinePreviewProps) {
-  const sample = message || `🇯🇵🇯🇵 นิเคอิ(บ่าย) VIP 🇯🇵🇯🇵\nงวดวันที่ 20 มี.ค. 69\n⬆️ บน : 0 3 4\n⬇️ ล่าง : 9 7`
+  const sample = message || `🇱🇦🇱🇦 หวยลาว HD 🇱🇦🇱🇦\nงวดวันที่ 30 มี.ค. 69\n⬆️ บน : 7 2 6\n⬇️ ล่าง : 9 4`
 
   const displayText = sample.replace(/\\n/g, '\n')
 
