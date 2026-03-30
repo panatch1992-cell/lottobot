@@ -28,8 +28,14 @@ export default function LottoStatusCard({ item }: { item: TodayLotteryStatus }) 
                 {result.top_number && `${result.top_number}`}
                 {result.bottom_number && `-${result.bottom_number}`}
               </p>
-              <span className={`text-[9px] ${result.source_url === 'manual' ? 'text-amber-500' : 'text-purple-500'}`}>
-                {result.source_url === 'manual' ? '👤 มือ' : '🤖 auto'}
+              <span className={`text-[9px] ${
+                result.source_url === 'manual' ? 'text-amber-500'
+                  : result.source_url?.startsWith('stock://') ? 'text-green-600'
+                  : 'text-purple-500'
+              }`}>
+                {result.source_url === 'manual' ? '👤 มือ'
+                  : result.source_url?.startsWith('stock://') ? '📈 หุ้น'
+                  : '🤖 scrape'}
               </span>
             </div>
           ) : (

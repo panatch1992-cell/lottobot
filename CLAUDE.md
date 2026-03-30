@@ -16,16 +16,20 @@
 
 **Flow การทำงาน (ปัจจุบัน):**
 ```
-🤖 ดึงผลอัตโนมัติ (Cron scrape ทุกนาที)
+📈 หวยหุ้น 22 ตัว → Yahoo Finance API → คำนวณเลข (อัตโนมัติ 100%)
   หรือ
-📝 Admin กรอกผลหวย (หน้าเว็บ)
+🤖 หวยอื่น → Web Scraping (CSS selectors) → ดึงผลจากเว็บ
+  หรือ
+📝 Admin กรอกผลหวย (หน้าเว็บ) → หวย Hanoi/Laos 21 ตัว
   ↓ (บันทึก DB)
-✈️ Telegram Bot → Admin Channel (ดู log — แยก 🤖auto/👤manual)
+✈️ Telegram Bot → Admin Channel (ดู log — แยก 📈หุ้น/🤖scrape/👤manual)
   ↓ (ส่งพร้อมกัน)
 💬 LINE กลุ่ม (ผ่าน LINE Messaging API + รูปตัวเลขการ์ตูน)
 ```
 
 **หมายเหตุ:**
+- หวยหุ้น (Nikkei, Hang Seng, KOSPI ฯลฯ) ดึงราคาจากตลาดหุ้นจริง คำนวณเลข auto
+- หวย Hanoi/Laos เป็นหวยออกรางวัลจริง ต้องกรอกมือหรือ scrape
 - LINE Notify ปิดบริการ มี.ค. 2025 → เปลี่ยนเป็น LINE Messaging API
 - ไม่ใช้ n8n แล้ว → ส่ง LINE ตรงจาก API route
 - Bot เข้ากลุ่ม LINE → webhook จับ group ID อัตโนมัติ
@@ -99,7 +103,8 @@
 │   │   ├── supabase.ts
 │   │   ├── telegram.ts           ← Telegram Bot API helper
 │   │   ├── line-notify.ts        ← LINE Notify helper (fallback)
-│   │   ├── scraper.ts            ← Web scraping engine
+│   │   ├── scraper.ts            ← Web scraping engine (CSS selectors)
+│   │   ├── stock-fetcher.ts      ← Stock index fetcher (Yahoo Finance → เลขหวย)
 │   │   ├── formatter.ts          ← จัดรูปแบบข้อความ (TG HTML + LINE)
 │   │   ├── scheduler.ts          ← Cron scheduler
 │   │   └── utils.ts
