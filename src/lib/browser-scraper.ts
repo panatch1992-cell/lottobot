@@ -33,10 +33,10 @@ export async function browserScrape(
 
   try {
     browser = await puppeteer.launch({
-      args: puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
+      args: chromium.args,
       defaultViewport: { width: 1280, height: 720 },
       executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
-      headless: 'shell' as const,
+      headless: 'shell',
     })
 
     const page = await browser.newPage()
@@ -44,8 +44,22 @@ export async function browserScrape(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     )
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 })
-    await page.waitForFunction(() => document.readyState === 'complete', { timeout: 5000 }).catch(() => {})
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 })
+
+    // Wait for Cloudflare challenge to complete (if present)
+    const isCloudflare = await page.evaluate(() =>
+      document.body.innerText.includes('Checking your browser') ||
+      document.body.innerText.includes('Please wait')
+    )
+
+    if (isCloudflare) {
+      // Cloudflare challenge — wait for redirect to actual page
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {})
+      // Extra wait for dynamic content after Cloudflare
+      await new Promise(r => setTimeout(r, 3000))
+    } else {
+      await page.waitForFunction(() => document.readyState === 'complete', { timeout: 5000 }).catch(() => {})
+    }
 
     // METHOD 1: Try CSS selectors first (if configured by admin)
     if (selectors.top_selector || selectors.bottom_selector || selectors.full_selector) {
@@ -146,10 +160,10 @@ export async function browserFetchHTML(url: string): Promise<{
 
   try {
     browser = await puppeteer.launch({
-      args: puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
+      args: chromium.args,
       defaultViewport: { width: 1280, height: 720 },
       executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
-      headless: 'shell' as const,
+      headless: 'shell',
     })
 
     const page = await browser.newPage()
