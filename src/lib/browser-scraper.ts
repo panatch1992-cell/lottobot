@@ -44,44 +44,85 @@ export async function browserScrape(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     )
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 })
-
-    // Wait for dynamic content
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 })
     await page.waitForFunction(() => document.readyState === 'complete', { timeout: 5000 }).catch(() => {})
 
-    // Extract numbers using selectors
-    const result = await page.evaluate((sel: SelectorConfig) => {
-      const data: { top_number?: string; bottom_number?: string; full_number?: string } = {}
+    // METHOD 1: Try CSS selectors first (if configured by admin)
+    if (selectors.top_selector || selectors.bottom_selector || selectors.full_selector) {
+      const selectorResult = await page.evaluate((sel) => {
+        const data: { top_number?: string; bottom_number?: string; full_number?: string } = {}
+        if (sel.top_selector) {
+          const el = document.querySelector(sel.top_selector)
+          if (el) data.top_number = (el.textContent || '').trim().replace(/\D/g, '')
+        }
+        if (sel.bottom_selector) {
+          const el = document.querySelector(sel.bottom_selector)
+          if (el) data.bottom_number = (el.textContent || '').trim().replace(/\D/g, '')
+        }
+        if (sel.full_selector) {
+          const el = document.querySelector(sel.full_selector)
+          if (el) data.full_number = (el.textContent || '').trim().replace(/\D/g, '')
+        }
+        return data
+      }, selectors as Record<string, string>)
 
-      if (sel.top_selector) {
-        const el = document.querySelector(sel.top_selector)
-        if (el) data.top_number = (el.textContent || '').trim().replace(/\D/g, '')
-      }
-      if (sel.bottom_selector) {
-        const el = document.querySelector(sel.bottom_selector)
-        if (el) data.bottom_number = (el.textContent || '').trim().replace(/\D/g, '')
-      }
-      if (sel.full_selector) {
-        const el = document.querySelector(sel.full_selector)
-        if (el) data.full_number = (el.textContent || '').trim().replace(/\D/g, '')
-      }
-
-      return data
-    }, selectors as Record<string, string>)
-
-    if (!result.top_number && !result.bottom_number && !result.full_number) {
-      // Selectors didn't match — return page snippet for debugging
-      const snippet = await page.evaluate(() => {
-        return document.body.innerText.substring(0, 500)
-      })
-      return {
-        success: false,
-        error: 'No numbers found with selectors',
-        html_snippet: snippet,
+      if (selectorResult.top_number || selectorResult.bottom_number || selectorResult.full_number) {
+        return { success: true, data: selectorResult }
       }
     }
 
-    return { success: true, data: result }
+    // METHOD 2: Smart text extraction — หาตัวเลขจาก pattern ภาษาไทยในหน้าเว็บ
+    const smartResult = await page.evaluate(() => {
+      const text = document.body.innerText
+      const data: { top_number?: string; bottom_number?: string; full_number?: string } = {}
+
+      // Pattern: "3 ตัวบน" หรือ "เลขบน" หรือ "3ตัวบน" ตามด้วยตัวเลข 3 หลัก
+      const topPatterns = [
+        /(?:3\s*ตัว(?:บน|ตรง)|เลข\s*บน|สาม\s*ตัว(?:บน|ตรง))\s*[:：]?\s*(\d{3})/i,
+        /(\d{3})\s*(?:3\s*ตัว(?:บน|ตรง)|เลข\s*บน)/i,
+        /บน\s*[:：]?\s*(\d{3})/i,
+      ]
+
+      // Pattern: "2 ตัวล่าง" หรือ "เลขล่าง" ตามด้วยตัวเลข 2 หลัก
+      const bottomPatterns = [
+        /(?:2\s*ตัว(?:ล่าง|ท้าย)|เลข\s*ล่าง|สอง\s*ตัว(?:ล่าง|ท้าย))\s*[:：]?\s*(\d{2})/i,
+        /(\d{2})\s*(?:2\s*ตัว(?:ล่าง|ท้าย)|เลข\s*ล่าง)/i,
+        /ล่าง\s*[:：]?\s*(\d{2})/i,
+      ]
+
+      for (const p of topPatterns) {
+        const m = text.match(p)
+        if (m) { data.top_number = m[1]; break }
+      }
+
+      for (const p of bottomPatterns) {
+        const m = text.match(p)
+        if (m) { data.bottom_number = m[1]; break }
+      }
+
+      // Fallback: ถ้ายังไม่เจอ ลองหา pattern ตัวเลข 3-2 ที่อยู่ใกล้กัน (xxx-yy หรือ xxx / yy)
+      if (!data.top_number && !data.bottom_number) {
+        const combo = text.match(/(\d{3})\s*[-–/]\s*(\d{2})/)
+        if (combo) {
+          data.top_number = combo[1]
+          data.bottom_number = combo[2]
+        }
+      }
+
+      return data
+    })
+
+    if (smartResult.top_number || smartResult.bottom_number) {
+      return { success: true, data: smartResult }
+    }
+
+    // Nothing found — return page text for debugging
+    const snippet = await page.evaluate(() => document.body.innerText.substring(0, 500))
+    return {
+      success: false,
+      error: 'ไม่พบตัวเลขในหน้าเว็บ — อาจยังไม่ออกผล หรือ HTML เปลี่ยน',
+      html_snippet: snippet,
+    }
   } catch (err) {
     return {
       success: false,
