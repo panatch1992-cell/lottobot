@@ -57,8 +57,9 @@ export default function ScrapingPage() {
     source_url?: string
   } | null>(null)
 
-  // Stock lottery map (lottery_id → stock info)
+  // Stock + browser lottery maps
   const [stockMap, setStockMap] = useState<Record<string, { symbol: string; name: string }>>({})
+  const [browserMap, setBrowserMap] = useState<Record<string, { url: string; name: string }>>({})
 
   const loadData = useCallback(async () => {
     const [{ data: lotData }, srcRes] = await Promise.all([
@@ -68,6 +69,7 @@ export default function ScrapingPage() {
     setLotteries((lotData || []) as Lottery[])
     setSources((srcRes.sources || []) as (ScrapeSource & { lotteries?: { name: string; flag: string } })[])
     setStockMap(srcRes.stockLotteries || {})
+    setBrowserMap(srcRes.browserLotteries || {})
     setLoading(false)
   }, [])
 
@@ -235,9 +237,10 @@ export default function ScrapingPage() {
     l.name.includes(search) || (l.country || '').includes(search) || l.flag.includes(search)
   )
 
-  const scrapeConfigured = new Set(sources.map(s => s.lottery_id)).size
   const stockCount = Object.keys(stockMap).length
-  const configuredCount = new Set([...sources.map(s => s.lottery_id), ...Object.keys(stockMap)]).size
+  const browserCount = Object.keys(browserMap).length
+  const allAutoIds = new Set([...sources.map(s => s.lottery_id), ...Object.keys(stockMap), ...Object.keys(browserMap)])
+  const configuredCount = allAutoIds.size
   const totalActive = lotteries.length
 
   if (loading) {
@@ -255,32 +258,27 @@ export default function ScrapingPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <div className="card text-center">
           <p className="text-2xl font-bold text-green-600">{stockCount}</p>
-          <p className="text-xs text-text-secondary">หุ้น (auto)</p>
+          <p className="text-xs text-text-secondary">📈 หุ้น</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-gold">{scrapeConfigured}</p>
-          <p className="text-xs text-text-secondary">scrape</p>
+          <p className="text-2xl font-bold text-blue-600">{browserCount}</p>
+          <p className="text-xs text-text-secondary">🌐 เว็บ</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold">{totalActive}</p>
           <p className="text-xs text-text-secondary">ทั้งหมด</p>
         </div>
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-amber-500">{totalActive - configuredCount}</p>
-          <p className="text-xs text-text-secondary">กรอกมือ</p>
-        </div>
       </div>
 
       {/* Auto info */}
-      {stockCount > 0 && (
-        <div className="card bg-green-50 border border-green-200">
-          <p className="text-sm font-medium text-green-700">📈 หวยหุ้น {stockCount} รายการ ดึงผลอัตโนมัติจากตลาดหุ้นจริง</p>
-          <p className="text-xs text-green-600 mt-1">ระบบคำนวณเลข 3 ตัวบน + 2 ตัวล่าง จากดัชนีหุ้น (Nikkei, Hang Seng, KOSPI ฯลฯ) อัตโนมัติ ไม่ต้องตั้งค่า</p>
-        </div>
-      )}
+      <div className="card bg-green-50 border border-green-200 space-y-1">
+        <p className="text-sm font-medium text-green-700">ระบบดึงผลอัตโนมัติ {configuredCount}/{totalActive} รายการ</p>
+        <p className="text-xs text-green-600">📈 หวยหุ้น {stockCount} ตัว — Yahoo Finance (ไม่ต้องตั้งค่า)</p>
+        <p className="text-xs text-blue-600">🌐 หวย Hanoi/Laos {browserCount} ตัว — Puppeteer (bypass Cloudflare)</p>
+      </div>
 
       {/* Link to style settings */}
       <a href="/settings" className="block card bg-gradient-to-r from-purple-50 to-purple-50/50 border border-purple-200 hover:border-purple-300 transition-colors">
@@ -323,8 +321,10 @@ export default function ScrapingPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   {stockMap[lottery.id] ? (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full" title={`ดึงอัตโนมัติจาก ${stockMap[lottery.id].name}`}>📈 {stockMap[lottery.id].symbol}</span>
+                  ) : browserMap[lottery.id] ? (
+                    <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full" title={`ดึงด้วย Puppeteer จาก ${browserMap[lottery.id].name}`}>🌐 auto</span>
                   ) : count > 0 ? (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} แหล่ง</span>
+                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{count} แหล่ง</span>
                   ) : (
                     <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full" title="ต้องกรอกผลมือจากหน้ากรอกผล">👤 กรอกมือ</span>
                   )}
@@ -344,13 +344,22 @@ export default function ScrapingPage() {
                       </p>
                     </div>
                   )}
+                  {/* Browser auto badge */}
+                  {browserMap[lottery.id] && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs">
+                      <p className="font-medium text-blue-700">🌐 ดึงอัตโนมัติด้วย Puppeteer</p>
+                      <p className="text-blue-600 mt-0.5">
+                        {browserMap[lottery.id].name} — ดึงจาก raakaadee.com (bypass Cloudflare)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Action buttons */}
                   <div className="flex gap-2">
-                    {!stockMap[lottery.id] && (
+                    {!stockMap[lottery.id] && !browserMap[lottery.id] && (
                       <button onClick={openAddSource} className="btn-primary text-xs">+ เพิ่ม Source</button>
                     )}
-                    {(stockMap[lottery.id] || lotterySources.length > 0) && (
+                    {(stockMap[lottery.id] || browserMap[lottery.id] || lotterySources.length > 0) && (
                       <button
                         onClick={() => handleScrapeNow(lottery)}
                         disabled={scraping === lottery.id}

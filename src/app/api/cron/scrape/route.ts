@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { scrapeWithFallback } from '@/lib/scraper'
 import { isStockLottery, fetchStockLotteryResult } from '@/lib/stock-fetcher'
+import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
@@ -171,14 +172,52 @@ export async function GET(req: NextRequest) {
       // Don't continue — try scrape sources as fallback
     }
 
-    // === METHOD 2: Web Scraping (CSS selectors) ===
+    // === METHOD 2: Browser Scrape (Hanoi/Laos — Puppeteer bypass Cloudflare) ===
+    if (isHanoiLaosLottery(lottery.name)) {
+      const sourceInfo = getHanoiLaosSource(lottery.name)
+      if (sourceInfo) {
+        // Get selectors from scrape_sources table (if configured)
+        const { data: browserSources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true).limit(1)
+        const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {
+          top_selector: '.top-number, .three-top, [class*="3ตัวบน"], td:nth-child(2)',
+          bottom_selector: '.bottom-number, .two-bottom, [class*="2ตัวล่าง"], td:nth-child(5)',
+        }
+
+        const browserRes = await browserScrape(sourceInfo.url, selectors)
+
+        if (browserRes.success && browserRes.data) {
+          const saveRes = await saveAndSend(db, lottery, {
+            top_number: browserRes.data.top_number,
+            bottom_number: browserRes.data.bottom_number,
+            full_number: browserRes.data.full_number,
+          }, `browser://${sourceInfo.url}`, settings, todayStr)
+
+          results.push({
+            lottery: lottery.name,
+            success: saveRes.success,
+            method: 'browser',
+          })
+
+          // Update scrape source success if exists
+          if (browserSources?.[0]) {
+            await db.from('scrape_sources').update({ last_success_at: new Date().toISOString(), last_error: null }).eq('id', browserSources[0].id)
+          }
+          continue
+        }
+
+        // Browser failed — log and try CSS fallback
+        if (browserSources?.[0]) {
+          await db.from('scrape_sources').update({ last_error: `Browser: ${browserRes.error}` }).eq('id', browserSources[0].id)
+        }
+        results.push({ lottery: lottery.name, success: false, method: 'browser', error: browserRes.error })
+        // Fall through to CSS scrape
+      }
+    }
+
+    // === METHOD 3: Web Scraping (CSS selectors — axios) ===
     const { data: sources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true)
 
     if (!sources || sources.length === 0) {
-      // No sources configured and not a stock lottery (or stock failed)
-      if (!isStockLottery(lottery.name)) {
-        // Skip silently — Hanoi/Laos without sources = manual only
-      }
       continue
     }
 

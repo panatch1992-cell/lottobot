@@ -9,12 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^143.0.4",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.100.0",
     "axios": "^1.13.6",
     "cheerio": "^1.2.0",
     "next": "14.2.35",
     "node-cron": "^4.2.1",
+    "puppeteer-core": "^24.40.0",
     "react": "^18",
     "react-dom": "^18"
   },
