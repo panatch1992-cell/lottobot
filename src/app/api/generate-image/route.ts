@@ -8,8 +8,8 @@ import { buildResultImageJSX, type ResultImageData } from '@/lib/generate-result
 export const runtime = 'edge'
 
 // Load Fredoka Bold font for bubbly sticker-style numbers
-async function loadFredokaFont() {
-  const res = await fetch('https://fonts.gstatic.com/s/fredoka/v14/X7nP4b87HvSqjb_WIi2yDCRwoQ_k7367_B-i2yQag0-mac3O8SL5U_tC.ttf')
+async function loadBubbleFont() {
+  const res = await fetch('https://fonts.gstatic.com/s/sniglet/v17/cIf9MaFLtkE3UjaJxCmrYGkHgIs.ttf')
   return res.arrayBuffer()
 }
 
@@ -25,13 +25,13 @@ export async function POST(request: Request) {
 
     const [jsx, fontData] = await Promise.all([
       Promise.resolve(buildResultImageJSX(body)),
-      loadFredokaFont(),
+      loadBubbleFont(),
     ])
 
     return new ImageResponse(jsx, {
       width: 800,
       height: 600,
-      fonts: [{ name: 'Fredoka', data: fontData, weight: 700, style: 'normal' }],
+      fonts: [{ name: 'Sniglet', data: fontData, weight: 800, style: 'normal' }],
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
@@ -56,12 +56,12 @@ export async function GET(request: Request) {
 
   const [jsx, fontData] = await Promise.all([
     Promise.resolve(buildResultImageJSX(data)),
-    loadFredokaFont(),
+    loadBubbleFont(),
   ])
 
   return new ImageResponse(jsx, {
     width: 800,
     height: 600,
-    fonts: [{ name: 'Fredoka', data: fontData, weight: 700, style: 'normal' }],
+    fonts: [{ name: 'Sniglet', data: fontData, weight: 800, style: 'normal' }],
   })
 }
