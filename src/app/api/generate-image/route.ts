@@ -58,6 +58,7 @@ export async function GET(request: Request) {
     top_number: top_number || undefined,
     bottom_number: bottom_number || undefined,
     full_number: full_number || undefined,
+    theme: url.searchParams.get('theme') || undefined,
   }
 
   const jsx = buildResultImageJSX(data)
