@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { scrapeResult, scrapeWithFallback } from '@/lib/scraper'
 import { isStockLottery, getStockInfo, fetchStockLotteryResult } from '@/lib/stock-fetcher'
+import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape, browserFetchHTML } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
@@ -130,16 +131,19 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query.order('is_primary', { ascending: false })
 
-    // Get stock lottery info for all active lotteries
+    // Get stock + browser lottery info for all active lotteries
     const { data: allLotteries } = await db.from('lotteries').select('id, name').eq('status', 'active')
     const stockMap: Record<string, { symbol: string; name: string }> = {}
+    const browserMap: Record<string, { url: string; name: string }> = {}
     for (const l of allLotteries || []) {
-      const info = getStockInfo(l.name)
-      if (info) stockMap[l.id] = info
+      const stockInfo = getStockInfo(l.name)
+      if (stockInfo) { stockMap[l.id] = stockInfo; continue }
+      const browserInfo = getHanoiLaosSource(l.name)
+      if (browserInfo) browserMap[l.id] = browserInfo
     }
 
     if (error) throw error
-    return NextResponse.json({ sources: data || [], stockLotteries: stockMap })
+    return NextResponse.json({ sources: data || [], stockLotteries: stockMap, browserLotteries: browserMap })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Server error' }, { status: 500 })
   }
@@ -168,6 +172,26 @@ export async function POST(req: NextRequest) {
         data: result.data,
         error: result.error,
       })
+    }
+
+    // Discover HTML — ใช้ Puppeteer เปิดหน้าเว็บแล้วส่ง HTML กลับ (สำหรับหา selectors)
+    if (action === 'discover') {
+      const { url } = body
+      if (!url) {
+        return NextResponse.json({ error: 'URL required' }, { status: 400 })
+      }
+      const result = await browserFetchHTML(url)
+      return NextResponse.json(result)
+    }
+
+    // Test browser — ทดสอบดึงผลด้วย Puppeteer
+    if (action === 'test_browser') {
+      const { url, selector_config } = body
+      if (!url) {
+        return NextResponse.json({ error: 'URL required' }, { status: 400 })
+      }
+      const result = await browserScrape(url, selector_config || {})
+      return NextResponse.json(result)
     }
 
     // Test stock — ทดสอบดึงราคาหุ้นสำหรับหวยหุ้น
@@ -212,10 +236,30 @@ export async function POST(req: NextRequest) {
             bottom_number: stockRes.bottom_number,
           }, `stock://${stockRes.symbol}`, todayStr)
         }
-        // Stock failed — try scrape sources as fallback
       }
 
-      // Try scrape sources
+      // Try browser scrape for Hanoi/Laos
+      if (lotteryInfo && isHanoiLaosLottery(lotteryInfo.name)) {
+        const sourceInfo = getHanoiLaosSource(lotteryInfo.name)
+        if (sourceInfo) {
+          const { data: browserSources } = await db.from('scrape_sources').select('selector_config').eq('lottery_id', lottery_id).eq('is_active', true).limit(1)
+          const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {
+            top_selector: '.top-number, .three-top, td:nth-child(2)',
+            bottom_selector: '.bottom-number, .two-bottom, td:nth-child(5)',
+          }
+          const browserRes = await browserScrape(sourceInfo.url, selectors)
+          if (browserRes.success && browserRes.data) {
+            return saveResultAndSend(db, lottery_id, {
+              top_number: browserRes.data.top_number,
+              bottom_number: browserRes.data.bottom_number,
+              full_number: browserRes.data.full_number,
+            }, `browser://${sourceInfo.url}`, todayStr)
+          }
+          return NextResponse.json({ success: false, error: browserRes.error || 'Browser scrape ไม่สำเร็จ', html_snippet: browserRes.html_snippet })
+        }
+      }
+
+      // Try CSS scrape sources
       const { data: sources } = await db.from('scrape_sources')
         .select('*')
         .eq('lottery_id', lottery_id)

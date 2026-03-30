@@ -31,10 +31,12 @@ export default function LottoStatusCard({ item }: { item: TodayLotteryStatus }) 
               <span className={`text-[9px] ${
                 result.source_url === 'manual' ? 'text-amber-500'
                   : result.source_url?.startsWith('stock://') ? 'text-green-600'
+                  : result.source_url?.startsWith('browser://') ? 'text-blue-500'
                   : 'text-purple-500'
               }`}>
                 {result.source_url === 'manual' ? '👤 มือ'
                   : result.source_url?.startsWith('stock://') ? '📈 หุ้น'
+                  : result.source_url?.startsWith('browser://') ? '🌐 auto'
                   : '🤖 scrape'}
               </span>
             </div>

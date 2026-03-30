@@ -12,6 +12,13 @@ function getSourceLabel(sourceUrl: string | null): string {
     const symbol = sourceUrl.replace('stock://', '')
     return `📈 ${symbol}`
   }
+  if (sourceUrl.startsWith('browser://')) {
+    try {
+      return `🌐 ${new URL(sourceUrl.replace('browser://', '')).hostname}`
+    } catch {
+      return '🌐 browser'
+    }
+  }
   try {
     return `🤖 ${new URL(sourceUrl).hostname}`
   } catch {

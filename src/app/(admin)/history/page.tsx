@@ -121,10 +121,13 @@ export default function HistoryPage() {
                               ? 'bg-amber-50 text-amber-600'
                               : results[log.result_id].source_url?.startsWith('stock://')
                                 ? 'bg-green-50 text-green-600'
-                                : 'bg-purple-50 text-purple-600'
+                                : results[log.result_id].source_url?.startsWith('browser://')
+                                  ? 'bg-blue-50 text-blue-600'
+                                  : 'bg-purple-50 text-purple-600'
                           }`}>
                             {results[log.result_id].source_url === 'manual' ? '👤 มือ'
                               : results[log.result_id].source_url?.startsWith('stock://') ? '📈 หุ้น'
+                              : results[log.result_id].source_url?.startsWith('browser://') ? '🌐 auto'
                               : '🤖 scrape'}
                           </span>
                         )}
