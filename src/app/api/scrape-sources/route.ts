@@ -5,7 +5,7 @@ import { isStockLottery, getStockInfo, fetchStockLotteryResult } from '@/lib/sto
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape, browserFetchHTML } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
+import { pushFlexResult } from '@/lib/line-messaging'
 import { today } from '@/lib/utils'
 import type { ScrapeSource, Lottery, LineGroup } from '@/types'
 
@@ -65,35 +65,24 @@ async function saveResultAndSend(
     })
   }
 
-  // Send to LINE groups
+  // Send to LINE groups (Flex Message)
   const lineToken = settings.line_channel_access_token
   if (lineToken) {
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'https://lottobot-chi.vercel.app'
-
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
-    const imageParams = new URLSearchParams({
-      lottery_name: (lottery as Lottery).name,
-      flag: (lottery as Lottery).flag,
-      date: thaiDate,
-      ...(resultData.top_number ? { top_number: resultData.top_number } : {}),
-      ...(resultData.bottom_number ? { bottom_number: resultData.bottom_number } : {}),
-      ...(resultData.full_number ? { full_number: resultData.full_number } : {}),
-      theme: settings.default_theme || 'macaroon',
-      font_style: settings.default_font_style || 'rounded',
-      digit_size: settings.default_digit_size || 'm',
-    })
-    const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
     for (const group of (groups || []) as LineGroup[]) {
       if (!group.line_group_id) continue
       const startLine = Date.now()
-      let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
-      if (!lineResult.success) {
-        lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
-      }
+      const lineResult = await pushFlexResult(lineToken, group.line_group_id, {
+        name: (lottery as Lottery).name,
+        flag: (lottery as Lottery).flag,
+        date: thaiDate,
+        top_number: resultData.top_number,
+        bottom_number: resultData.bottom_number,
+        full_number: resultData.full_number,
+        theme: settings.default_theme || 'macaroon',
+      })
       sends.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
 
       await db.from('send_logs').insert({
