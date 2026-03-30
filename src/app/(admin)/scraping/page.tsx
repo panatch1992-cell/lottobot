@@ -50,13 +50,17 @@ export default function ScrapingPage() {
   const [scraping, setScraping] = useState<string | null>(null)
   const [scrapeResult, setScrapeResult] = useState<{ success: boolean; error?: string; lottery?: string } | null>(null)
 
+  // Stock lottery map (lottery_id → stock info)
+  const [stockMap, setStockMap] = useState<Record<string, { symbol: string; name: string }>>({})
+
   const loadData = useCallback(async () => {
-    const [{ data: lotData }, { data: srcData }] = await Promise.all([
+    const [{ data: lotData }, srcRes] = await Promise.all([
       supabase.from('lotteries').select('*').eq('status', 'active').order('sort_order'),
-      supabase.from('scrape_sources').select('*, lotteries(name, flag)').order('is_primary', { ascending: false }),
+      fetch('/api/scrape-sources').then(r => r.json()),
     ])
     setLotteries((lotData || []) as Lottery[])
-    setSources((srcData || []) as (ScrapeSource & { lotteries?: { name: string; flag: string } })[])
+    setSources((srcRes.sources || []) as (ScrapeSource & { lotteries?: { name: string; flag: string } })[])
+    setStockMap(srcRes.stockLotteries || {})
     setLoading(false)
   }, [])
 
@@ -211,7 +215,9 @@ export default function ScrapingPage() {
     l.name.includes(search) || (l.country || '').includes(search) || l.flag.includes(search)
   )
 
-  const configuredCount = new Set(sources.map(s => s.lottery_id)).size
+  const scrapeConfigured = new Set(sources.map(s => s.lottery_id)).size
+  const stockCount = Object.keys(stockMap).length
+  const configuredCount = new Set([...sources.map(s => s.lottery_id), ...Object.keys(stockMap)]).size
   const totalActive = lotteries.length
 
   if (loading) {
@@ -229,20 +235,32 @@ export default function ScrapingPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <div className="card text-center">
-          <p className="text-2xl font-bold text-gold">{configuredCount}</p>
-          <p className="text-xs text-text-secondary">ตั้งค่าแล้ว</p>
+          <p className="text-2xl font-bold text-green-600">{stockCount}</p>
+          <p className="text-xs text-text-secondary">หุ้น (auto)</p>
+        </div>
+        <div className="card text-center">
+          <p className="text-2xl font-bold text-gold">{scrapeConfigured}</p>
+          <p className="text-xs text-text-secondary">scrape</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold">{totalActive}</p>
-          <p className="text-xs text-text-secondary">หวยทั้งหมด</p>
+          <p className="text-xs text-text-secondary">ทั้งหมด</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-danger">{totalActive - configuredCount}</p>
-          <p className="text-xs text-text-secondary">ยังไม่ตั้งค่า</p>
+          <p className="text-2xl font-bold text-amber-500">{totalActive - configuredCount}</p>
+          <p className="text-xs text-text-secondary">กรอกมือ</p>
         </div>
       </div>
+
+      {/* Auto info */}
+      {stockCount > 0 && (
+        <div className="card bg-green-50 border border-green-200">
+          <p className="text-sm font-medium text-green-700">📈 หวยหุ้น {stockCount} รายการ ดึงผลอัตโนมัติจากตลาดหุ้นจริง</p>
+          <p className="text-xs text-green-600 mt-1">ระบบคำนวณเลข 3 ตัวบน + 2 ตัวล่าง จากดัชนีหุ้น (Nikkei, Hang Seng, KOSPI ฯลฯ) อัตโนมัติ ไม่ต้องตั้งค่า</p>
+        </div>
+      )}
 
       {/* Scrape result toast */}
       {scrapeResult && (
@@ -284,10 +302,12 @@ export default function ScrapingPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {count > 0 ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{count} source{count > 1 ? 's' : ''}</span>
+                  {stockMap[lottery.id] ? (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">📈 {stockMap[lottery.id].symbol}</span>
+                  ) : count > 0 ? (
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{count} source{count > 1 ? 's' : ''}</span>
                   ) : (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">ยังไม่ตั้งค่า</span>
+                    <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">👤 กรอกมือ</span>
                   )}
                   <span className="text-xs text-text-secondary">{isSelected ? '▼' : '▶'}</span>
                 </div>
@@ -296,10 +316,22 @@ export default function ScrapingPage() {
               {/* Expanded: scrape sources for this lottery */}
               {isSelected && (
                 <div className="bg-gray-50 px-4 py-3 space-y-3">
+                  {/* Stock auto badge */}
+                  {stockMap[lottery.id] && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 text-xs">
+                      <p className="font-medium text-green-700">📈 ดึงอัตโนมัติจากตลาดหุ้น</p>
+                      <p className="text-green-600 mt-0.5">
+                        {stockMap[lottery.id].name} ({stockMap[lottery.id].symbol}) — คำนวณเลข 3 ตัวบน + 2 ตัวล่างจากราคาปิดดัชนี
+                      </p>
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="flex gap-2">
-                    <button onClick={openAddSource} className="btn-primary text-xs">+ เพิ่ม Source</button>
-                    {lotterySources.length > 0 && (
+                    {!stockMap[lottery.id] && (
+                      <button onClick={openAddSource} className="btn-primary text-xs">+ เพิ่ม Source</button>
+                    )}
+                    {(stockMap[lottery.id] || lotterySources.length > 0) && (
                       <button
                         onClick={() => handleScrapeNow(lottery)}
                         disabled={scraping === lottery.id}
@@ -311,7 +343,7 @@ export default function ScrapingPage() {
                   </div>
 
                   {/* Sources list */}
-                  {lotterySources.length === 0 ? (
+                  {lotterySources.length === 0 && !stockMap[lottery.id] ? (
                     <p className="text-xs text-text-secondary italic">{'ยังไม่มี scrape source — กด "+ เพิ่ม Source" เพื่อตั้งค่า URL + CSS Selectors'}</p>
                   ) : (
                     <div className="space-y-2">
