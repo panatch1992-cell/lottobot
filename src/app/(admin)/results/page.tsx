@@ -281,7 +281,7 @@ export default function ResultsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [search, setSearch] = useState('')
   const [showSentOnly, setShowSentOnly] = useState(false)
-  const [selectedTheme, setSelectedTheme] = useState('macaroon')
+  const [selectedTheme, setSelectedTheme] = useState('shopee')
   const [fontStyle, setFontStyle] = useState('rounded')
   const [digitSize, setDigitSize] = useState('m')
   const [studioOpen, setStudioOpen] = useState(true)
@@ -302,8 +302,21 @@ export default function ResultsPage() {
 
   async function loadData() {
     try {
-      const res = await fetch('/api/results')
+      // Load results + settings in parallel
+      const [res, settingsRes] = await Promise.all([
+        fetch('/api/results'),
+        fetch('/api/settings'),
+      ])
       const data = await res.json()
+      const settingsData = await settingsRes.json()
+
+      // Apply default theme/font/size from settings
+      const settingsMap: Record<string, string> = {}
+      ;(settingsData.settings || []).forEach((s: { key: string; value: string }) => { settingsMap[s.key] = s.value })
+      if (settingsMap.default_theme) setSelectedTheme(settingsMap.default_theme)
+      if (settingsMap.default_font_style) setFontStyle(settingsMap.default_font_style)
+      if (settingsMap.default_digit_size) setDigitSize(settingsMap.default_digit_size)
+
       setLotteries(data.lotteries || [])
       setResults(data.results || {})
       setDate(data.date || '')

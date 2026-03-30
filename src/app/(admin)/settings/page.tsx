@@ -106,6 +106,18 @@ function SettingsContent() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">⚙️ ตั้งค่า</h2>
 
+      {/* Quick links */}
+      <div className="grid grid-cols-2 gap-2">
+        <a href="/lotteries" className="card text-center py-3 hover:bg-gray-50 transition-colors">
+          <span className="text-xl">🎰</span>
+          <p className="text-xs text-text-secondary mt-1">จัดการหวย</p>
+        </a>
+        <a href="/results" className="card text-center py-3 hover:bg-gray-50 transition-colors">
+          <span className="text-xl">✏️</span>
+          <p className="text-xs text-text-secondary mt-1">แก้ไขผล (สำรอง)</p>
+        </a>
+      </div>
+
       {/* Telegram Bot */}
       <div className="card space-y-3">
         <h3 className="font-semibold">✈️ Telegram Bot</h3>
