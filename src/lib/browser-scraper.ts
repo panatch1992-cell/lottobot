@@ -8,8 +8,8 @@ import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium-min'
 import type { SelectorConfig } from '@/types'
 
-// Chromium binary CDN — ดาวน์โหลดอัตโนมัติตอน cold start
-const CHROMIUM_PACK_URL = 'https://github.com/nicholasgasior/puppeteer-lambda-chromium/releases/download/v131.0.0/chromium-v131.0.0-pack.tar'
+// Chromium binary CDN — ดาวน์โหลดอัตโนมัติตอน cold start (~66MB)
+const CHROMIUM_PACK_URL = 'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar'
 
 interface BrowserScrapeResult {
   success: boolean
@@ -33,10 +33,10 @@ export async function browserScrape(
 
   try {
     browser = await puppeteer.launch({
-      args: chromium.args,
+      args: puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
       defaultViewport: { width: 1280, height: 720 },
       executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
-      headless: true,
+      headless: 'shell' as const,
     })
 
     const page = await browser.newPage()
@@ -105,10 +105,10 @@ export async function browserFetchHTML(url: string): Promise<{
 
   try {
     browser = await puppeteer.launch({
-      args: chromium.args,
+      args: puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
       defaultViewport: { width: 1280, height: 720 },
       executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
-      headless: true,
+      headless: 'shell' as const,
     })
 
     const page = await browser.newPage()
