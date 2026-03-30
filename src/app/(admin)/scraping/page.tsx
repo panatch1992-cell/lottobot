@@ -56,6 +56,7 @@ export default function ScrapingPage() {
     result?: { top_number?: string; bottom_number?: string; full_number?: string }
     source_url?: string
     html_snippet?: string
+    sent?: boolean
   } | null>(null)
 
   // Stock + browser lottery maps
@@ -204,10 +205,11 @@ export default function ScrapingPage() {
     setScraping(lottery.id)
     setScrapeResult(null)
     try {
+      // Step 1: ดึงตัวเลขอย่างเดียว (preview_only) — ยังไม่ส่ง
       const res = await fetch('/api/scrape-sources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'scrape_now', lottery_id: lottery.id }),
+        body: JSON.stringify({ action: 'scrape_now', lottery_id: lottery.id, preview_only: true }),
       })
       const data = await res.json()
       setScrapeResult({
@@ -225,6 +227,28 @@ export default function ScrapingPage() {
       })
     } catch {
       setScrapeResult({ success: false, error: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', lottery: lottery.name })
+    }
+    setScraping(null)
+  }
+
+  async function handleConfirmSend(lottery: Lottery) {
+    setScraping(lottery.id)
+    try {
+      // Step 2: บันทึก + ส่งจริง
+      const res = await fetch('/api/scrape-sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'scrape_now', lottery_id: lottery.id }),
+      })
+      const data = await res.json()
+      setScrapeResult(prev => prev ? {
+        ...prev,
+        success: data.success,
+        error: data.error,
+        sent: true,
+      } : null)
+    } catch {
+      setScrapeResult(prev => prev ? { ...prev, error: 'ส่งไม่สำเร็จ' } : null)
     }
     setScraping(null)
   }
@@ -374,11 +398,11 @@ export default function ScrapingPage() {
 
                   {/* Scrape result inline */}
                   {scrapeResult && scrapeResult.lottery_id === lottery.id && (
-                    <div className={`rounded-lg border p-3 ${scrapeResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className={`rounded-lg border p-3 ${scrapeResult.success ? (scrapeResult.sent ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200') : 'bg-red-50 border-red-200'}`}>
                       {scrapeResult.success && scrapeResult.result ? (
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-green-700">
-                            ✅ ดึงผลสำเร็จ — บันทึก + ส่ง TG/LINE แล้ว
+                        <div className="space-y-3">
+                          <p className={`text-sm font-medium ${scrapeResult.sent ? 'text-green-700' : 'text-amber-700'}`}>
+                            {scrapeResult.sent ? '✅ ส่งสำเร็จ — บันทึก + ส่ง TG/LINE แล้ว' : '👁 ดึงผลได้แล้ว — ตรวจสอบก่อนส่ง'}
                           </p>
                           <div className="flex items-center gap-4 text-sm">
                             {scrapeResult.result.top_number && (
@@ -401,17 +425,27 @@ export default function ScrapingPage() {
                             )}
                           </div>
                           {/* Preview image */}
-                          <div className="mt-2">
-                            <p className="text-[10px] text-text-secondary mb-1">ตัวอย่างรูปที่ส่งไป LINE:</p>
+                          <div>
+                            <p className="text-[10px] text-text-secondary mb-1">ตัวอย่างรูปที่จะส่งไป LINE:</p>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={`/api/generate-image?lottery_name=${encodeURIComponent(lottery.name)}&flag=${encodeURIComponent(lottery.flag)}&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=${scrapeResult.result.top_number || ''}&bottom_number=${scrapeResult.result.bottom_number || ''}&full_number=${scrapeResult.result.full_number || ''}`}
-                              alt="Result preview"
+                              src={`/api/generate-image?lottery_name=${encodeURIComponent(lottery.name)}&flag=${encodeURIComponent(lottery.flag)}&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=${scrapeResult.result.top_number || ''}&bottom_number=${scrapeResult.result.bottom_number || ''}&full_number=${scrapeResult.result.full_number || ''}&theme=shopee`}
+                              alt="Preview"
                               className="rounded-lg shadow-sm max-w-[240px]"
                             />
                           </div>
+                          {/* Confirm send button */}
+                          {!scrapeResult.sent && (
+                            <button
+                              onClick={() => handleConfirmSend(lottery)}
+                              disabled={scraping === lottery.id}
+                              className="btn-primary text-sm w-full disabled:opacity-50"
+                            >
+                              {scraping === lottery.id ? '⏳ กำลังส่ง...' : '📤 ยืนยันส่งไป TG + LINE'}
+                            </button>
+                          )}
                           {scrapeResult.source_url && (
-                            <p className="text-[10px] text-green-600">แหล่ง: {scrapeResult.source_url}</p>
+                            <p className="text-[10px] text-text-secondary">แหล่ง: {scrapeResult.source_url}</p>
                           )}
                         </div>
                       ) : (
