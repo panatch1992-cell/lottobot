@@ -11,6 +11,97 @@ interface ResultMap {
   }
 }
 
+// Macaroon pastel colors matching the image generator
+const MACAROON = [
+  { bg: '#FFD1DC', text: '#D4526E', border: '#F8A5B8' },
+  { bg: '#FFE5B4', text: '#CC8400', border: '#FFD080' },
+  { bg: '#FFFACD', text: '#B8960C', border: '#FFE44D' },
+  { bg: '#C1F0C1', text: '#2D8B2D', border: '#8ED88E' },
+  { bg: '#B8E0FF', text: '#2E6DA4', border: '#80C4FF' },
+  { bg: '#E0C8FF', text: '#7B4DBF', border: '#C89EFF' },
+]
+
+function MiniDigit({ digit, index }: { digit: string; index: number }) {
+  const c = MACAROON[index % MACAROON.length]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: c.bg,
+        border: `2px solid ${c.border}`,
+        color: c.text,
+        fontSize: 20,
+        fontWeight: 800,
+        margin: '0 2px',
+        fontFamily: 'monospace',
+      }}
+    >
+      {digit}
+    </span>
+  )
+}
+
+function PreviewCard({ lottery, form, date }: {
+  lottery: Lottery
+  form: { top: string; bottom: string; full: string }
+  date: string
+}) {
+  const hasAny = form.top || form.bottom || form.full
+  if (!hasAny) return null
+
+  return (
+    <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+      <p className="text-[10px] text-text-secondary mb-2 font-medium">ตัวอย่างที่จะส่งไป LINE กลุ่ม</p>
+      <div className="bg-white rounded-lg p-3 text-center">
+        <p className="text-sm font-semibold text-gray-600 mb-0.5">
+          {lottery.flag} {lottery.name} {lottery.flag}
+        </p>
+        <p className="text-[11px] text-gray-400 mb-3">งวดวันที่ {date}</p>
+
+        {form.top && (
+          <div className="mb-2">
+            <p className="text-[10px] text-gray-400 mb-1">เลขบน</p>
+            <div className="flex justify-center">
+              {form.top.split('').map((d, i) => (
+                <MiniDigit key={`t${i}`} digit={d} index={i} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {form.bottom && (
+          <div className="mb-2">
+            <p className="text-[10px] text-gray-400 mb-1">เลขล่าง</p>
+            <div className="flex justify-center">
+              {form.bottom.split('').map((d, i) => (
+                <MiniDigit key={`b${i}`} digit={d} index={i + 3} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {form.full && (
+          <div className="mb-2">
+            <p className="text-[10px] text-gray-400 mb-1">เลขเต็ม</p>
+            <div className="flex justify-center flex-wrap">
+              {form.full.split('').map((d, i) => (
+                <MiniDigit key={`f${i}`} digit={d} index={i} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-[9px] text-gray-300 mt-2">LottoBot</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ResultsPage() {
   const [lotteries, setLotteries] = useState<Lottery[]>([])
   const [results, setResults] = useState<ResultMap>({})
@@ -22,14 +113,12 @@ export default function ResultsPage() {
   const [showSentOnly, setShowSentOnly] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Form state per lottery
   const [forms, setForms] = useState<Record<string, { top: string; bottom: string; full: string }>>({})
 
   useEffect(() => {
     loadData()
   }, [])
 
-  // Auto-dismiss toast
   useEffect(() => {
     if (toast) {
       if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -122,7 +211,6 @@ export default function ResultsPage() {
     return !!(r?.top_number || r?.bottom_number || r?.full_number)
   }
 
-  // Filter & search
   const filtered = lotteries.filter(l => {
     if (showSentOnly && !hasExistingResult(l.id)) return false
     if (search) {
@@ -134,6 +222,11 @@ export default function ResultsPage() {
 
   const sentCount = lotteries.filter(l => hasExistingResult(l.id)).length
   const totalCount = lotteries.length
+
+  // Format date for preview
+  const thaiDate = date
+    ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+    : date
 
   if (loading) {
     return (
@@ -148,7 +241,7 @@ export default function ResultsPage() {
 
   return (
     <div className="space-y-3">
-      {/* Toast notification - fixed top */}
+      {/* Toast notification */}
       {toast && (
         <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium max-w-[90vw] animate-fade-in ${
           toast.type === 'success'
@@ -301,13 +394,15 @@ export default function ResultsPage() {
                     ) : hasResult ? 'แก้ไข' : 'ส่งผล'}
                   </button>
                 </div>
+
+                {/* Live preview - shows when user types numbers */}
+                <PreviewCard lottery={lottery} form={form} date={thaiDate} />
               </div>
             )
           })}
         </div>
       )}
 
-      {/* Bottom spacing for nav */}
       <div className="h-4" />
     </div>
   )
