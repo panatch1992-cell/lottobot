@@ -23,10 +23,15 @@ export default function LottoStatusCard({ item }: { item: TodayLotteryStatus }) 
       <div className="flex items-center gap-2 shrink-0">
         <div className="text-right">
           {result ? (
-            <p className="text-xs font-mono font-medium">
-              {result.top_number && `${result.top_number}`}
-              {result.bottom_number && `-${result.bottom_number}`}
-            </p>
+            <div>
+              <p className="text-xs font-mono font-medium">
+                {result.top_number && `${result.top_number}`}
+                {result.bottom_number && `-${result.bottom_number}`}
+              </p>
+              <span className={`text-[9px] ${result.source_url === 'manual' ? 'text-amber-500' : 'text-purple-500'}`}>
+                {result.source_url === 'manual' ? '👤 มือ' : '🤖 auto'}
+              </span>
+            </div>
           ) : (
             <p className="text-xs text-text-secondary">—</p>
           )}
