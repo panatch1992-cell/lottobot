@@ -115,7 +115,10 @@ insert into bot_settings (key, value, description) values
   ('stats_count', '10', 'จำนวนงวดสถิติย้อนหลัง'),
   ('bot_name', 'LottoBot', 'ชื่อ Bot'),
   ('use_flex_message', 'true', 'ใช้ Flex Message สำหรับ LINE'),
-  ('fallback_enabled', 'true', 'ใช้แหล่งสำรองถ้าแหล่งหลักล่ม');
+  ('fallback_enabled', 'true', 'ใช้แหล่งสำรองถ้าแหล่งหลักล่ม'),
+  ('scrape_window_minutes', '30', 'หน้าต่างเวลาดึงผลหลังเวลาออก (นาที)'),
+  ('scrape_max_retries', '3', 'จำนวนครั้งที่ retry ดึงผล'),
+  ('scrape_retry_delay_ms', '10000', 'หน่วงเวลาระหว่าง retry (ms)');
 
 -- ============================================
 -- 8. Seed: 43 รายการหวย (จากลูกค้า)

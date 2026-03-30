@@ -17,6 +17,8 @@ export default function DashboardPage() {
   const [todayStatuses, setTodayStatuses] = useState<TodayLotteryStatus[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [scrapeConfigured, setScrapeConfigured] = useState(0)
+
   useEffect(() => {
     loadDashboard()
   }, [])
@@ -25,11 +27,12 @@ export default function DashboardPage() {
     try {
       const todayStr = today()
 
-      const [lotteriesRes, groupsRes, resultsRes, logsRes] = await Promise.all([
+      const [lotteriesRes, groupsRes, resultsRes, logsRes, scrapeRes] = await Promise.all([
         supabase.from('lotteries').select('*').order('sort_order'),
         supabase.from('line_groups').select('*'),
         supabase.from('results').select('*').eq('draw_date', todayStr),
         supabase.from('send_logs').select('*').gte('created_at', todayStr),
+        supabase.from('scrape_sources').select('lottery_id').eq('is_active', true),
       ])
 
       const lotteries = (lotteriesRes.data || []) as Lottery[]
@@ -40,6 +43,10 @@ export default function DashboardPage() {
       const activeGroups = groups.filter(g => g.is_active)
       const sentLogs = logs.filter(l => l.status === 'sent')
       const failedLogs = logs.filter(l => l.status === 'failed')
+
+      // Count unique lotteries with scrape sources
+      const scrapeLotteryIds = new Set((scrapeRes.data || []).map((s: { lottery_id: string }) => s.lottery_id))
+      setScrapeConfigured(scrapeLotteryIds.size)
 
       setStats({
         totalLotteries: lotteries.length,
@@ -113,23 +120,37 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Action */}
-      <Link
-        href="/results"
-        className="block card bg-gradient-to-r from-gold/10 to-gold/5 border-gold/20 hover:border-gold/40 transition-colors"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-semibold text-sm">📝 กรอกผลหวย</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              {pendingCount > 0
-                ? `รอกรอกผล ${pendingCount} รายการ`
-                : 'ส่งผลครบแล้ววันนี้'}
-            </p>
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 gap-2">
+        <Link
+          href="/results"
+          className="block card bg-gradient-to-r from-gold/10 to-gold/5 border-gold/20 hover:border-gold/40 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-sm">📝 กรอกผล</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {pendingCount > 0 ? `รอ ${pendingCount} รายการ` : 'ครบแล้ว'}
+              </p>
+            </div>
+            <span className="text-gold">→</span>
           </div>
-          <span className="text-xl text-gold">→</span>
-        </div>
-      </Link>
+        </Link>
+        <Link
+          href="/scraping"
+          className="block card bg-gradient-to-r from-blue-50 to-blue-50/50 border-blue-200 hover:border-blue-300 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-sm">🤖 ดึงอัตโนมัติ</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {scrapeConfigured > 0 ? `ตั้งค่าแล้ว ${scrapeConfigured} หวย` : 'ยังไม่ตั้งค่า'}
+              </p>
+            </div>
+            <span className="text-blue-500">→</span>
+          </div>
+        </Link>
+      </div>
 
       {/* สถานะวันนี้ */}
       <div className="card">
