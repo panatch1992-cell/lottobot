@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือใช้งาน LottoBot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    background: #f5f3ee;
+    color: #333;
+    line-height: 1.7;
+    padding: 20px;
+  }
+
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 40px 32px;
+    text-align: center;
+  }
+
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .header p {
+    font-size: 14px;
+    opacity: 0.7;
+  }
+
+  .header .badge {
+    display: inline-block;
+    background: #c9a84c;
+    color: #1a1a2e;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-top: 12px;
+  }
+
+  .content {
+    padding: 32px;
+  }
+
+  .section {
+    margin-bottom: 32px;
+  }
+
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #c9a84c;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-list {
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .step-list li {
+    counter-increment: step;
+    padding: 12px 16px 12px 52px;
+    position: relative;
+    margin-bottom: 8px;
+    background: #faf9f6;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .step-list li::before {
+    content: counter(step);
+    position: absolute;
+    left: 14px;
+    top: 12px;
+    width: 28px;
+    height: 28px;
+    background: #c9a84c;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .step-list li .sub {
+    display: block;
+    font-size: 13px;
+    color: #888;
+    margin-top: 2px;
+  }
+
+  .flow-box {
+    background: linear-gradient(135deg, #fdfcfb 0%, #e8e4dd 100%);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .flow-step {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 6px;
+    vertical-align: top;
+  }
+
+  .flow-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #fff;
+    margin-bottom: 6px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+  }
+
+  .flow-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .flow-sub {
+    font-size: 10px;
+    color: #999;
+  }
+
+  .flow-arrow {
+    display: inline-block;
+    font-size: 20px;
+    color: #ccc;
+    vertical-align: middle;
+    margin: 0 4px;
+    padding-top: 8px;
+  }
+
+  .tab-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .tab-card {
+    background: #faf9f6;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .tab-card .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .tab-card .info h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .tab-card .info p {
+    font-size: 11px;
+    color: #999;
+  }
+
+  .info-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .info-table tr {
+    border-bottom: 1px solid #f0ede8;
+  }
+
+  .info-table td {
+    padding: 10px 0;
+    font-size: 14px;
+  }
+
+  .info-table td:first-child {
+    color: #888;
+    width: 140px;
+    font-size: 13px;
+  }
+
+  .info-table td:last-child {
+    font-weight: 500;
+  }
+
+  .trouble-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .trouble-table th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  .trouble-table th:first-child { border-radius: 8px 0 0 0; }
+  .trouble-table th:last-child { border-radius: 0 8px 0 0; }
+
+  .trouble-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0ede8;
+  }
+
+  .trouble-table tr:last-child td:first-child { border-radius: 0 0 0 8px; }
+  .trouble-table tr:last-child td:last-child { border-radius: 0 0 8px 0; }
+
+  .trouble-table tr:nth-child(even) {
+    background: #faf9f6;
+  }
+
+  .tip-box {
+    background: #fff8e7;
+    border-left: 4px solid #c9a84c;
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #665a3a;
+  }
+
+  .preview-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .preview-tg {
+    background: #1a222c;
+    border-radius: 12px;
+    padding: 14px;
+    color: #fff;
+  }
+
+  .preview-tg .label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 8px;
+  }
+
+  .preview-tg .bubble {
+    background: #2b5278;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+
+  .preview-line {
+    background: #7494a5;
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .preview-line .label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 8px;
+  }
+
+  .preview-line .bubble {
+    background: #fff;
+    border-radius: 12px;
+    border-top-left-radius: 4px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #333;
+    white-space: pre-line;
+    max-width: 200px;
+  }
+
+  .img-preview {
+    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    margin-top: 12px;
+  }
+
+  .img-preview .digit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    margin: 0 3px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.12);
+  }
+
+  .img-preview .row-label {
+    font-size: 12px;
+    color: #888;
+    margin: 8px 0 4px;
+  }
+
+  .img-preview h3 {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 2px;
+  }
+
+  .img-preview .date {
+    font-size: 11px;
+    color: #999;
+    margin-bottom: 10px;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 12px;
+    color: #bbb;
+    border-top: 1px solid #f0ede8;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .content { padding: 20px; }
+    .header { padding: 28px 20px; }
+    .header h1 { font-size: 22px; }
+    .tab-grid { grid-template-columns: 1fr; }
+    .preview-row { grid-template-columns: 1fr; }
+    .flow-step { margin: 0 2px; }
+    .flow-icon { width: 44px; height: 44px; font-size: 20px; }
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .container { box-shadow: none; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1>LottoBot</h1>
+    <p>ระบบส่งผลหวยต่างประเทศอัตโนมัติ</p>
+    <span class="badge">คู่มือใช้งาน</span>
+  </div>
+
+  <div class="content">
+
+    <!-- Section: Login -->
+    <div class="section">
+      <div class="section-title">🔐 เข้าสู่ระบบ</div>
+      <ol class="step-list">
+        <li>เปิดเว็บ <strong>lottobot-chi.vercel.app</strong>
+          <span class="sub">ใช้ได้ทั้งมือถือและคอมพิวเตอร์</span>
+        </li>
+        <li>กรอก Email / Password ที่ได้รับ แล้วกด <strong>เข้าสู่ระบบ</strong></li>
+      </ol>
+    </div>
+
+    <!-- Section: Flow -->
+    <div class="section">
+      <div class="section-title">🔄 Flow การทำงาน</div>
+      <div class="flow-box">
+        <div class="flow-step">
+          <div class="flow-icon" style="background:#3b82f6;">📝</div>
+          <span class="flow-label">Admin กรอกผล</span>
+          <span class="flow-sub">หน้าเว็บ</span>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">
+          <div class="flow-icon" style="background:#1a222c;">✈️</div>
+          <span class="flow-label">Telegram</span>
+          <span class="flow-sub">Admin Log</span>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">
+          <div class="flow-icon" style="background:#06c755;">💬</div>
+          <span class="flow-label">LINE กลุ่ม</span>
+          <span class="flow-sub">ส่งพร้อมรูป</span>
+        </div>
+      </div>
+      <div class="tip-box">
+        กรอกผลแล้วกดส่ง <strong>ครั้งเดียว</strong> → ระบบส่ง Telegram + LINE ทุกกลุ่มอัตโนมัติ
+      </div>
+    </div>
+
+    <!-- Section: Send Results -->
+    <div class="section">
+      <div class="section-title">📝 วิธีส่งผลหวย (ใช้ทุกวัน)</div>
+      <ol class="step-list">
+        <li>กดแท็บ <strong>"กรอกผล"</strong> ที่แถบด้านล่าง</li>
+        <li>หาหวยที่ต้องการ → กรอก <strong>เลขบน / เลขล่าง</strong></li>
+        <li>กดปุ่ม <strong>"ส่งผล"</strong></li>
+        <li>ระบบส่งอัตโนมัติไปทั้ง Telegram และ LINE กลุ่ม
+          <span class="sub">LINE จะได้รับทั้งรูปตัวเลขสีสัน + ข้อความ</span>
+        </li>
+        <li>เช็คสถานะได้ที่หน้า <strong>"หน้าหลัก"</strong> (TG ✓ / LINE ✓)</li>
+      </ol>
+    </div>
+
+    <!-- Section: Preview -->
+    <div class="section">
+      <div class="section-title">👀 ตัวอย่างที่ LINE กลุ่มจะได้รับ</div>
+
+      <div class="img-preview">
+        <h3>🇱🇦 หวยลาว HD 🇱🇦</h3>
+        <div class="date">งวดวันที่ 30 มี.ค. 69</div>
+        <div class="row-label">⬆️ เลขบน</div>
+        <div>
+          <span class="digit" style="background:#FF6B8A;">7</span>
+          <span class="digit" style="background:#FF9F43;">2</span>
+          <span class="digit" style="background:#FFDD59; color:#666;">6</span>
+        </div>
+        <div class="row-label">⬇️ เลขล่าง</div>
+        <div>
+          <span class="digit" style="background:#5CE0D2;">9</span>
+          <span class="digit" style="background:#74B9FF;">4</span>
+        </div>
+        <div style="font-size:10px; color:#ccc; margin-top:12px;">LottoBot — ระบบส่งผลหวยอัตโนมัติ</div>
+      </div>
+
+      <div class="preview-row">
+        <div class="preview-tg">
+          <div class="label">✈️ Telegram Admin</div>
+          <div class="bubble">🇱🇦 <strong>หวยลาว HD</strong>
+งวด 30 มี.ค. 69
+⬆️ บน : 7 2 6
+⬇️ ล่าง : 9 4
+──────
+✓ ส่ง LINE แล้ว 1 กลุ่ม</div>
+        </div>
+        <div class="preview-line">
+          <div class="label">💬 LINE กลุ่ม</div>
+          <div class="bubble">🇱🇦🇱🇦 หวยลาว HD 🇱🇦🇱🇦
+งวดวันที่ 30 มี.ค. 69
+⬆️ บน : 7 2 6
+⬇️ ล่าง : 9 4</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section: Add LINE Group -->
+    <div class="section">
+      <div class="section-title">💬 เพิ่มกลุ่ม LINE</div>
+      <ol class="step-list">
+        <li>เปิดกลุ่ม LINE ที่ต้องการรับผลหวย</li>
+        <li>เชิญ bot <strong>"หน้าบ้าน"</strong> เข้ากลุ่ม
+          <span class="sub">เพิ่มเพื่อน → เชิญเข้ากลุ่ม</span>
+        </li>
+        <li>ระบบจับกลุ่มอัตโนมัติ — <strong>ไม่ต้องตั้งค่าอะไรเพิ่ม</strong></li>
+      </ol>
+      <div class="tip-box">
+        เพิ่มได้หลายกลุ่ม ส่งผลพร้อมกันทุกกลุ่ม ถ้า bot ถูกเชิญออก เชิญเข้าใหม่ได้เลย
+      </div>
+    </div>
+
+    <!-- Section: Tabs -->
+    <div class="section">
+      <div class="section-title">📱 หน้าจอหลัก 5 แท็บ</div>
+      <div class="tab-grid">
+        <div class="tab-card">
+          <div class="icon">📊</div>
+          <div class="info">
+            <h4>หน้าหลัก</h4>
+            <p>ภาพรวม + สถานะส่งวันนี้</p>
+          </div>
+        </div>
+        <div class="tab-card">
+          <div class="icon">📝</div>
+          <div class="info">
+            <h4>กรอกผล</h4>
+            <p>กรอกเลข + กดส่ง (ใช้บ่อยสุด)</p>
+          </div>
+        </div>
+        <div class="tab-card">
+          <div class="icon">🎰</div>
+          <div class="info">
+            <h4>หวย</h4>
+            <p>ดู/แก้ไขรายการหวย 43 รายการ</p>
+          </div>
+        </div>
+        <div class="tab-card">
+          <div class="icon">📋</div>
+          <div class="info">
+            <h4>ประวัติ</h4>
+            <p>ประวัติการส่งย้อนหลัง</p>
+          </div>
+        </div>
+        <div class="tab-card" style="grid-column: span 2;">
+          <div class="icon">⚙️</div>
+          <div class="info">
+            <h4>ตั้งค่า</h4>
+            <p>ตั้งค่า Telegram / LINE Token</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section: System Info -->
+    <div class="section">
+      <div class="section-title">📋 ข้อมูลระบบ</div>
+      <table class="info-table">
+        <tr><td>เว็บ Admin</td><td>lottobot-chi.vercel.app</td></tr>
+        <tr><td>จำนวนหวย</td><td>43 รายการ</td></tr>
+        <tr><td>ส่งผลผ่าน</td><td>LINE Messaging API</td></tr>
+        <tr><td>รูปแบบ LINE</td><td>รูปตัวเลขการ์ตูน + ข้อความ</td></tr>
+        <tr><td>กลุ่ม LINE</td><td>เพิ่มได้ไม่จำกัด</td></tr>
+        <tr><td>รับประกัน</td><td>แก้ Bug ฟรี 30 วัน</td></tr>
+      </table>
+    </div>
+
+    <!-- Section: Troubleshooting -->
+    <div class="section">
+      <div class="section-title">🔧 แก้ปัญหาเบื้องต้น</div>
+      <table class="trouble-table">
+        <thead>
+          <tr><th>ปัญหา</th><th>วิธีแก้</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ล็อกอินไม่ได้</td>
+            <td>เช็ค email / password ให้ถูกต้อง</td>
+          </tr>
+          <tr>
+            <td>LINE ไม่ได้รับผล</td>
+            <td>เช็คว่า bot "หน้าบ้าน" ยังอยู่ในกลุ่ม</td>
+          </tr>
+          <tr>
+            <td>Bot เด้งออกกลุ่ม</td>
+            <td>LINE Developers → เปิด "Allow bot to join group chats"</td>
+          </tr>
+          <tr>
+            <td>กดส่งแล้วไม่เกิดอะไร</td>
+            <td>รอสักครู่ แล้วเช็คหน้า "หน้าหลัก"</td>
+          </tr>
+          <tr>
+            <td>กรอกผลผิด</td>
+            <td>กรอกใหม่แล้วกดส่งอีกครั้ง (ทับอัตโนมัติ)</td>
+          </tr>
+          <tr>
+            <td>มีปัญหาอื่นๆ</td>
+            <td>แจ้งผู้พัฒนา (รับประกัน 30 วัน)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    LottoBot v1.0 — MindFitness Dev Team<br>
+    คู่มือนี้สร้างวันที่ 30 มี.ค. 2569
+  </div>
+</div>
+
+</body>
+</html>
