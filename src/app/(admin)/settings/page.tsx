@@ -403,6 +403,35 @@ function SettingsContent() {
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />
         </div>
+
+        {/* Send test Flex */}
+        <button
+          onClick={async () => {
+            setSaving(true)
+            try {
+              const res = await fetch('/api/test-flex', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: 'ลาว TV',
+                  flag: '🇱🇦',
+                  top_number: '167',
+                  bottom_number: '69',
+                  theme: settings.default_theme || 'macaroon',
+                }),
+              })
+              const data = await res.json()
+              alert(data.success ? '✅ ส่ง Flex Message ไปกลุ่ม LINE แล้ว!' : `❌ ${data.error}`)
+            } catch {
+              alert('❌ ไม่สามารถส่งได้')
+            }
+            setSaving(false)
+          }}
+          disabled={saving}
+          className="btn-primary w-full text-sm disabled:opacity-50"
+        >
+          📤 ส่งตัวอย่าง Flex Message ไปกลุ่ม LINE
+        </button>
       </div>
 
       {saving && <p className="text-xs text-text-secondary text-center">กำลังบันทึก...</p>}
