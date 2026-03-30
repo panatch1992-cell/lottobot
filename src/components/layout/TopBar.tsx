@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'หน้าหลัก',
+  '/results': 'กรอกผล',
   '/lotteries': 'จัดการหวย',
   '/history': 'ประวัติส่ง',
   '/settings': 'ตั้งค่า',
@@ -20,7 +21,16 @@ export default function TopBar() {
           <span className="text-xl">🎰</span>
           <h1 className="text-lg font-semibold">{title}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <a
+            href="/manual.html"
+            target="_blank"
+            className="flex items-center gap-1 text-xs text-text-secondary hover:text-[#c9a84c] transition-colors"
+            title="คู่มือใช้งาน"
+          >
+            <span className="text-base">📖</span>
+            <span className="hidden sm:inline">คู่มือ</span>
+          </a>
           <span className="text-xs text-text-secondary font-mono">LottoBot</span>
         </div>
       </div>
