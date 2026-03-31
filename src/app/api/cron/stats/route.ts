@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { formatStats } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { sendLineNotify } from '@/lib/line-notify'
+import { pushTextMessage } from '@/lib/line-messaging'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import type { Lottery, Result, LineGroup } from '@/types'
 
@@ -71,12 +71,13 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Send to LINE (fallback)
-    if (settings.fallback_enabled === 'true' || !settings.n8n_webhook_url) {
+    // Send to LINE groups (Messaging API)
+    const lineToken = settings.line_channel_access_token
+    if (lineToken) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_notify_token) continue
-        const lineResult = await sendLineNotify(group.line_notify_token, formatted.line)
+        if (!group.line_group_id) continue
+        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
           line_group_id: group.id,

@@ -4,7 +4,10 @@ import { usePathname } from 'next/navigation'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'หน้าหลัก',
-  '/results': 'กรอกผล',
+  '/results': 'แก้ไขผล',
+  '/scraping': 'ดึงผล',
+  '/scheduled': 'ตั้งเวลาส่ง',
+  '/messages': 'ส่งข้อความ',
   '/lotteries': 'จัดการหวย',
   '/history': 'ประวัติส่ง',
   '/settings': 'ตั้งค่า',

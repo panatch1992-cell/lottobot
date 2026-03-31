@@ -2,7 +2,8 @@
 
 export default function FlowDiagram() {
   const steps = [
-    { icon: '🤖', label: 'ดึงผลอัตโนมัติ', sub: 'หุ้น / Scrape / มือ', color: 'bg-blue-500' },
+    { icon: '🤖', label: 'ดึงผลอัตโนมัติ', sub: 'หุ้น / เว็บ', color: 'bg-blue-500' },
+    { icon: '⏰', label: 'Countdown + ตั้งเวลา', sub: '20/10/5 นาที', color: 'bg-[#e89b1c]' },
     { icon: '✈️', label: 'Telegram', sub: 'Admin Log', color: 'bg-[#1a222c]' },
     { icon: '💬', label: 'LINE กลุ่ม', sub: 'ส่งพร้อมรูป', color: 'bg-[#06c755]' },
   ]
