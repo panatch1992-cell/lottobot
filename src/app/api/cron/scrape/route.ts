@@ -196,20 +196,20 @@ export async function GET(req: NextRequest) {
             lottery: lottery.name,
             success: saveRes.success,
             method: 'browser',
+            error: saveRes.success ? undefined : (saveRes.error || 'save failed'),
           })
 
-          // Update scrape source success if exists
           if (browserSources?.[0]) {
             await db.from('scrape_sources').update({ last_success_at: new Date().toISOString(), last_error: null }).eq('id', browserSources[0].id)
           }
           continue
         }
 
-        // Browser failed — log and try CSS fallback
+        // Browser failed
         if (browserSources?.[0]) {
           await db.from('scrape_sources').update({ last_error: `Browser: ${browserRes.error}` }).eq('id', browserSources[0].id)
         }
-        results.push({ lottery: lottery.name, success: false, method: 'browser', error: browserRes.error })
+        results.push({ lottery: lottery.name, success: false, method: 'browser', error: browserRes.error || 'browser scrape returned no data' })
         // Fall through to CSS scrape
       }
     }
