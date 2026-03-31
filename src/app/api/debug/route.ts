@@ -22,8 +22,11 @@ export async function GET() {
 
     results.has_tg_token = !!settingsMap.telegram_bot_token
     results.has_tg_channel = !!settingsMap.telegram_admin_channel
+    results.tg_channel_value = settingsMap.telegram_admin_channel ? settingsMap.telegram_admin_channel.substring(0, 5) + '...' : '(empty)'
     results.has_line_token = !!settingsMap.line_channel_access_token
+    results.line_token_length = settingsMap.line_channel_access_token?.length || 0
     results.default_theme = settingsMap.default_theme || '(not set)'
+    results.all_keys = Object.keys(settingsMap)
 
     // Test read lotteries
     const { data: lotteries, error: lotErr } = await db.from('lotteries').select('id, name').eq('status', 'active').limit(3)

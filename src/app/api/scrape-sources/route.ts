@@ -18,7 +18,7 @@ async function saveResultAndSend(
   todayStr: string,
 ) {
   // Save result
-  const { data: savedResult } = await db.from('results').insert({
+  const { data: savedResult } = await db.from('results').upsert({
     lottery_id: lotteryId,
     draw_date: todayStr,
     top_number: resultData.top_number || null,

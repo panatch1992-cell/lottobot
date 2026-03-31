@@ -23,7 +23,7 @@ async function saveAndSend(
 ) {
   try {
   // Save result
-  const { data: savedResult, error: insertError } = await db.from('results').insert({
+  const { data: savedResult, error: insertError } = await db.from('results').upsert({
     lottery_id: lottery.id,
     draw_date: todayStr,
     top_number: resultData.top_number || null,
@@ -32,7 +32,7 @@ async function saveAndSend(
     raw_data: resultData,
     source_url: sourceUrl,
     scraped_at: new Date().toISOString(),
-  }).select().single()
+  }, { onConflict: 'lottery_id,draw_date' }).select().single()
 
   if (!savedResult) return { success: false, error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}` }
 
