@@ -21,6 +21,7 @@ async function saveAndSend(
   settings: Record<string, string>,
   todayStr: string,
 ) {
+  try {
   // Save result
   const { data: savedResult, error: insertError } = await db.from('results').insert({
     lottery_id: lottery.id,
@@ -33,7 +34,7 @@ async function saveAndSend(
     scraped_at: new Date().toISOString(),
   }).select().single()
 
-  if (!savedResult) return { success: false, error: `DB insert failed: ${insertError?.message || 'unknown'}` }
+  if (!savedResult) return { success: false, error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}` }
 
   // Format
   const formatted = formatResult(lottery, savedResult)
@@ -100,6 +101,9 @@ async function saveAndSend(
   }
 
   return { success: true }
+  } catch (err) {
+    return { success: false, error: `Exception: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
 
 export async function GET(req: NextRequest) {

@@ -50,6 +50,17 @@ export default function MessagesPage() {
         <p className="text-xs text-text-secondary">พิมพ์ข้อความแล้วส่งไป LINE กลุ่ม / Telegram ได้เลย</p>
       </div>
 
+      {/* Link to scheduled */}
+      <a href="/scheduled" className="block card bg-gradient-to-r from-purple-50 to-purple-50/50 border border-purple-200 hover:border-purple-300 transition-colors">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-purple-700">⏰ ตั้งเวลาส่งข้อความ</p>
+            <p className="text-xs text-purple-500">ตั้งข้อความให้ส่งอัตโนมัติตามเวลา</p>
+          </div>
+          <span className="text-purple-400">→</span>
+        </div>
+      </a>
+
       {/* Quick Templates */}
       <div className="card space-y-2">
         <p className="text-xs font-medium text-text-secondary">เลือก template สำเร็จรูป:</p>

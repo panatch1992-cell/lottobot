@@ -173,6 +173,24 @@ insert into lotteries (name, flag, country, result_time, sort_order) values
   ('ดาวโจนส์ Star', '🇺🇸', 'อเมริกา', '23:30', 43);
 
 -- ============================================
+-- 8.5 Scheduled Messages (ตั้งเวลาส่งข้อความ)
+-- ============================================
+create table scheduled_messages (
+  id uuid primary key default uuid_generate_v4(),
+  message text not null,
+  send_time time not null,
+  repeat_days text not null default 'daily',
+  target text not null default 'both',
+  is_active boolean not null default true,
+  last_sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table scheduled_messages enable row level security;
+create policy "auth_all" on scheduled_messages for all using (auth.role() = 'authenticated');
+
+-- ============================================
 -- 9. Indexes
 -- ============================================
 create index idx_lotteries_status on lotteries(status);
