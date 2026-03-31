@@ -20,6 +20,7 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false)
   const [tgStatus, setTgStatus] = useState<string>('')
   const [lineStatus, setLineStatus] = useState<string>('')
+  const [unlockedFields, setUnlockedFields] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadSettings()
@@ -39,17 +40,48 @@ function SettingsContent() {
     setLoading(false)
   }
 
+  function maskValue(val: string): string {
+    if (!val || val.length < 8) return val ? '••••••••' : ''
+    return '••••••••' + val.slice(-4)
+  }
+
+  function isFieldLocked(key: string): boolean {
+    const criticalKeys = ['telegram_bot_token', 'telegram_admin_channel', 'line_channel_access_token', 'line_channel_secret']
+    if (!criticalKeys.includes(key)) return false
+    if (!settings[key]) return false // empty = unlocked (need to enter)
+    return !unlockedFields.has(key)
+  }
+
+  function toggleLock(key: string) {
+    setUnlockedFields(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   async function saveSetting(key: string, value: string) {
+    // ป้องกันเผลอลบ key สำคัญ
+    const criticalKeys = ['telegram_bot_token', 'telegram_admin_channel', 'line_channel_access_token']
+    if (criticalKeys.includes(key) && !value.trim()) {
+      return // ไม่ save ค่าว่างสำหรับ key สำคัญ
+    }
+
     setSaving(true)
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value }),
       })
-      setSettings(prev => ({ ...prev, [key]: value }))
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: value }))
+        // Lock field after save
+        setUnlockedFields(prev => { const next = new Set(prev); next.delete(key); return next })
+      }
     } catch {
-      console.error('Failed to save setting')
+      // silently fail
     }
     setSaving(false)
   }
@@ -122,26 +154,44 @@ function SettingsContent() {
       <div className="card space-y-3">
         <h3 className="font-semibold">✈️ Telegram Bot</h3>
         <div>
-          <label className="label">Bot Token</label>
-          <input
-            type="password"
-            value={settings.telegram_bot_token || ''}
-            onChange={e => setSettings(prev => ({ ...prev, telegram_bot_token: e.target.value }))}
-            onBlur={e => saveSetting('telegram_bot_token', e.target.value)}
-            className="input font-mono text-xs"
-            placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-          />
+          <label className="label">Bot Token {settings.telegram_bot_token && '🔒'}</label>
+          {isFieldLocked('telegram_bot_token') ? (
+            <div className="flex items-center gap-2">
+              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.telegram_bot_token)}</div>
+              <button onClick={() => toggleLock('telegram_bot_token')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={settings.telegram_bot_token || ''}
+                onChange={e => setSettings(prev => ({ ...prev, telegram_bot_token: e.target.value }))}
+                className="input font-mono text-xs flex-1"
+                placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+              />
+              <button onClick={() => saveSetting('telegram_bot_token', settings.telegram_bot_token || '')} className="btn-primary text-xs shrink-0">💾</button>
+            </div>
+          )}
         </div>
         <div>
-          <label className="label">Admin Channel ID</label>
-          <input
-            type="text"
-            value={settings.telegram_admin_channel || ''}
-            onChange={e => setSettings(prev => ({ ...prev, telegram_admin_channel: e.target.value }))}
-            onBlur={e => saveSetting('telegram_admin_channel', e.target.value)}
-            className="input font-mono text-xs"
-            placeholder="-1001234567890"
-          />
+          <label className="label">Admin Channel ID {settings.telegram_admin_channel && '🔒'}</label>
+          {isFieldLocked('telegram_admin_channel') ? (
+            <div className="flex items-center gap-2">
+              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.telegram_admin_channel)}</div>
+              <button onClick={() => toggleLock('telegram_admin_channel')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={settings.telegram_admin_channel || ''}
+                onChange={e => setSettings(prev => ({ ...prev, telegram_admin_channel: e.target.value }))}
+                className="input font-mono text-xs flex-1"
+                placeholder="-1001234567890"
+              />
+              <button onClick={() => saveSetting('telegram_admin_channel', settings.telegram_admin_channel || '')} className="btn-primary text-xs shrink-0">💾</button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={testTelegram} disabled={tgStatus === 'กำลังทดสอบ...'} className="btn-outline text-sm disabled:opacity-50">🔍 ทดสอบเชื่อมต่อ</button>
@@ -153,26 +203,40 @@ function SettingsContent() {
       <div className="card space-y-3">
         <h3 className="font-semibold">💬 LINE Messaging API</h3>
         <div>
-          <label className="label">Channel Access Token</label>
-          <input
-            type="password"
-            autoComplete="off"
-            value={settings.line_channel_access_token || ''}
-            onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
-            className="input font-mono text-xs"
-            placeholder="Channel Access Token (Long-lived)"
-          />
+          <label className="label">Channel Access Token {settings.line_channel_access_token && '🔒'}</label>
+          {isFieldLocked('line_channel_access_token') ? (
+            <div className="flex items-center gap-2">
+              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.line_channel_access_token)}</div>
+              <button onClick={() => toggleLock('line_channel_access_token')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              autoComplete="off"
+              value={settings.line_channel_access_token || ''}
+              onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
+              className="input font-mono text-xs"
+              placeholder="Channel Access Token (Long-lived)"
+            />
+          )}
         </div>
         <div>
-          <label className="label">Channel Secret</label>
-          <input
-            type="password"
-            autoComplete="off"
-            value={settings.line_channel_secret || ''}
-            onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
-            className="input font-mono text-xs"
-            placeholder="Channel Secret"
-          />
+          <label className="label">Channel Secret {settings.line_channel_secret && '🔒'}</label>
+          {isFieldLocked('line_channel_secret') ? (
+            <div className="flex items-center gap-2">
+              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.line_channel_secret)}</div>
+              <button onClick={() => { toggleLock('line_channel_secret'); toggleLock('line_channel_access_token') }} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              autoComplete="off"
+              value={settings.line_channel_secret || ''}
+              onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
+              className="input font-mono text-xs"
+              placeholder="Channel Secret"
+            />
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -187,7 +251,7 @@ function SettingsContent() {
                 return
               }
               await saveSetting('line_channel_access_token', token)
-              await saveSetting('line_channel_secret', secret)
+              if (secret) await saveSetting('line_channel_secret', secret)
               setSaving(false)
               setLineStatus('✅ บันทึกแล้ว — กดทดสอบ Token ได้เลย')
             }}
