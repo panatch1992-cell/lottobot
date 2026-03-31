@@ -62,6 +62,32 @@ export async function GET() {
       }
     }
 
+    // Test save setting (write + read back)
+    const testKey = 'debug_test_' + Date.now()
+    const { error: saveErr } = await db.from('bot_settings').insert({ key: testKey, value: 'test123' })
+    const { data: readBack } = await db.from('bot_settings').select('value').eq('key', testKey).single()
+    results.save_test = readBack?.value === 'test123' ? 'SUCCESS' : 'FAILED'
+    results.save_error = saveErr?.message || null
+    // Clean up
+    await db.from('bot_settings').delete().eq('key', testKey)
+
+    // Test UPDATE existing key
+    const { data: updateTest, error: updateErr } = await db.from('bot_settings')
+      .update({ value: 'updated_test' })
+      .eq('key', 'telegram_admin_channel')
+      .select()
+    results.update_test = updateTest?.length ? `updated ${updateTest.length} rows` : 'FAILED (0 rows)'
+    results.update_error = updateErr?.message || null
+
+    // Read back to verify
+    const { data: verifyUpdate } = await db.from('bot_settings').select('value').eq('key', 'telegram_admin_channel').single()
+    results.tg_channel_after_update = verifyUpdate?.value || '(still empty)'
+
+    // Restore original value (put back empty since we just tested)
+    if (verifyUpdate?.value === 'updated_test') {
+      await db.from('bot_settings').update({ value: '' }).eq('key', 'telegram_admin_channel')
+    }
+
     results.today = todayStr
     results.env_supabase_url = !!process.env.NEXT_PUBLIC_SUPABASE_URL
     results.env_service_key = !!process.env.SUPABASE_SERVICE_ROLE_KEY
