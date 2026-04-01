@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
   const todayStr = today()
 
   // Get settings — ลอง fetch REST API ตรงๆ ถ้า client library อ่านค่าว่าง
-  let settings: Record<string, string> = {}
+  const settings: Record<string, string> = {}
 
   try {
     // Method 1: Direct REST API call (bypass Supabase JS client)
