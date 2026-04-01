@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/line-messaging'
 import type { LineGroup } from '@/types'
@@ -13,9 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'กรุณาพิมพ์ข้อความ' }, { status: 400 })
     }
 
-    const { data: settingsData } = await db.from('bot_settings').select('key, value')
-    const settings: Record<string, string> = {}
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+    const settings = await getSettings()
 
     const results: { channel: string; success: boolean; error?: string }[] = []
 

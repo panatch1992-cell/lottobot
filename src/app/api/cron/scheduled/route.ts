@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/line-messaging'
 import { nowBangkok, today } from '@/lib/utils'
@@ -21,9 +21,7 @@ export async function GET(req: NextRequest) {
   const dayOfWeek = now.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
 
   // Get settings
-  const { data: settingsData } = await db.from('bot_settings').select('key, value')
-  const settings: Record<string, string> = {}
-  ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  const settings = await getSettings()
 
   // Get active scheduled messages that should send now
   const { data: messages } = await db.from('scheduled_messages')

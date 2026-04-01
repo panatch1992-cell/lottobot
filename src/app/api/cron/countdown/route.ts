@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatCountdown } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/line-messaging'
@@ -24,9 +24,7 @@ export async function GET(req: NextRequest) {
   const todayStr = today()
 
   // Get settings
-  const { data: settingsData } = await db.from('bot_settings').select('key, value')
-  const settings: Record<string, string> = {}
-  ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  const settings = await getSettings()
 
   // Get active lotteries with close_time
   const { data: lotteries } = await db.from('lotteries').select('*').eq('status', 'active')

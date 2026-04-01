@@ -1,25 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getSettings } from '@/lib/supabase'
 import { verifyChannelToken } from '@/lib/line-messaging'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const db = getServiceClient()
+    // Read settings via REST API (bypasses Supabase JS client empty-string bug)
+    const settings = await getSettings()
 
-    // Read token directly by key
-    const { data: row, error } = await db
-      .from('bot_settings')
-      .select('value')
-      .eq('key', 'line_channel_access_token')
-      .single()
-
-    if (error) {
-      return NextResponse.json({ valid: false, error: `DB: ${error.message}` })
-    }
-
-    const token = row?.value
+    const token = settings.line_channel_access_token
     if (!token) {
       return NextResponse.json({ valid: false, error: 'Channel Access Token ยังไม่ได้ตั้งค่า' })
     }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { getGroupSummary } from '@/lib/line-messaging'
 import crypto from 'crypto'
 
@@ -9,10 +9,8 @@ export async function POST(req: NextRequest) {
   try {
     const db = getServiceClient()
 
-    // Get channel secret for signature verification
-    const { data: settingsData } = await db.from('bot_settings').select('key, value')
-    const settings: Record<string, string> = {}
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+    // Get channel secret for signature verification (via REST API)
+    const settings = await getSettings()
 
     const channelSecret = settings.line_channel_secret
     const channelToken = settings.line_channel_access_token
@@ -100,10 +98,8 @@ export async function GET() {
   try {
     const db = getServiceClient()
 
-    // Check settings
-    const { data: settingsData } = await db.from('bot_settings').select('key, value')
-    const settings: Record<string, string> = {}
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+    // Check settings (via REST API)
+    const settings = await getSettings()
 
     // Check groups
     const { data: groups } = await db.from('line_groups').select('*').order('updated_at', { ascending: false }).limit(10)

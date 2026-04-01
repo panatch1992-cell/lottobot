@@ -23,6 +23,27 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 })
 
+// Read bot_settings via direct REST API (bypasses Supabase JS client empty-string bug)
+export async function getSettings(): Promise<Record<string, string>> {
+  const settings: Record<string, string> = {}
+  try {
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/bot_settings?select=key,value`
+    const res = await fetch(url, {
+      headers: {
+        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ''}`,
+      },
+    })
+    const data = await res.json()
+    if (Array.isArray(data)) {
+      data.forEach((s: { key: string; value: string }) => { if (s.key && s.value) settings[s.key] = s.value })
+    }
+  } catch {
+    // fallback silent
+  }
+  return settings
+}
+
 // Server-side client with service role (for cron jobs / API routes)
 export function getServiceClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY

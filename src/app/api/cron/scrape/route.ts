@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { scrapeWithFallback } from '@/lib/scraper'
 import { isStockLottery, fetchStockLotteryResult } from '@/lib/stock-fetcher'
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape } from '@/lib/browser-scraper'
@@ -119,27 +119,8 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings — ลอง fetch REST API ตรงๆ ถ้า client library อ่านค่าว่าง
-  const settings: Record<string, string> = {}
-
-  try {
-    // Method 1: Direct REST API call (bypass Supabase JS client)
-    const restUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/bot_settings?select=key,value`
-    const restRes = await fetch(restUrl, {
-      headers: {
-        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ''}`,
-      },
-    })
-    const restData = await restRes.json()
-    if (Array.isArray(restData)) {
-      restData.forEach((s: { key: string; value: string }) => { if (s.key && s.value) settings[s.key] = s.value })
-    }
-  } catch {
-    // Fallback: use Supabase client
-    const { data: settingsData } = await db.from('bot_settings').select('key, value')
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
-  }
+  // Get settings via REST API (bypasses Supabase JS client empty-string bug)
+  const settings = await getSettings()
 
   const scrapeWindowMinutes = parseInt(settings.scrape_window_minutes || '30', 10)
   const maxRetries = parseInt(settings.scrape_max_retries || '3', 10)
@@ -292,18 +273,5 @@ export async function GET(req: NextRequest) {
     already_have_result: inWindow.length - needFetch.length,
     results,
     timestamp: new Date().toISOString(),
-    _debug: {
-      nowMinutes,
-      today: todayStr,
-      has_tg: !!(settings.telegram_bot_token && settings.telegram_admin_channel),
-      has_line: !!settings.line_channel_access_token,
-      tg_channel_len: settings.telegram_admin_channel?.length || 0,
-      line_token_len: settings.line_channel_access_token?.length || 0,
-      settings_keys: Object.keys(settings),
-      // Raw check: fetch settings directly via REST
-      raw_tg_channel: settings.telegram_admin_channel === null ? 'NULL' : settings.telegram_admin_channel === undefined ? 'UNDEF' : settings.telegram_admin_channel === '' ? 'EMPTY' : `val(${String(settings.telegram_admin_channel).length})`,
-      raw_line_token: settings.line_channel_access_token === null ? 'NULL' : settings.line_channel_access_token === undefined ? 'UNDEF' : settings.line_channel_access_token === '' ? 'EMPTY' : `val(${String(settings.line_channel_access_token).length})`,
-      sample_values: Object.entries(settings).slice(0, 3).map(([k, v]) => `${k}=${v === null ? 'NULL' : v === '' ? 'EMPTY' : 'len:' + String(v).length}`),
-    },
   })
 }

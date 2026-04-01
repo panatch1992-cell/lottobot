@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendToTelegram, testTelegramBot } from '@/lib/telegram'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const db = getServiceClient()
 
-    // Get bot settings
-    const { data: settings } = await db.from('bot_settings').select('key, value')
-    const settingsMap: Record<string, string> = {}
-    ;(settings || []).forEach((s: { key: string; value: string }) => { settingsMap[s.key] = s.value })
+    // Get bot settings via REST API (bypasses Supabase JS client empty-string bug)
+    const settingsMap = await getSettings()
 
     const botToken = settingsMap.telegram_bot_token
     const channelId = settingsMap.telegram_admin_channel

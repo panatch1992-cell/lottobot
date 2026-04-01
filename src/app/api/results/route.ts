@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
@@ -101,9 +101,7 @@ export async function POST(req: NextRequest) {
     const sendResults: { channel: string; success: boolean; error?: string }[] = []
 
     // Send to Telegram
-    const { data: settingsData } = await db.from('bot_settings').select('key, value')
-    const settings: Record<string, string> = {}
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+    const settings = await getSettings()
 
     if (settings.telegram_bot_token && settings.telegram_admin_channel) {
       const { count } = await db.from('line_groups').select('*', { count: 'exact', head: true }).eq('is_active', true)

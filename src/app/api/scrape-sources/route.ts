@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 import { scrapeResult, scrapeWithFallback } from '@/lib/scraper'
 import { isStockLottery, getStockInfo, fetchStockLotteryResult } from '@/lib/stock-fetcher'
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape, browserFetchHTML } from '@/lib/browser-scraper'
@@ -43,9 +43,7 @@ async function saveResultAndSend(
   const sends: { channel: string; success: boolean; error?: string }[] = []
 
   // Get settings
-  const { data: settingsData } = await db.from('bot_settings').select('key, value')
-  const settings: Record<string, string> = {}
-  ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  const settings = await getSettings()
 
   // Send to Telegram
   if (settings.telegram_bot_token && settings.telegram_admin_channel) {

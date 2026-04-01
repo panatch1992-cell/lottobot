@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient } from '@/lib/supabase'
+import { getServiceClient, getSettings } from '@/lib/supabase'
 
 export async function GET() {
   try {
@@ -8,8 +8,33 @@ export async function GET() {
       db.from('bot_settings').select('*'),
       db.from('line_groups').select('*').order('created_at'),
     ])
+
+    let settingsData = settingsRes.data || []
+
+    // Fallback: if Supabase JS client returns empty values, try REST API
+    const hasEmptyValues = settingsData.some((s: { key: string; value: string }) => s.value === '' || s.value === null)
+    if (hasEmptyValues || settingsData.length === 0) {
+      const restSettings = await getSettings()
+      if (Object.keys(restSettings).length > 0) {
+        // Merge REST values into settingsData (REST values override empty ones)
+        settingsData = settingsData.map((s: { key: string; value: string; [k: string]: unknown }) => {
+          if ((!s.value || s.value === '') && restSettings[s.key]) {
+            return { ...s, value: restSettings[s.key] }
+          }
+          return s
+        })
+        // Add any keys from REST that aren't in settingsData
+        const existingKeys = new Set(settingsData.map((s: { key: string }) => s.key))
+        for (const [key, value] of Object.entries(restSettings)) {
+          if (!existingKeys.has(key)) {
+            settingsData.push({ key, value })
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
-      settings: settingsRes.data || [],
+      settings: settingsData,
       groups: groupsRes.data || [],
     })
   } catch (err) {
