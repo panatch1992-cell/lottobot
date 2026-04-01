@@ -132,6 +132,40 @@ export const THEMES: Record<string, ThemeConfig> = {
       { bg: 'transparent', text: '#80CBC4', border: 'transparent' },  // teal
     ],
   },
+  outline: {
+    name: 'Outline',
+    background: '#FFFFFF',
+    titleColor: '#333333',
+    dateColor: '#666666',
+    labelColor: '#888888',
+    footerColor: '#CCCCCC',
+    digits: [
+      { bg: '#FFFFFF', text: '#8E44AD', border: '#8E44AD' },  // purple
+      { bg: '#FFFFFF', text: '#8E44AD', border: '#8E44AD' },  // purple
+      { bg: '#FFFFFF', text: '#8E44AD', border: '#8E44AD' },  // purple
+      { bg: '#FFFFFF', text: '#27AE60', border: '#27AE60' },  // green
+      { bg: '#FFFFFF', text: '#E84393', border: '#E84393' },  // pink
+      { bg: '#FFFFFF', text: '#2980B9', border: '#2980B9' },  // blue
+      { bg: '#FFFFFF', text: '#E67E22', border: '#E67E22' },  // orange
+      { bg: '#FFFFFF', text: '#1ABC9C', border: '#1ABC9C' },  // teal
+    ],
+  },
+  darkminimal: {
+    name: 'DarkMinimal',
+    background: '#1A1A2E',
+    titleColor: '#FFFFFF',
+    dateColor: '#4FC3F7',
+    labelColor: '#90CAF9',
+    footerColor: '#455A64',
+    digits: [
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+      { bg: '#2D2D44', text: '#FFFFFF', border: '#3D3D5C' },
+    ],
+  },
 }
 
 function getTheme(name?: string): ThemeConfig {
@@ -156,15 +190,30 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
   const c = theme.digits[index % theme.digits.length]
   const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
   const fs = FONT_STYLES[fontStyle as keyof typeof FONT_STYLES] || FONT_STYLES.rounded
-  const isOutline = fontStyle === 'outline'
+  const isStyleOutline = fontStyle === 'outline'
   const isShopee = theme.name === 'Shopee'
+  const isOutlineTheme = theme.name === 'Outline'
+  const isDark = theme.name === 'DarkMinimal'
 
-  // Text-stroke effect via textShadow (Satori doesn't support -webkit-text-stroke)
-  const strokeColor = '#42210b'
-  const s = 3 // stroke width
-  const textStroke = isShopee
-    ? `${s}px ${s}px 0 ${strokeColor}, -${s}px -${s}px 0 ${strokeColor}, ${s}px -${s}px 0 ${strokeColor}, -${s}px ${s}px 0 ${strokeColor}, ${s}px 0 0 ${strokeColor}, -${s}px 0 0 ${strokeColor}, 0 ${s}px 0 ${strokeColor}, 0 -${s}px 0 ${strokeColor}`
-    : 'none'
+  // Text-stroke: Shopee = brown outline, Outline theme = colored outline with white fill
+  const s = 3
+  let textStroke = 'none'
+  if (isShopee) {
+    textStroke = `${s}px ${s}px 0 #42210b, -${s}px -${s}px 0 #42210b, ${s}px -${s}px 0 #42210b, -${s}px ${s}px 0 #42210b, ${s}px 0 0 #42210b, -${s}px 0 0 #42210b, 0 ${s}px 0 #42210b, 0 -${s}px 0 #42210b`
+  } else if (isOutlineTheme) {
+    const sc = c.border
+    textStroke = `${s}px ${s}px 0 ${sc}, -${s}px -${s}px 0 ${sc}, ${s}px -${s}px 0 ${sc}, -${s}px ${s}px 0 ${sc}, ${s}px 0 0 ${sc}, -${s}px 0 0 ${sc}, 0 ${s}px 0 ${sc}, 0 -${s}px 0 ${sc}, 2px 3px 4px rgba(0,0,0,0.15)`
+  }
+
+  // Choose font family based on theme
+  const fontFamily = isShopee ? 'Sniglet, sans-serif'
+    : isOutlineTheme ? 'Mali, sans-serif'
+    : isDark ? 'Mitr, sans-serif'
+    : 'sans-serif'
+
+  // Digit size adjustments per theme
+  const boxMult = isShopee ? 1.15 : isOutlineTheme ? 1.1 : 1
+  const fontMult = isShopee ? 1.3 : isOutlineTheme ? 1.25 : isDark ? 1.1 : 1
 
   return React.createElement(
     'div',
@@ -173,18 +222,18 @@ function DigitBubble({ digit, index, theme, fontStyle, size }: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: isShopee ? sz.box * 1.15 : sz.box,
-        height: isShopee ? sz.box * 1.15 : sz.box,
-        borderRadius: isShopee ? '50%' : sz.radius,
-        backgroundColor: isOutline ? 'transparent' : c.bg,
-        border: isShopee ? 'none' : `${sz.borderW}px solid ${c.border}`,
-        color: isOutline ? c.border : c.text,
-        fontSize: isShopee ? sz.fontSize * 1.3 : sz.fontSize,
+        width: sz.box * boxMult,
+        height: sz.box * boxMult,
+        borderRadius: (isShopee || isOutlineTheme) ? '50%' : isDark ? sz.radius * 0.6 : sz.radius,
+        backgroundColor: isStyleOutline ? 'transparent' : isOutlineTheme ? 'transparent' : c.bg,
+        border: (isShopee || isOutlineTheme) ? 'none' : `${sz.borderW}px solid ${c.border}`,
+        color: isOutlineTheme ? '#FFFFFF' : isStyleOutline ? c.border : c.text,
+        fontSize: sz.fontSize * fontMult,
         fontWeight: 900,
-        fontFamily: isShopee ? 'Sniglet, sans-serif' : 'sans-serif',
-        letterSpacing: isShopee ? 0 : fs.letterSpacing,
+        fontFamily,
+        letterSpacing: fs.letterSpacing,
         textShadow: textStroke,
-        margin: `0 ${isShopee ? sz.gap + 2 : sz.gap}px`,
+        margin: `0 ${(isShopee || isOutlineTheme) ? sz.gap + 2 : sz.gap}px`,
       },
     },
     digit

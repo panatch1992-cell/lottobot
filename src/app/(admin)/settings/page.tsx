@@ -392,6 +392,8 @@ function SettingsContent() {
           <label className="label">ธีม</label>
           <div className="grid grid-cols-3 gap-2">
             {[
+              { id: 'outline', label: '✍️', colors: ['#8E44AD', '#27AE60', '#E84393'] },
+              { id: 'darkminimal', label: '🖤', colors: ['#2D2D44', '#4FC3F7', '#90CAF9'] },
               { id: 'shopee', label: '🎀', colors: ['#F48FB1', '#FFB74D', '#AED581'] },
               { id: 'macaroon', label: '🧁', colors: ['#FFD1DC', '#FFE5B4', '#FFFACD'] },
               { id: 'candy', label: '🍬', colors: ['#FF6B8A', '#FF9F43', '#FFDD59'] },
@@ -420,14 +422,23 @@ function SettingsContent() {
           </div>
         </div>
 
-        {/* Font Style */}
+        {/* Font */}
         <div>
-          <label className="label">สไตล์ตัวเลข</label>
-          <div className="flex gap-2">
+          <label className="label">ฟอนต์ตัวเลข</label>
+          <div className="grid grid-cols-3 gap-2">
             {[
-              { id: 'rounded', label: '● มน', desc: 'นุ่มน่ารัก' },
-              { id: 'sharp', label: '◆ คม', desc: 'คมชัด' },
-              { id: 'outline', label: '○ เส้น', desc: 'โปร่งใส' },
+              { id: 'sniglet', label: 'Sniglet', desc: 'กลม bubbly' },
+              { id: 'mali', label: 'มะลิ', desc: 'น่ารัก ไทย' },
+              { id: 'itim', label: 'ไอติม', desc: 'หนา ไทย' },
+              { id: 'mitr', label: 'มิตร', desc: 'สะอาด ไทย' },
+              { id: 'fredoka', label: 'Fredoka', desc: 'กลม หนา' },
+              { id: 'luckiestguy', label: 'Luckiest', desc: 'การ์ตูน' },
+              { id: 'comfortaa', label: 'Comfortaa', desc: 'มน สวย' },
+              { id: 'varelaround', label: 'Varela', desc: 'กลม เรียบ' },
+              { id: 'quicksand', label: 'Quicksand', desc: 'ทันสมัย' },
+              { id: 'kanit', label: 'คณิต', desc: 'ไทย โมเดิร์น' },
+              { id: 'baloo2', label: 'Baloo 2', desc: 'อ้วน กลม' },
+              { id: 'prompt', label: 'Prompt', desc: 'ไทย สะอาด' },
             ].map(f => (
               <button
                 key={f.id}

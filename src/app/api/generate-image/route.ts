@@ -25,7 +25,7 @@ const FONT_URLS: Record<string, string> = {
 }
 
 // Font display names for themes
-export const FONT_NAMES: Record<string, string> = {
+const FONT_NAMES: Record<string, string> = {
   sniglet: 'Sniglet',
   mali: 'มะลิ (Mali)',
   itim: 'ไอติม (Itim)',
