@@ -119,10 +119,27 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings
-  const { data: settingsData } = await db.from('bot_settings').select('key, value')
-  const settings: Record<string, string> = {}
-  ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  // Get settings — ลอง fetch REST API ตรงๆ ถ้า client library อ่านค่าว่าง
+  let settings: Record<string, string> = {}
+
+  try {
+    // Method 1: Direct REST API call (bypass Supabase JS client)
+    const restUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/bot_settings?select=key,value`
+    const restRes = await fetch(restUrl, {
+      headers: {
+        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ''}`,
+      },
+    })
+    const restData = await restRes.json()
+    if (Array.isArray(restData)) {
+      restData.forEach((s: { key: string; value: string }) => { if (s.key && s.value) settings[s.key] = s.value })
+    }
+  } catch {
+    // Fallback: use Supabase client
+    const { data: settingsData } = await db.from('bot_settings').select('key, value')
+    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  }
 
   const scrapeWindowMinutes = parseInt(settings.scrape_window_minutes || '30', 10)
   const maxRetries = parseInt(settings.scrape_max_retries || '3', 10)
