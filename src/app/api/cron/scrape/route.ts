@@ -36,11 +36,20 @@ async function saveAndSend(
 
   if (!savedResult) return { success: false, error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}` }
 
+  // Check if already sent for this result (prevent duplicate sends)
+  const { data: existingLogs } = await db.from('send_logs')
+    .select('channel')
+    .eq('result_id', savedResult.id)
+    .eq('status', 'sent')
+
+  const alreadySentTG = existingLogs?.some(l => l.channel === 'telegram')
+  const alreadySentLINE = existingLogs?.some(l => l.channel === 'line')
+
   // Format
   const formatted = formatResult(lottery, savedResult)
 
-  // Send to Telegram
-  if (settings.telegram_bot_token && settings.telegram_admin_channel) {
+  // Send to Telegram (skip if already sent)
+  if (!alreadySentTG && settings.telegram_bot_token && settings.telegram_admin_channel) {
     const { count } = await db.from('line_groups').select('*', { count: 'exact', head: true }).eq('is_active', true)
     const adminMsg = formatTgAdminLog(lottery, savedResult, count || 0, 0)
     const startTg = Date.now()
@@ -58,9 +67,9 @@ async function saveAndSend(
     })
   }
 
-  // Send to LINE groups (emoji text + sticker image)
+  // Send to LINE groups (skip if already sent — save monthly limit!)
   const lineToken = settings.line_channel_access_token
-  if (lineToken) {
+  if (!alreadySentLINE && lineToken) {
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 

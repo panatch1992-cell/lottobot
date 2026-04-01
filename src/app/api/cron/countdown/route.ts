@@ -42,11 +42,12 @@ export async function GET(req: NextRequest) {
       // ตรงเวลา? (ภายใน 1 นาที)
       if (nowMinutes < countdownAt || nowMinutes > countdownAt + 1) continue
 
-      // เช็คว่าส่ง interval นี้ไปแล้วหรือยังวันนี้
+      // เช็คว่าส่ง interval นี้ สำเร็จ ไปแล้วหรือยังวันนี้
       const { data: existing } = await db.from('send_logs')
         .select('id')
         .eq('lottery_id', lottery.id)
         .eq('msg_type', 'countdown')
+        .eq('status', 'sent')
         .gte('created_at', todayStr)
         .like('error_message', `%${mins}min%`)
         .limit(1)
