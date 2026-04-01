@@ -283,6 +283,10 @@ export async function GET(req: NextRequest) {
       tg_channel_len: settings.telegram_admin_channel?.length || 0,
       line_token_len: settings.line_channel_access_token?.length || 0,
       settings_keys: Object.keys(settings),
+      // Raw check: fetch settings directly via REST
+      raw_tg_channel: settings.telegram_admin_channel === null ? 'NULL' : settings.telegram_admin_channel === undefined ? 'UNDEF' : settings.telegram_admin_channel === '' ? 'EMPTY' : `val(${String(settings.telegram_admin_channel).length})`,
+      raw_line_token: settings.line_channel_access_token === null ? 'NULL' : settings.line_channel_access_token === undefined ? 'UNDEF' : settings.line_channel_access_token === '' ? 'EMPTY' : `val(${String(settings.line_channel_access_token).length})`,
+      sample_values: Object.entries(settings).slice(0, 3).map(([k, v]) => `${k}=${v === null ? 'NULL' : v === '' ? 'EMPTY' : 'len:' + String(v).length}`),
     },
   })
 }
