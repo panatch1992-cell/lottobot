@@ -275,5 +275,14 @@ export async function GET(req: NextRequest) {
     already_have_result: inWindow.length - needFetch.length,
     results,
     timestamp: new Date().toISOString(),
+    _debug: {
+      nowMinutes,
+      today: todayStr,
+      has_tg: !!(settings.telegram_bot_token && settings.telegram_admin_channel),
+      has_line: !!settings.line_channel_access_token,
+      tg_channel_len: settings.telegram_admin_channel?.length || 0,
+      line_token_len: settings.line_channel_access_token?.length || 0,
+      settings_keys: Object.keys(settings),
+    },
   })
 }
