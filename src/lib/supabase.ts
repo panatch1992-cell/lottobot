@@ -29,5 +29,13 @@ export function getServiceClient() {
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL are required')
   }
-  return createClient(supabaseUrl, serviceRoleKey)
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    db: {
+      schema: 'public',
+    },
+  })
 }
