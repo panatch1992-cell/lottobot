@@ -380,6 +380,26 @@ function SettingsContent() {
           />
           <span className="text-sm">เปิดใช้แหล่งสำรอง (Fallback)</span>
         </label>
+
+        <hr className="border-gray-100" />
+
+        <div>
+          <label className="label">Countdown แจ้งเตือนก่อนปิดรับ (นาที)</label>
+          <input
+            type="text"
+            value={settings.countdown_intervals || '20,10,5'}
+            onChange={e => setSettings(prev => ({ ...prev, countdown_intervals: e.target.value }))}
+            className="input font-mono text-sm"
+            placeholder="20,10,5"
+          />
+          <p className="text-[10px] text-text-secondary mt-1">ใส่นาทีคั่นด้วยคอมมา เช่น "20,10,5" = แจ้งเตือน 3 ครั้ง (20, 10, 5 นาทีก่อนปิด) ใส่ "5" = แจ้งเตือนครั้งเดียว</p>
+          <button
+            onClick={() => saveSetting('countdown_intervals', settings.countdown_intervals || '20,10,5')}
+            className="btn-primary text-xs mt-2"
+          >
+            💾 บันทึก Countdown
+          </button>
+        </div>
       </div>
 
       {/* Default Result Style */}

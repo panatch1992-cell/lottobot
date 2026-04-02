@@ -122,7 +122,8 @@ insert into bot_settings (key, value, description) values
   ('default_theme', 'shopee', 'ธีมรูปตัวเลข (macaroon/candy/ocean/gold/dark/shopee)'),
   ('default_font_style', 'rounded', 'สไตล์ตัวเลข (rounded/sharp/outline)'),
   ('default_digit_size', 'm', 'ขนาดตัวเลข (s/m/l)'),
-  ('default_layout', 'horizontal', 'เรียงตัวเลข (horizontal/vertical)');
+  ('default_layout', 'horizontal', 'เรียงตัวเลข (horizontal/vertical)'),
+  ('countdown_intervals', '20,10,5', 'แจ้งเตือนก่อนปิดรับ (นาที คั่นด้วยคอมมา)');
 
 -- ============================================
 -- 8. Seed: 43 รายการหวย (จากลูกค้า)

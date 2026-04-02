@@ -8,8 +8,8 @@ import type { Lottery, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
-// แจ้งเตือน 3 ครั้ง: 20, 10, 5 นาทีก่อนปิด
-const COUNTDOWN_INTERVALS = [20, 10, 5]
+// แจ้งเตือนก่อนปิดรับ — ค่า default, ลูกค้าตั้งเองได้จาก settings
+const DEFAULT_COUNTDOWN = '20,10,5'
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -23,8 +23,12 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings
+  // Get settings + countdown intervals
   const settings = await getSettings()
+  const COUNTDOWN_INTERVALS = (settings.countdown_intervals || DEFAULT_COUNTDOWN)
+    .split(',')
+    .map(Number)
+    .filter(n => n > 0)
 
   // Get active lotteries with close_time
   const { data: lotteries } = await db.from('lotteries').select('*').eq('status', 'active')
