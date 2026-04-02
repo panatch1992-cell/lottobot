@@ -449,20 +449,23 @@ function SettingsContent() {
         {/* Font */}
         <div>
           <label className="label">ฟอนต์ตัวเลข</label>
-          <div className="grid grid-cols-3 gap-2">
+          <p className="text-[10px] text-text-secondary mb-2">ฟอนต์ไทย Playful + ฟอนต์กลม Bubble จาก Google Fonts</p>
+
+          <p className="text-[10px] font-medium text-text-secondary mb-1">🇹🇭 ฟอนต์ไทย:</p>
+          <div className="grid grid-cols-3 gap-2 mb-3">
             {[
-              { id: 'sniglet', label: 'Sniglet', desc: 'กลม bubbly' },
-              { id: 'mali', label: 'มะลิ', desc: 'น่ารัก ไทย' },
-              { id: 'itim', label: 'ไอติม', desc: 'หนา ไทย' },
-              { id: 'mitr', label: 'มิตร', desc: 'สะอาด ไทย' },
-              { id: 'fredoka', label: 'Fredoka', desc: 'กลม หนา' },
-              { id: 'luckiestguy', label: 'Luckiest', desc: 'การ์ตูน' },
-              { id: 'comfortaa', label: 'Comfortaa', desc: 'มน สวย' },
-              { id: 'varelaround', label: 'Varela', desc: 'กลม เรียบ' },
-              { id: 'quicksand', label: 'Quicksand', desc: 'ทันสมัย' },
-              { id: 'kanit', label: 'คณิต', desc: 'ไทย โมเดิร์น' },
-              { id: 'baloo2', label: 'Baloo 2', desc: 'อ้วน กลม' },
-              { id: 'prompt', label: 'Prompt', desc: 'ไทย สะอาด' },
+              { id: 'mali', label: 'มะลิ', desc: 'น่ารัก กลม' },
+              { id: 'itim', label: 'ไอติม', desc: 'หนา ลายมือ' },
+              { id: 'mitr', label: 'มิตร', desc: 'สะอาด มน' },
+              { id: 'kanit', label: 'คณิต', desc: 'โมเดิร์น' },
+              { id: 'prompt', label: 'Prompt', desc: 'เรขาคณิต' },
+              { id: 'sriracha', label: 'ศรีราชา', desc: 'ลายมือ สนุก' },
+              { id: 'kodchasan', label: 'คชสาร', desc: 'โค้งมน' },
+              { id: 'k2d', label: 'K2D', desc: 'มน ทันสมัย' },
+              { id: 'chonburi', label: 'ชลบุรี', desc: 'หนา display' },
+              { id: 'baijamjuree', label: 'ใบจามจุรี', desc: 'สดใส' },
+              { id: 'charm', label: 'จาม', desc: 'ตกแต่ง' },
+              { id: 'charmonman', label: 'ชาร์มนต์แมน', desc: 'สวยงาม' },
             ].map(f => (
               <button
                 key={f.id}

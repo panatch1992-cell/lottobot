@@ -8,20 +8,31 @@ import { buildResultImageJSX, type ResultImageData } from '@/lib/generate-result
 export const runtime = 'edge'
 
 // Font URLs from Google Fonts gstatic CDN
+// Thai Playful + International Bubble/Rounded fonts
 const FONT_URLS: Record<string, string> = {
-  sniglet: 'https://fonts.gstatic.com/s/sniglet/v17/cIf9MaFLtkE3UjaJxCmrYGkHgIs.ttf',
+  // === Thai Playful/Cute ===
   mali: 'https://fonts.gstatic.com/s/mali/v10/N0bV2SRONuN4QOLlKlRaJdbWgdY.ttf',
   itim: 'https://fonts.gstatic.com/s/itim/v14/0nknC9ziJOYewARKkc7ZdwU.ttf',
   mitr: 'https://fonts.gstatic.com/s/mitr/v11/pxiLypw5ucZF8fMZFJDUc1NECPY.ttf',
+  kanit: 'https://fonts.gstatic.com/s/kanit/v15/nKKU-Go6G5tXcr4-ORWnVaFrNlJzIu4.ttf',
+  prompt: 'https://fonts.gstatic.com/s/prompt/v10/-W_8XJnvUD7dzB2CA9oYRHciFg.ttf',
+  sriracha: 'https://fonts.gstatic.com/s/sriracha/v14/0nkrC9D4IuYBgWcI9NbRQwCDnqp_.ttf',
+  kodchasan: 'https://fonts.gstatic.com/s/kodchasan/v17/1cXxaUPOAJv9sG4I-DJWjXGAq8Sk1PoH.ttf',
+  k2d: 'https://fonts.gstatic.com/s/k2d/v11/J7aRnpF2V0EjdZ1NtLYS6w.ttf',
+  chonburi: 'https://fonts.gstatic.com/s/chonburi/v12/8AtqGs-wOpGRTBq66IWaFr3biAfZ.ttf',
+  baijamjuree: 'https://fonts.gstatic.com/s/baijamjuree/v12/LDIqapSCOBt_aeQQ7ftydoaMWcjKm7sp8g.ttf',
+  charm: 'https://fonts.gstatic.com/s/charm/v12/7cHmv4oii5K0MeYnC8s6vanB.ttf',
+  charmonman: 'https://fonts.gstatic.com/s/charmonman/v18/MjQDmiR3vP_nuxDv47jiWJGovLdh6OE.ttf',
+  // === International Bubble/Rounded ===
+  sniglet: 'https://fonts.gstatic.com/s/sniglet/v17/cIf9MaFLtkE3UjaJxCmrYGkHgIs.ttf',
   fredoka: 'https://fonts.gstatic.com/s/fredoka/v14/X7nP4b87HvSqjb_WIi2yDCRwoQ_k7367_B-i2yQag0-mac3O8SL5U_tC.ttf',
   baloo2: 'https://fonts.gstatic.com/s/baloo2/v21/wXK0E3kTposypRyd51ncAFk.ttf',
   luckiestguy: 'https://fonts.gstatic.com/s/luckiestguy/v22/_gP_1RrxsjcxVvHOseld-RQBinCsBKEP.ttf',
   comfortaa: 'https://fonts.gstatic.com/s/comfortaa/v45/1Pt_g8LJRfWJmhDAuUsSQamb1W0lwk4S4WjNPrQVIT9c2c8.ttf',
   varelaround: 'https://fonts.gstatic.com/s/varelaround/v20/w8gdH283Tvk__Lua32TysjIYcaSKs860.ttf',
   quicksand: 'https://fonts.gstatic.com/s/quicksand/v31/6xK-dSZaM9iE8KbpRA_LJ3z8mH9BOJvgkP8o58m-wi40.ttf',
-  kanit: 'https://fonts.gstatic.com/s/kanit/v15/nKKU-Go6G5tXcr4-ORWnVaFrNlJzIu4.ttf',
-  prompt: 'https://fonts.gstatic.com/s/prompt/v10/-W_8XJnvUD7dzB2CA9oYRHciFg.ttf',
-  bubblegum: 'https://fonts.gstatic.com/s/bubblegum sans/v20/AYCSpXb_Z9EORv1M5QTjEzMEteaAxIsp.ttf',
+  nunito: 'https://fonts.gstatic.com/s/nunito/v26/XRXI3I6Li01BKofiOc5wtlZ2di8HDIkhdTQ3j6zbXWjgevT5.ttf',
+  poppins: 'https://fonts.gstatic.com/s/poppins/v21/pxiByp8kv8JHgFVrLDD4Z1xlFQ.ttf',
 }
 
 
