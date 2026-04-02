@@ -483,6 +483,33 @@ function SettingsContent() {
           </div>
         </div>
 
+        {/* Custom Font */}
+        <div className="bg-gray-50 rounded-lg p-3">
+          <label className="label">หรือพิมพ์ชื่อฟอนต์จาก Google Fonts:</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={settings.default_font_style?.startsWith('custom:') ? settings.default_font_style.replace('custom:', '') : ''}
+              onChange={e => {
+                const val = e.target.value.trim()
+                if (val) setSettings(prev => ({ ...prev, default_font_style: `custom:${val}` }))
+              }}
+              className="input text-xs flex-1"
+              placeholder="เช่น Lobster, Pacifico, Sarabun..."
+            />
+            <button
+              onClick={() => {
+                const val = settings.default_font_style || ''
+                if (val.startsWith('custom:')) saveSetting('default_font_style', val)
+              }}
+              className="btn-primary text-xs shrink-0"
+            >
+              💾 ใช้ฟอนต์นี้
+            </button>
+          </div>
+          <p className="text-[10px] text-text-secondary mt-1">{'เลือกฟอนต์จาก fonts.google.com แล้วพิมพ์ชื่อมา ระบบโหลดอัตโนมัติ'}</p>
+        </div>
+
         {/* Digit Size */}
         <div>
           <label className="label">ขนาดตัวเลข</label>

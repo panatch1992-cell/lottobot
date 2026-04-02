@@ -37,17 +37,46 @@ const FONT_URLS: Record<string, string> = {
 
 
 async function loadFont(fontId: string): Promise<ArrayBuffer> {
-  const url = FONT_URLS[fontId] || FONT_URLS.sniglet
-  const res = await fetch(url)
-  return res.arrayBuffer()
+  // Check built-in fonts first
+  const builtInUrl = FONT_URLS[fontId.toLowerCase()]
+  if (builtInUrl) {
+    const res = await fetch(builtInUrl)
+    return res.arrayBuffer()
+  }
+
+  // Custom Google Font — try to load via CSS API then extract .ttf URL
+  try {
+    const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontId)}:wght@700&display=swap`
+    const cssRes = await fetch(cssUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    })
+    const cssText = await cssRes.text()
+    const ttfMatch = cssText.match(/src:\s*url\(([^)]+\.ttf)\)/)
+    if (ttfMatch) {
+      const fontRes = await fetch(ttfMatch[1])
+      return fontRes.arrayBuffer()
+    }
+  } catch {
+    // fallback to sniglet
+  }
+
+  // Final fallback
+  const fallback = await fetch(FONT_URLS.sniglet)
+  return fallback.arrayBuffer()
 }
 
 function getFontFamily(data: ResultImageData): string {
-  // Theme-specific fonts
-  if (data.theme === 'outline') return data.font_style || 'mali'
-  if (data.theme === 'darkminimal') return data.font_style || 'mitr'
-  if (data.theme === 'shopee') return data.font_style || 'sniglet'
-  return data.font_style || 'sniglet'
+  const font = data.font_style || ''
+  // Custom font: "custom:FontName"
+  if (font.startsWith('custom:')) return font.replace('custom:', '')
+  // Theme-specific defaults
+  if (!font || font === 'rounded' || font === 'sharp' || font === 'outline') {
+    if (data.theme === 'outline') return 'mali'
+    if (data.theme === 'darkminimal') return 'mitr'
+    if (data.theme === 'shopee') return 'sniglet'
+    return 'sniglet'
+  }
+  return font
 }
 
 export async function POST(request: Request) {

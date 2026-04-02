@@ -9,7 +9,7 @@ import type { Lottery, LineGroup } from '@/types'
 export const dynamic = 'force-dynamic'
 
 // แจ้งเตือนก่อนปิดรับ — ค่า default, ลูกค้าตั้งเองได้จาก settings
-const DEFAULT_COUNTDOWN = '20,10,5'
+const DEFAULT_COUNTDOWN = '5'
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')?.replace('Bearer ', '')

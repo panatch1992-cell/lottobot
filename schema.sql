@@ -138,7 +138,7 @@ insert into bot_settings (key, value, description) values
   ('default_font_style', 'rounded', 'สไตล์ตัวเลข (rounded/sharp/outline)'),
   ('default_digit_size', 'm', 'ขนาดตัวเลข (s/m/l)'),
   ('default_layout', 'horizontal', 'เรียงตัวเลข (horizontal/vertical)'),
-  ('countdown_intervals', '20,10,5', 'แจ้งเตือนก่อนปิดรับ (นาที คั่นด้วยคอมมา)');
+  ('countdown_intervals', '5', 'แจ้งเตือนก่อนปิดรับ (นาที คั่นด้วยคอมมา) — ใช้ 5 ประหยัด LINE limit');
 
 -- ============================================
 -- 8. Seed: 43 รายการหวย (จากลูกค้า)
