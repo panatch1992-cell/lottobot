@@ -24,21 +24,6 @@ const FONT_URLS: Record<string, string> = {
   bubblegum: 'https://fonts.gstatic.com/s/bubblegum sans/v20/AYCSpXb_Z9EORv1M5QTjEzMEteaAxIsp.ttf',
 }
 
-// Font display names for themes
-const FONT_NAMES: Record<string, string> = {
-  sniglet: 'Sniglet',
-  mali: 'มะลิ (Mali)',
-  itim: 'ไอติม (Itim)',
-  mitr: 'มิตร (Mitr)',
-  fredoka: 'Fredoka',
-  baloo2: 'Baloo 2',
-  luckiestguy: 'Luckiest Guy',
-  comfortaa: 'Comfortaa',
-  varelaround: 'Varela Round',
-  quicksand: 'Quicksand',
-  kanit: 'คณิต (Kanit)',
-  prompt: 'Prompt',
-}
 
 async function loadFont(fontId: string): Promise<ArrayBuffer> {
   const url = FONT_URLS[fontId] || FONT_URLS.sniglet
