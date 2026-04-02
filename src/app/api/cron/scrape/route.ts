@@ -88,12 +88,33 @@ async function saveAndSend(
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
-    for (const group of (groups || []) as LineGroup[]) {
+    // Get group-lottery mapping for selective sending
+    const { data: allGroupLotteries } = await db.from('group_lotteries').select('group_id, lottery_id')
+    const groupLotteryMap = new Map<string, Set<string>>()
+    for (const gl of allGroupLotteries || []) {
+      if (!groupLotteryMap.has(gl.group_id)) groupLotteryMap.set(gl.group_id, new Set())
+      groupLotteryMap.get(gl.group_id)!.add(gl.lottery_id)
+    }
+
+    for (const group of (groups || []) as (LineGroup & { send_all_lotteries?: boolean; custom_link?: string; custom_message?: string })[]) {
       if (!group.line_group_id) continue
+
+      // Check if this group should receive this lottery
+      const sendAll = group.send_all_lotteries !== false
+      if (!sendAll) {
+        const allowedLotteries = groupLotteryMap.get(group.id)
+        if (!allowedLotteries || !allowedLotteries.has(lottery.id)) continue
+      }
+
+      // Build message with optional custom link/message
+      let lineMsg = formatted.line
+      if (group.custom_message) lineMsg += `\n${group.custom_message}`
+      if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
+
       const startLine = Date.now()
-      let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
+      let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, lineMsg)
       if (!lineResult.success) {
-        lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        lineResult = await pushTextMessage(lineToken, group.line_group_id, lineMsg)
       }
       await db.from('send_logs').insert({
         lottery_id: lottery.id,

@@ -57,10 +57,25 @@ create table line_groups (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   line_notify_token text,
+  line_group_id text,
   member_count integer not null default 0,
   is_active boolean not null default true,
+  custom_link text,
+  custom_message text,
+  send_all_lotteries boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+-- ============================================
+-- 4.5 Group-Lottery Mapping (กลุ่มไหนรับหวยไหน)
+-- ============================================
+create table group_lotteries (
+  id uuid primary key default uuid_generate_v4(),
+  group_id uuid not null references line_groups(id) on delete cascade,
+  lottery_id uuid not null references lotteries(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique(group_id, lottery_id)
 );
 
 -- ============================================
