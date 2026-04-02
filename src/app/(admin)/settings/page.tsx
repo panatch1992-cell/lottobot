@@ -540,14 +540,15 @@ function SettingsContent() {
           <label className="label">เรียงตัวเลข</label>
           <div className="flex gap-2">
             {[
-              { id: 'horizontal', label: '➡️ แนวนอน', desc: '1 2 3' },
+              { id: 'inline', label: '🔺 Inline', desc: 'บน: 1 2 3 (แนะนำ)' },
+              { id: 'horizontal', label: '➡️ แนวนอน', desc: 'กลาง 1 2 3' },
               { id: 'vertical', label: '⬇️ แนวตั้ง', desc: 'ลงล่าง' },
             ].map(l => (
               <button
                 key={l.id}
                 onClick={() => saveSetting('default_layout', l.id)}
                 className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
-                  (settings.default_layout || 'horizontal') === l.id ? 'border-gold bg-gold/5' : 'border-gray-200'
+                  (settings.default_layout || 'inline') === l.id ? 'border-gold bg-gold/5' : 'border-gray-200'
                 }`}
               >
                 <div className="font-medium">{l.label}</div>
@@ -563,7 +564,7 @@ function SettingsContent() {
           <p className="text-[10px] text-green-600 mb-2">ตั้งค่าครั้งเดียว → บันทึกถาวร ใช้กับผล auto ทุกรายการ</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/generate-image?lottery_name=ตัวอย่าง&flag=🎰&date=${encodeURIComponent(new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }))}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'shopee'}&font_style=${settings.default_font_style || 'rounded'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'horizontal'}`}
+            src={`/api/generate-image?lottery_name=${encodeURIComponent('ตัวอย่าง')}&flag=${encodeURIComponent('🎰')}&date=${encodeURIComponent('2 เม.ย. 69')}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'outline'}&font_style=${settings.default_font_style || 'mali'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'inline'}`}
             alt="Preview"
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />

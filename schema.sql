@@ -137,7 +137,7 @@ insert into bot_settings (key, value, description) values
   ('default_theme', 'shopee', 'ธีมรูปตัวเลข (macaroon/candy/ocean/gold/dark/shopee)'),
   ('default_font_style', 'rounded', 'สไตล์ตัวเลข (rounded/sharp/outline)'),
   ('default_digit_size', 'm', 'ขนาดตัวเลข (s/m/l)'),
-  ('default_layout', 'horizontal', 'เรียงตัวเลข (horizontal/vertical)'),
+  ('default_layout', 'inline', 'เรียงตัวเลข (inline/horizontal/vertical)'),
   ('countdown_intervals', '5', 'แจ้งเตือนก่อนปิดรับ (นาที คั่นด้วยคอมมา) — ใช้ 5 ประหยัด LINE limit');
 
 -- ============================================

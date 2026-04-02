@@ -259,13 +259,36 @@ function NumberRow({
 }) {
   const sz = SIZE_CONFIG[size as keyof typeof SIZE_CONFIG] || SIZE_CONFIG.m
   const isVertical = layout === 'vertical'
+  const isInline = layout === 'inline'
+
+  // Inline layout: label + numbers on same row (like LINE screenshot)
+  if (isInline) {
+    const emoji = label.includes('บน') ? '🔺' : label.includes('ล่าง') ? '🔻' : '🔢'
+    return React.createElement(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          marginBottom: 16,
+          gap: 8,
+        },
+      },
+      React.createElement('span', { style: { fontSize: 32 } }, emoji),
+      React.createElement('span', { style: { fontSize: 24, color: theme.labelColor, fontWeight: 600, marginRight: 4 } }, label.replace('เลข', '') + ':'),
+      ...number.split('').map((digit, i) =>
+        React.createElement(DigitBubble, { key: i, digit, index: i + colorOffset, theme, fontStyle, size })
+      )
+    )
+  }
+
   return React.createElement(
     'div',
     {
       style: {
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
+        alignItems: isInline ? 'flex-start' : 'center',
         marginBottom: size === 'l' ? 24 : 20,
       },
     },
