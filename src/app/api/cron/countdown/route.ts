@@ -46,17 +46,22 @@ export async function GET(req: NextRequest) {
       // ตรงเวลา? (ภายใน 1 นาที)
       if (nowMinutes < countdownAt || nowMinutes > countdownAt + 1) continue
 
-      // เช็คว่าส่ง interval นี้ สำเร็จ ไปแล้วหรือยังวันนี้
+      // เช็คว่าส่งไปแล้ว (สำเร็จ หรือ ถึง limit) → ไม่ส่งซ้ำ
       const { data: existing } = await db.from('send_logs')
-        .select('id')
+        .select('id, error_message')
         .eq('lottery_id', lottery.id)
         .eq('msg_type', 'countdown')
-        .eq('status', 'sent')
         .gte('created_at', todayStr)
         .like('error_message', `%${mins}min%`)
         .limit(1)
 
-      if (existing && existing.length > 0) continue
+      if (existing && existing.length > 0) {
+        // ถ้าส่งสำเร็จแล้ว หรือ ถึง monthly limit → skip
+        const hasSentOrLimit = existing.some(e =>
+          !e.error_message?.includes('Bad Request') || e.error_message?.includes('monthly limit')
+        )
+        if (hasSentOrLimit) continue
+      }
 
       const formatted = formatCountdown(lottery, mins)
 

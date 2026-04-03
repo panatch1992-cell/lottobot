@@ -36,14 +36,17 @@ async function saveAndSend(
 
   if (!savedResult) return { success: false, error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}` }
 
-  // Check if already sent for this result (prevent duplicate sends)
+  // Check if already sent OR recently failed (prevent infinite retry)
   const { data: existingLogs } = await db.from('send_logs')
-    .select('channel')
+    .select('channel, status, error_message')
     .eq('result_id', savedResult.id)
-    .eq('status', 'sent')
 
-  const alreadySentTG = existingLogs?.some(l => l.channel === 'telegram')
-  const alreadySentLINE = existingLogs?.some(l => l.channel === 'line')
+  const alreadySentTG = existingLogs?.some(l => l.channel === 'telegram' && l.status === 'sent')
+  const alreadySentLINE = existingLogs?.some(l => l.channel === 'line' && l.status === 'sent')
+
+  // Stop retrying if hit monthly limit
+  const hitMonthlyLimit = existingLogs?.some(l => l.error_message?.includes('monthly limit'))
+  if (hitMonthlyLimit) return { success: true, error: 'LINE monthly limit reached — skipped' }
 
   // Format
   const formatted = formatResult(lottery, savedResult)
