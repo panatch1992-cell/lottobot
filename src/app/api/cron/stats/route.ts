@@ -36,15 +36,26 @@ export async function GET(req: NextRequest) {
     // Send stats 2 minutes after result time
     if (nowMinutes < resultMin + 2 || nowMinutes > resultMin + 3) continue
 
-    // Check if already sent today
+    // Check which channels/groups already sent today
     const { data: existing } = await db.from('send_logs')
-      .select('id')
+      .select('id, channel, line_group_id, status, error_message')
       .eq('lottery_id', lottery.id)
       .eq('msg_type', 'stats')
       .gte('created_at', todayStr)
-      .limit(1)
 
-    if (existing && existing.length > 0) continue
+    const alreadySentTG = existing?.some(e => e.channel === 'telegram' && e.status === 'sent')
+
+    // Per-group: track which LINE groups already sent or hit limit
+    const sentStatsGroupIds = new Set(
+      (existing || [])
+        .filter(e => e.channel === 'line' && e.status === 'sent' && e.line_group_id)
+        .map(e => e.line_group_id)
+    )
+    const limitStatsGroupIds = new Set(
+      (existing || [])
+        .filter(e => e.channel === 'line' && e.error_message?.includes('monthly limit') && e.line_group_id)
+        .map(e => e.line_group_id)
+    )
 
     // Get last N results
     const { data: results } = await db.from('results')
@@ -57,8 +68,8 @@ export async function GET(req: NextRequest) {
 
     const formatted = formatStats(lottery, results as Result[])
 
-    // Send to Telegram
-    if (settings.telegram_bot_token && settings.telegram_admin_channel) {
+    // Send to Telegram (skip if already sent)
+    if (!alreadySentTG && settings.telegram_bot_token && settings.telegram_admin_channel) {
       const result = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
       await db.from('send_logs').insert({
         lottery_id: lottery.id,
@@ -70,12 +81,15 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Send to LINE groups (Messaging API)
+    // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
     const lineToken = settings.line_channel_access_token
     if (lineToken) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
+        if (sentStatsGroupIds.has(group.id)) continue
+        if (limitStatsGroupIds.has(group.id)) continue
+
         const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
         await db.from('send_logs').insert({
           lottery_id: lottery.id,

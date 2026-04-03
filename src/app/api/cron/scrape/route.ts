@@ -38,15 +38,22 @@ async function saveAndSend(
 
   // Check if already sent OR recently failed (prevent infinite retry)
   const { data: existingLogs } = await db.from('send_logs')
-    .select('channel, status, error_message')
+    .select('channel, status, error_message, line_group_id')
     .eq('result_id', savedResult.id)
 
   const alreadySentTG = existingLogs?.some(l => l.channel === 'telegram' && l.status === 'sent')
-  const alreadySentLINE = existingLogs?.some(l => l.channel === 'line' && l.status === 'sent')
 
-  // Stop retrying if hit monthly limit
-  const hitMonthlyLimit = existingLogs?.some(l => l.error_message?.includes('monthly limit'))
-  if (hitMonthlyLimit) return { success: true, error: 'LINE monthly limit reached — skipped' }
+  // Per-group tracking: which groups already sent or hit monthly limit
+  const sentLineGroupIds = new Set(
+    (existingLogs || [])
+      .filter(l => l.channel === 'line' && l.status === 'sent' && l.line_group_id)
+      .map(l => l.line_group_id)
+  )
+  const limitLineGroupIds = new Set(
+    (existingLogs || [])
+      .filter(l => l.channel === 'line' && l.error_message?.includes('monthly limit') && l.line_group_id)
+      .map(l => l.line_group_id)
+  )
 
   // Format
   const formatted = formatResult(lottery, savedResult)
@@ -70,9 +77,9 @@ async function saveAndSend(
     })
   }
 
-  // Send to LINE groups (skip if already sent — save monthly limit!)
+  // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
   const lineToken = settings.line_channel_access_token
-  if (!alreadySentLINE && lineToken) {
+  if (lineToken) {
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 
@@ -101,6 +108,10 @@ async function saveAndSend(
 
     for (const group of (groups || []) as (LineGroup & { send_all_lotteries?: boolean; custom_link?: string; custom_message?: string })[]) {
       if (!group.line_group_id) continue
+
+      // Per-group: skip if already sent or hit monthly limit
+      if (sentLineGroupIds.has(group.id)) continue
+      if (limitLineGroupIds.has(group.id)) continue
 
       // Check if this group should receive this lottery
       const sendAll = group.send_all_lotteries !== false

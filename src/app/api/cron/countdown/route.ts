@@ -46,27 +46,32 @@ export async function GET(req: NextRequest) {
       // ตรงเวลา? (ภายใน 1 นาที)
       if (nowMinutes < countdownAt || nowMinutes > countdownAt + 1) continue
 
-      // เช็คว่าส่งไปแล้ว (สำเร็จ หรือ ถึง limit) → ไม่ส่งซ้ำ
+      // เช็คว่าส่ง TG ไปแล้ว
       const { data: existing } = await db.from('send_logs')
-        .select('id, error_message')
+        .select('id, channel, line_group_id, status, error_message')
         .eq('lottery_id', lottery.id)
         .eq('msg_type', 'countdown')
         .gte('created_at', todayStr)
         .like('error_message', `%${mins}min%`)
-        .limit(1)
 
-      if (existing && existing.length > 0) {
-        // ถ้าส่งสำเร็จแล้ว หรือ ถึง monthly limit → skip
-        const hasSentOrLimit = existing.some(e =>
-          !e.error_message?.includes('Bad Request') || e.error_message?.includes('monthly limit')
-        )
-        if (hasSentOrLimit) continue
-      }
+      const alreadySentTG = existing?.some(e => e.channel === 'telegram' && e.status === 'sent')
+
+      // Per-group: track which LINE groups already sent or hit limit
+      const sentCountdownGroupIds = new Set(
+        (existing || [])
+          .filter(e => e.channel === 'line' && e.status === 'sent' && e.line_group_id)
+          .map(e => e.line_group_id)
+      )
+      const limitCountdownGroupIds = new Set(
+        (existing || [])
+          .filter(e => e.channel === 'line' && e.error_message?.includes('monthly limit') && e.line_group_id)
+          .map(e => e.line_group_id)
+      )
 
       const formatted = formatCountdown(lottery, mins)
 
-      // Send to Telegram
-      if (settings.telegram_bot_token && settings.telegram_admin_channel) {
+      // Send to Telegram (skip if already sent)
+      if (!alreadySentTG && settings.telegram_bot_token && settings.telegram_admin_channel) {
         const result = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
@@ -78,12 +83,15 @@ export async function GET(req: NextRequest) {
         })
       }
 
-      // Send to LINE groups (Messaging API)
+      // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
       const lineToken = settings.line_channel_access_token
       if (lineToken) {
         const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
         for (const group of (groups || []) as LineGroup[]) {
           if (!group.line_group_id) continue
+          if (sentCountdownGroupIds.has(group.id)) continue
+          if (limitCountdownGroupIds.has(group.id)) continue
+
           const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
           await db.from('send_logs').insert({
             lottery_id: lottery.id,
