@@ -11,14 +11,20 @@ const LINE_API = 'https://api.line.me/v2/bot'
 
 /**
  * ตรวจสอบว่า LINE ยังส่งได้ไหม
- * เช็คจาก LINE API จริง (quota + consumption)
- * ถ้า API เช็คไม่ได้ → fallback นับจาก DB
+ * ใช้ระบบ Daily Budget: กระจาย quota เท่าๆ กันทุกวันที่เหลือในเดือน
+ * → ไม่มีทาง quota หมดกลางเดือนอีก
+ *
+ * สูตร: daily_budget = (quota_remaining × 0.9) ÷ days_remaining
+ *        can_send = today_sent < daily_budget
  */
 export async function checkLineQuota(): Promise<{
   canSend: boolean
   used: number
   quota: number
   remaining: number
+  dailyBudget: number
+  todaySent: number
+  daysLeft: number
   source: 'line_api' | 'db' | 'flag'
   reason?: string
 }> {
@@ -30,61 +36,79 @@ export async function checkLineQuota(): Promise<{
     const settings: Record<string, string> = {}
     for (const s of settingsData || []) settings[s.key] = s.value
 
-    const currentMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }).substring(0, 7)
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+    const currentMonth = now.toISOString().substring(0, 7) // "2026-04"
+    const todayStr = now.toISOString().substring(0, 10) // "2026-04-03"
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const daysLeft = Math.max(1, daysInMonth - now.getDate() + 1) // รวมวันนี้ด้วย
 
-    // ถ้าเคย flag ว่าเดือนนี้ครบ limit แล้ว → skip ทันที (ไม่ต้องเรียก API)
+    // ถ้าเคย flag ว่าเดือนนี้ครบ limit แล้ว → skip ทันที
     if (settings.line_monthly_limit_month === currentMonth) {
-      const q = parseInt(settings.line_monthly_quota || '500', 10)
-      return { canSend: false, used: q, quota: q, remaining: 0, source: 'flag', reason: `ครบ limit เดือน ${currentMonth} แล้ว` }
+      const q = parseInt(settings.line_monthly_quota || '300', 10)
+      return { canSend: false, used: q, quota: q, remaining: 0, dailyBudget: 0, todaySent: 0, daysLeft, source: 'flag', reason: `ครบ limit เดือนนี้แล้ว` }
     }
 
-    // เช็คจาก LINE API จริง
+    // นับข้อความที่ส่งสำเร็จวันนี้ (สำหรับ daily budget)
+    const { count: todayCount } = await db.from('send_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('channel', 'line')
+      .eq('status', 'sent')
+      .gte('created_at', todayStr)
+
+    const todaySent = todayCount || 0
+
+    // เช็ค quota จาก LINE API จริง
+    let monthlyQuota = parseInt(settings.line_monthly_quota || '300', 10)
+    let monthlyUsed = 0
+    let remaining = monthlyQuota
+    let source: 'line_api' | 'db' = 'db'
+
     const token = settings.line_channel_access_token
     if (token) {
       const apiQuota = await getLineQuotaFromAPI(token)
       if (!apiQuota.error && apiQuota.remaining !== null) {
-        if (apiQuota.remaining <= 0) {
-          // Flag ไว้ไม่ต้องเรียก API ซ้ำ
-          await db.from('bot_settings').upsert({ key: 'line_monthly_limit_month', value: currentMonth })
-          return {
-            canSend: false,
-            used: apiQuota.used,
-            quota: apiQuota.quota || 500,
-            remaining: 0,
-            source: 'line_api',
-            reason: `LINE API: ใช้ ${apiQuota.used}/${apiQuota.quota} แล้ว`,
-          }
-        }
-        return {
-          canSend: true,
-          used: apiQuota.used,
-          quota: apiQuota.quota || 500,
-          remaining: apiQuota.remaining,
-          source: 'line_api',
-        }
+        monthlyQuota = apiQuota.quota || monthlyQuota
+        monthlyUsed = apiQuota.used
+        remaining = apiQuota.remaining
+        source = 'line_api'
       }
     }
 
     // Fallback: นับจาก DB
-    const dbQuota = parseInt(settings.line_monthly_quota || '500', 10)
-    const monthStart = `${currentMonth}-01`
-    const { count } = await db.from('send_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('channel', 'line')
-      .eq('status', 'sent')
-      .gte('created_at', monthStart)
-
-    const used = count || 0
-    const remaining = Math.max(0, dbQuota - used)
-
-    if (remaining <= 0) {
-      await db.from('bot_settings').upsert({ key: 'line_monthly_limit_month', value: currentMonth })
-      return { canSend: false, used, quota: dbQuota, remaining: 0, source: 'db', reason: `DB: ใช้ ${used}/${dbQuota} แล้ว` }
+    if (source === 'db') {
+      const monthStart = `${currentMonth}-01`
+      const { count } = await db.from('send_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('channel', 'line')
+        .eq('status', 'sent')
+        .gte('created_at', monthStart)
+      monthlyUsed = count || 0
+      remaining = Math.max(0, monthlyQuota - monthlyUsed)
     }
 
-    return { canSend: true, used, quota: dbQuota, remaining, source: 'db' }
+    // Monthly limit reached
+    if (remaining <= 0) {
+      await db.from('bot_settings').upsert({ key: 'line_monthly_limit_month', value: currentMonth })
+      return { canSend: false, used: monthlyUsed, quota: monthlyQuota, remaining: 0, dailyBudget: 0, todaySent, daysLeft, source, reason: `ใช้ ${monthlyUsed}/${monthlyQuota} แล้ว` }
+    }
+
+    // ═══ Daily Budget ═══
+    // เก็บ 10% เป็น reserve → ใช้ได้ 90% กระจายเท่าๆ กัน
+    const usableRemaining = Math.floor(remaining * 0.9)
+    const dailyBudget = Math.max(1, Math.floor(usableRemaining / daysLeft))
+
+    // วันนี้ส่งครบ budget แล้ว → หยุด (พรุ่งนี้ส่งได้ใหม่)
+    if (todaySent >= dailyBudget) {
+      return {
+        canSend: false,
+        used: monthlyUsed, quota: monthlyQuota, remaining, dailyBudget, todaySent, daysLeft, source,
+        reason: `วันนี้ส่งครบ ${todaySent}/${dailyBudget} แล้ว (เหลือ ${remaining} เก็บไว้ ${daysLeft} วัน)`,
+      }
+    }
+
+    return { canSend: true, used: monthlyUsed, quota: monthlyQuota, remaining, dailyBudget, todaySent, daysLeft, source }
   } catch {
-    return { canSend: true, used: 0, quota: 500, remaining: 500, source: 'db' }
+    return { canSend: true, used: 0, quota: 300, remaining: 300, dailyBudget: 10, todaySent: 0, daysLeft: 30, source: 'db' }
   }
 }
 
