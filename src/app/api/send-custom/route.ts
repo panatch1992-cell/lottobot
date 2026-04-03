@@ -47,11 +47,16 @@ export async function POST(req: NextRequest) {
     }
 
     const allSuccess = results.length > 0 && results.every(r => r.success)
+    const failedResults = results.filter(r => !r.success)
 
     return NextResponse.json({
       success: allSuccess,
       results,
-      error: results.length === 0 ? 'ไม่มีช่องทางส่งที่ตั้งค่าไว้' : undefined,
+      error: results.length === 0
+        ? 'ไม่มีช่องทางส่ง — เช็ค LINE Token และ TG Channel ID ในตั้งค่า'
+        : failedResults.length > 0
+          ? failedResults.map(r => `${r.channel}: ${r.error}`).join(', ')
+          : undefined,
     })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Server error' }, { status: 500 })
