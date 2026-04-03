@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatStats } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage } from '@/lib/line-messaging'
+import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import type { Lottery, Result, LineGroup } from '@/types'
 
@@ -83,7 +83,8 @@ export async function GET(req: NextRequest) {
 
     // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
     const lineToken = settings.line_channel_access_token
-    if (lineToken) {
+    const statsQuota = lineToken ? await checkLineQuota() : null
+    if (lineToken && statsQuota?.canSend) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
@@ -91,6 +92,9 @@ export async function GET(req: NextRequest) {
         if (limitStatsGroupIds.has(group.id)) continue
 
         const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
+          await flagMonthlyLimitHit()
+        }
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
           line_group_id: group.id,
