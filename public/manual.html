@@ -387,7 +387,7 @@
   <div class="header">
     <h1>LottoBot</h1>
     <p>ระบบส่งผลหวยต่างประเทศอัตโนมัติ</p>
-    <span class="badge">คู่มือใช้งาน</span>
+    <span class="badge">คู่มือใช้งาน v3.0</span>
   </div>
 
   <div class="content">
@@ -563,12 +563,12 @@
     <div class="section">
       <div class="section-title">⏰ Countdown แจ้งเตือนก่อนปิดรับ</div>
       <ol class="step-list">
-        <li>ระบบส่ง Countdown อัตโนมัติ <strong>3 ครั้ง</strong> ก่อนเวลาปิดรับของแต่ละหวย
-          <span class="sub">20 นาที / 10 นาที / 5 นาที ก่อนปิด</span>
+        <li>ระบบส่ง Countdown อัตโนมัติก่อนเวลาปิดรับของแต่ละหวย
+          <span class="sub">ค่า default: 5 นาที — ตั้งค่าได้ เช่น 20,10,5 (แจ้ง 3 ครั้ง) หรือ 5 (แจ้งครั้งเดียว)</span>
         </li>
         <li>ข้อความจะถูกส่งไปทั้ง <strong>Telegram + LINE กลุ่ม</strong> อัตโนมัติ</li>
-        <li>ตั้งค่าเปิด/ปิด Countdown ได้ที่หน้า <strong>"ตั้งค่า"</strong>
-          <span class="sub">เปิด/ปิดรายหวย หรือปิดทั้งระบบได้</span>
+        <li>ตั้งค่าช่วงเวลาได้ที่ <strong>ตั้งค่า → "Countdown แจ้งเตือนก่อนปิดรับ"</strong>
+          <span class="sub">ใส่นาทีคั่นคอมมา เช่น 20,10,5 = แจ้ง 3 ครั้ง / ใส่ 5 = แจ้งครั้งเดียว</span>
         </li>
       </ol>
       <div class="tip-box">
@@ -582,7 +582,7 @@
 
     <!-- Section: Tabs -->
     <div class="section">
-      <div class="section-title">📱 หน้าจอหลัก 7 แท็บ</div>
+      <div class="section-title">📱 แถบเมนูหลัก (5 แท็บ)</div>
       <div class="tab-grid">
         <div class="tab-card">
           <div class="icon">📊</div>
@@ -592,10 +592,10 @@
           </div>
         </div>
         <div class="tab-card">
-          <div class="icon">📝</div>
+          <div class="icon">💬</div>
           <div class="info">
-            <h4>แก้ไขผล</h4>
-            <p>กรอกผลมือ (สำรอง)</p>
+            <h4>ข้อความ</h4>
+            <p>ส่งข้อความเอง → LINE / TG</p>
           </div>
         </div>
         <div class="tab-card">
@@ -603,20 +603,6 @@
           <div class="info">
             <h4>ดึงผล</h4>
             <p>ดูสถานะ auto + ทดสอบดึงผล</p>
-          </div>
-        </div>
-        <div class="tab-card">
-          <div class="icon">📅</div>
-          <div class="info">
-            <h4>ตั้งเวลาส่ง</h4>
-            <p>ตั้งเวลาส่งข้อความล่วงหน้า</p>
-          </div>
-        </div>
-        <div class="tab-card">
-          <div class="icon">🎰</div>
-          <div class="info">
-            <h4>หวย</h4>
-            <p>เปิด/ปิด/แก้ไขหวย 43 รายการ</p>
           </div>
         </div>
         <div class="tab-card">
@@ -630,7 +616,41 @@
           <div class="icon">⚙️</div>
           <div class="info">
             <h4>ตั้งค่า</h4>
-            <p>TG / LINE / ธีมรูป / ดึงผลอัตโนมัติ</p>
+            <p>TG / LINE / ธีม / ฟอนต์ / Countdown</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <p style="font-size: 13px; font-weight: 600; color: #888; margin-bottom: 8px;">หน้าเพิ่มเติม (เข้าจากตั้งค่า / เมนู):</p>
+        <div class="tab-grid">
+          <div class="tab-card">
+            <div class="icon">👥</div>
+            <div class="info">
+              <h4>จัดการกลุ่ม</h4>
+              <p>ตั้งค่าแต่ละกลุ่ม LINE (/groups)</p>
+            </div>
+          </div>
+          <div class="tab-card">
+            <div class="icon">🎰</div>
+            <div class="info">
+              <h4>จัดการหวย</h4>
+              <p>เปิด/ปิด/แก้ไขหวย 43 ตัว (/lotteries)</p>
+            </div>
+          </div>
+          <div class="tab-card">
+            <div class="icon">✏️</div>
+            <div class="info">
+              <h4>แก้ไขผล</h4>
+              <p>กรอก/แก้ผลหวย สำรอง (/results)</p>
+            </div>
+          </div>
+          <div class="tab-card">
+            <div class="icon">📅</div>
+            <div class="info">
+              <h4>ตั้งเวลาส่ง</h4>
+              <p>ตั้งเวลาส่งข้อความล่วงหน้า (/scheduled)</p>
+            </div>
           </div>
         </div>
       </div>
@@ -641,14 +661,20 @@
       <div class="section-title">📋 ข้อมูลระบบ</div>
       <table class="info-table">
         <tr><td>เว็บ Admin</td><td>(URL ของระบบ)</td></tr>
-        <tr><td>จำนวนหวย</td><td>43 รายการ (auto 100%)</td></tr>
+        <tr><td>จำนวนหวย</td><td>43 รายการ (auto 100% ไม่ต้องกรอกมือ)</td></tr>
         <tr><td>หวยหุ้น</td><td>22 ตัว — ดึงจาก Yahoo Finance อัตโนมัติ</td></tr>
-        <tr><td>หวย Hanoi/Laos</td><td>21 ตัว — ดึงจากเว็บด้วย Puppeteer อัตโนมัติ</td></tr>
-        <tr><td>ส่งผลผ่าน</td><td>Telegram + LINE (อัตโนมัติ)</td></tr>
-        <tr><td>รูปแบบ LINE</td><td>รูปตัวเลข + ข้อความ (ตั้งค่าธีมได้)</td></tr>
-        <tr><td>ธีมสี</td><td>🎀 Shopee (sticker) / 🧁 Macaroon / 🍬 Candy / 🌊 Ocean / ✨ Gold / 🌙 Dark</td></tr>
-        <tr><td>เรียงตัวเลข</td><td>แนวนอน / แนวตั้ง (ตั้งค่าได้)</td></tr>
-        <tr><td>กลุ่ม LINE</td><td>เพิ่มได้ไม่จำกัด (เชิญ bot เข้ากลุ่ม)</td></tr>
+        <tr><td>หวย Hanoi/Laos</td><td>21 ตัว — ดึงจากเว็บด้วย Browser (Puppeteer) อัตโนมัติ</td></tr>
+        <tr><td>ส่งผลผ่าน</td><td>Telegram + LINE (อัตโนมัติ พร้อมรูป + emoji numbers)</td></tr>
+        <tr><td>รูปแบบ LINE</td><td>รูปตัวเลข + ข้อความ (ตั้งค่าธีม/ฟอนต์/ขนาดได้)</td></tr>
+        <tr><td>ธีมสี</td><td>8 ธีม: ✍️ Outline / 🖤 Dark Minimal / 🎀 Shopee / 🧁 Macaroon / 🍬 Candy / 🌊 Ocean / ✨ Gold / 🌙 Dark</td></tr>
+        <tr><td>ฟอนต์</td><td>21 ฟอนต์ในตัว (มะลิ, ไอติม, มิตร, คณิต ฯลฯ) + พิมพ์ชื่อ Google Font เอง</td></tr>
+        <tr><td>เรียงตัวเลข</td><td>🔺 Inline (default: บน: 1 2 3) / ➡️ แนวนอน / ⬇️ แนวตั้ง</td></tr>
+        <tr><td>ขนาดตัวเลข</td><td>S / M / L</td></tr>
+        <tr><td>Countdown</td><td>ตั้งค่าช่วงเวลาจาก Settings (default: 5 นาที)</td></tr>
+        <tr><td>ตั้งเวลาส่ง</td><td>กำหนดเวลา + วัน ส่งข้อความอัตโนมัติ</td></tr>
+        <tr><td>ข้อความเอง</td><td>พิมพ์ข้อความอะไรก็ได้ → ส่ง LINE / TG / ทั้งสอง</td></tr>
+        <tr><td>กลุ่ม LINE</td><td>เพิ่มได้ไม่จำกัด (เชิญ bot เข้ากลุ่ม — จับอัตโนมัติ)</td></tr>
+        <tr><td>ตั้งค่าต่อกลุ่ม</td><td>ลิงก์กลุ่ม + เลือกหวยที่จะส่ง + เปิด/ปิด</td></tr>
         <tr><td>รับประกัน</td><td>แก้ Bug ฟรี 30 วัน</td></tr>
       </table>
     </div>
@@ -667,11 +693,23 @@
           </tr>
           <tr>
             <td>LINE ไม่ได้รับผล</td>
-            <td>เช็คว่า bot "หน้าบ้าน" ยังอยู่ในกลุ่ม</td>
+            <td>เช็คว่า bot "หน้าบ้าน" ยังอยู่ในกลุ่ม + กลุ่มเปิดอยู่ในหน้า "จัดการกลุ่ม"</td>
+          </tr>
+          <tr>
+            <td>LINE ส่งไม่ครบ / limit</td>
+            <td>LINE Messaging API มี limit 500 ข้อความ/เดือน (Free plan) — อัปเกรดเป็น Light plan ถ้าส่งเยอะ</td>
           </tr>
           <tr>
             <td>Bot เด้งออกกลุ่ม</td>
-            <td>LINE Developers → เปิด "Allow bot to join group chats"</td>
+            <td>LINE Developers → เปิด "Allow bot to join group chats" → เชิญ bot เข้ากลุ่มใหม่</td>
+          </tr>
+          <tr>
+            <td>Telegram "chat not found"</td>
+            <td>เช็ค Admin Channel ID ที่ตั้งค่า → Bot ต้องเป็น admin ของ channel → กดทดสอบเชื่อมต่อ</td>
+          </tr>
+          <tr>
+            <td>Webhook ไม่ทำงาน</td>
+            <td>LINE Developers → ใส่ Webhook URL: (URL ของระบบ)/api/line/webhook → เปิด "Use webhook"</td>
           </tr>
           <tr>
             <td>ผลหวยไม่ออก auto</td>
@@ -679,7 +717,11 @@
           </tr>
           <tr>
             <td>ต้องการแก้ผลที่ส่งไปแล้ว</td>
-            <td>ไปหน้า "📝 กรอกผล" → กรอกเลขใหม่ → กดส่ง (ทับอัตโนมัติ)</td>
+            <td>ไปหน้า "✏️ แก้ไขผล" (/results) → กรอกเลขใหม่ → กดส่ง (ทับอัตโนมัติ)</td>
+          </tr>
+          <tr>
+            <td>กลุ่มไม่ขึ้นในระบบ</td>
+            <td>เชิญ bot ออกจากกลุ่ม → เชิญเข้าใหม่ (ระบบจับกลุ่มผ่าน webhook อัตโนมัติ)</td>
           </tr>
           <tr>
             <td>มีปัญหาอื่นๆ</td>
@@ -692,8 +734,8 @@
   </div>
 
   <div class="footer">
-    LottoBot v2.0 — ระบบดึงผลอัตโนมัติ 100%<br>
-    อัปเดตล่าสุด 30 มี.ค. 2569
+    LottoBot v3.0 — ระบบดึงผลอัตโนมัติ 100%<br>
+    อัปเดตล่าสุด 3 เม.ย. 2569
   </div>
 </div>
 
