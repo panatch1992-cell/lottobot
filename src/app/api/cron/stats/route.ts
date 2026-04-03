@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
   // Get settings
   const settings = await getSettings()
 
-  // ถ้าปิดส่งสถิติทาง LINE → ยังส่ง TG ได้ แต่ skip LINE
-  const sendStatsLine = settings.send_stats_line !== 'false'
+  // Default ปิดส่งสถิติทาง LINE (ประหยัด quota) — เปิดได้ที่ /settings
+  const sendStatsLine = settings.send_stats_line === 'true'
 
   const statsCount = parseInt(settings.stats_count || '10')
 
