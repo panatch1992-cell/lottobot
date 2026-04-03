@@ -195,11 +195,17 @@ export async function GET(req: NextRequest) {
   // 5. LINE MESSAGING API
   // ═══════════════════════════════════════════
 
-  results.push(await runTest('5.0', 'LINE: Quota เดือนนี้', async () => {
+  results.push(await runTest('5.0', 'LINE: Quota + Daily Budget', async () => {
     const quota = await checkLineQuota()
     return {
       pass: quota.canSend,
-      detail: `ใช้ ${quota.used}/${quota.quota} เหลือ ${quota.remaining} (${quota.source}) ${quota.canSend ? '✅ ยังส่งได้' : `❌ ${quota.reason}`}`,
+      detail: [
+        `เดือน: ${quota.used}/${quota.quota} (เหลือ ${quota.remaining})`,
+        `วันนี้: ${quota.todaySent}/${quota.dailyBudget} (budget/วัน)`,
+        `เหลือ ${quota.daysLeft} วัน`,
+        `(${quota.source})`,
+        quota.canSend ? '✅ ส่งได้' : `❌ ${quota.reason}`,
+      ].join(' | '),
     }
   }))
 
