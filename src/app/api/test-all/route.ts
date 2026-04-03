@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, verifyChannelToken } from '@/lib/line-messaging'
+import { pushTextMessage, verifyChannelToken, checkLineQuota } from '@/lib/line-messaging'
 import { formatResult, formatCountdown, formatStats } from '@/lib/formatter'
 import { today } from '@/lib/utils'
 import type { Lottery, LineGroup, Result } from '@/types'
@@ -187,6 +187,14 @@ export async function GET(req: NextRequest) {
   // ═══════════════════════════════════════════
   // 5. LINE MESSAGING API
   // ═══════════════════════════════════════════
+
+  results.push(await runTest('5.0', 'LINE: Quota เดือนนี้', async () => {
+    const quota = await checkLineQuota()
+    return {
+      pass: quota.canSend,
+      detail: `${quota.used}/${quota.quota} ข้อความ ${quota.canSend ? '✅ ยังส่งได้' : `❌ ${quota.reason}`}`,
+    }
+  }))
 
   results.push(await runTest('5.1', 'LINE: Channel Access Token ตั้งค่าแล้ว', async () => {
     return { pass: !!settings.line_channel_access_token, detail: settings.line_channel_access_token ? `...${settings.line_channel_access_token.slice(-6)}` : 'ไม่มี' }

@@ -5,7 +5,7 @@ import { isStockLottery, fetchStockLotteryResult } from '@/lib/stock-fetcher'
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
+import { pushTextMessage, pushImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
 import type { Lottery, ScrapeSource, LineGroup } from '@/types'
 
@@ -79,7 +79,14 @@ async function saveAndSend(
 
   // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
   const lineToken = settings.line_channel_access_token
-  if (lineToken) {
+
+  // Global quota check — ถ้าเดือนนี้ครบ limit แล้ว ไม่ต้องพยายามส่ง
+  const lineQuota = lineToken ? await checkLineQuota() : null
+  if (lineToken && lineQuota && !lineQuota.canSend) {
+    // ไม่ส่ง LINE แต่ยังบันทึกผลได้
+  }
+
+  if (lineToken && lineQuota?.canSend) {
     const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 
@@ -128,7 +135,15 @@ async function saveAndSend(
       const startLine = Date.now()
       let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, lineMsg)
       if (!lineResult.success) {
-        lineResult = await pushTextMessage(lineToken, group.line_group_id, lineMsg)
+        // ถ้า image ส่งไม่ได้เพราะ limit → flag เลย ไม่ต้อง fallback
+        if (lineResult.error?.includes('monthly limit')) {
+          await flagMonthlyLimitHit()
+        } else {
+          lineResult = await pushTextMessage(lineToken, group.line_group_id, lineMsg)
+          if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
+            await flagMonthlyLimitHit()
+          }
+        }
       }
       await db.from('send_logs').insert({
         lottery_id: lottery.id,

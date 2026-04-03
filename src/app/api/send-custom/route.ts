@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage } from '@/lib/line-messaging'
+import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import type { LineGroup } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -33,15 +33,23 @@ export async function POST(req: NextRequest) {
     if (target === 'line' || target === 'both') {
       const lineToken = settings.line_channel_access_token
       if (lineToken) {
-        const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
-        for (const group of (groups || []) as LineGroup[]) {
-          if (!group.line_group_id) continue
-          const lineResult = await pushTextMessage(lineToken, group.line_group_id, message.trim())
-          results.push({
-            channel: `line:${group.name}`,
-            success: lineResult.success,
-            error: lineResult.error,
-          })
+        const quota = await checkLineQuota()
+        if (!quota.canSend) {
+          results.push({ channel: 'line', success: false, error: `LINE quota เต็ม: ${quota.reason}` })
+        } else {
+          const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
+          for (const group of (groups || []) as LineGroup[]) {
+            if (!group.line_group_id) continue
+            const lineResult = await pushTextMessage(lineToken, group.line_group_id, message.trim())
+            if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
+              await flagMonthlyLimitHit()
+            }
+            results.push({
+              channel: `line:${group.name}`,
+              success: lineResult.success,
+              error: lineResult.error,
+            })
+          }
         }
       }
     }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
+import { pushTextMessage, pushImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import type { Lottery, LineGroup } from '@/types'
 
 export async function GET() {
@@ -141,13 +141,21 @@ export async function POST(req: NextRequest) {
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
 
-    if (lineToken) {
+    const resultQuota = lineToken ? await checkLineQuota() : null
+    if (lineToken && resultQuota?.canSend) {
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
         const startLine = Date.now()
         let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, formatted.line)
         if (!lineResult.success) {
-          lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+          if (lineResult.error?.includes('monthly limit')) {
+            await flagMonthlyLimitHit()
+          } else {
+            lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+            if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
+              await flagMonthlyLimitHit()
+            }
+          }
         }
         sendResults.push({ channel: `line:${group.name}`, success: lineResult.success, error: lineResult.error })
         if (lineResult.success) lineSent++
