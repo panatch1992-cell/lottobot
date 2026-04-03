@@ -125,36 +125,62 @@ export async function flagMonthlyLimitHit(): Promise<void> {
   }
 }
 
+// Helper: delay for retry
+function delay(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+
+// Helper: call LINE push API with 429 retry
+async function linePush(
+  channelAccessToken: string,
+  to: string,
+  messages: unknown[],
+): Promise<{ success: boolean; error?: string; status?: number }> {
+  const maxRetries = 3
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${LINE_API}/message/push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${channelAccessToken}`,
+        },
+        body: JSON.stringify({ to, messages }),
+      })
+
+      if (res.ok) {
+        return { success: true, status: res.status }
+      }
+
+      const data = await res.json().catch(() => ({}))
+      const errorMsg = data.message || `HTTP ${res.status}`
+
+      // 429 Rate Limit → retry with exponential backoff
+      if (res.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10)
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : attempt * 2000
+        await delay(waitMs)
+        continue
+      }
+
+      return { success: false, error: errorMsg, status: res.status }
+    } catch (err) {
+      if (attempt < maxRetries) {
+        await delay(attempt * 1000)
+        continue
+      }
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+    }
+  }
+
+  return { success: false, error: 'Max retries exceeded' }
+}
+
 export async function pushTextMessage(
   channelAccessToken: string,
   to: string,
   text: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${LINE_API}/message/push`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${channelAccessToken}`,
-      },
-      body: JSON.stringify({
-        to,
-        messages: [{ type: 'text', text }],
-      }),
-    })
-
-    if (res.ok) {
-      return { success: true }
-    }
-
-    const data = await res.json().catch(() => ({}))
-    return {
-      success: false,
-      error: data.message || `HTTP ${res.status}`,
-    }
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
-  }
+  return linePush(channelAccessToken, to, [{ type: 'text', text }])
 }
 
 // Send text + image together (image first, then text caption)
@@ -164,38 +190,10 @@ export async function pushImageAndText(
   imageUrl: string,
   text: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${LINE_API}/message/push`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${channelAccessToken}`,
-      },
-      body: JSON.stringify({
-        to,
-        messages: [
-          {
-            type: 'image',
-            originalContentUrl: imageUrl,
-            previewImageUrl: imageUrl,
-          },
-          { type: 'text', text },
-        ],
-      }),
-    })
-
-    if (res.ok) {
-      return { success: true }
-    }
-
-    const data = await res.json().catch(() => ({}))
-    return {
-      success: false,
-      error: data.message || `HTTP ${res.status}`,
-    }
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
-  }
+  return linePush(channelAccessToken, to, [
+    { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+    { type: 'text', text },
+  ])
 }
 
 export async function getGroupSummary(
