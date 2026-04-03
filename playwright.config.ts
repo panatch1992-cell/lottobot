@@ -1,0 +1,36 @@
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  timeout: 15000,
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'on-first-retry',
+    navigationTimeout: 10000,
+    actionTimeout: 5000,
+    launchOptions: {
+      executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    },
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile',
+      use: { ...devices['Pixel 5'] },
+    },
+  ],
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: true,
+    timeout: 30000,
+  },
+})
