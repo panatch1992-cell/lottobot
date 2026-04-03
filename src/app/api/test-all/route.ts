@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, verifyChannelToken, checkLineQuota } from '@/lib/line-messaging'
+import { pushTextMessage, verifyChannelToken, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import { formatResult, formatCountdown, formatStats } from '@/lib/formatter'
 import { today } from '@/lib/utils'
 import type { Lottery, LineGroup, Result } from '@/types'
@@ -214,13 +214,21 @@ export async function GET(req: NextRequest) {
   }))
 
   if (sendReal) {
-    const activeGroups = groups.filter(g => g.is_active && g.line_group_id)
-    for (const group of activeGroups) {
-      results.push(await runTest(`5.3-${group.id.slice(-6)}`, `LINE: ส่งข้อความจริงไปกลุ่ม "${group.name}"`, async () => {
-        const msg = `🔧 ทดสอบระบบ LottoBot\nกลุ่ม: ${group.name}\nเวลา: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}\n\n✅ กลุ่มนี้รับข้อความได้ปกติ`
-        const r = await pushTextMessage(settings.line_channel_access_token, group.line_group_id!, msg)
-        return { pass: r.success, detail: r.error || `ส่งสำเร็จ → ${group.name}` }
-      }))
+    const quota = await checkLineQuota()
+    if (!quota.canSend) {
+      results.push({ id: '5.3', name: 'LINE: ส่งข้อความจริง', status: 'skip', detail: `Quota หมด: ${quota.reason}` })
+    } else {
+      const activeGroups = groups.filter(g => g.is_active && g.line_group_id)
+      for (const group of activeGroups) {
+        results.push(await runTest(`5.3-${group.id.slice(-6)}`, `LINE: ส่งข้อความจริงไปกลุ่ม "${group.name}"`, async () => {
+          const msg = `🔧 ทดสอบระบบ LottoBot\nกลุ่ม: ${group.name}\nเวลา: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}\n\n✅ กลุ่มนี้รับข้อความได้ปกติ`
+          const r = await pushTextMessage(settings.line_channel_access_token, group.line_group_id!, msg)
+          if (!r.success && r.error?.includes('monthly limit')) {
+            await flagMonthlyLimitHit()
+          }
+          return { pass: r.success, detail: r.error || `ส่งสำเร็จ → ${group.name}` }
+        }))
+      }
     }
   }
 

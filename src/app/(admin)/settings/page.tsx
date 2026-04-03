@@ -368,14 +368,14 @@ function SettingsContent() {
           <div className="flex items-center gap-2">
             <input
               type="number"
-              value={settings.line_monthly_quota || '500'}
+              value={settings.line_monthly_quota || '300'}
               onChange={e => setSettings(prev => ({ ...prev, line_monthly_quota: e.target.value }))}
               onBlur={e => saveSetting('line_monthly_quota', e.target.value)}
               className="input w-32"
               min="100"
               max="50000"
             />
-            <span className="text-xs text-text-secondary">Free=500 / Light=5,000</span>
+            <span className="text-xs text-text-secondary">Free=200-500 / Light=5,000</span>
           </div>
           <p className="text-[10px] text-text-secondary mt-0.5">ระบบจะหยุดส่ง LINE อัตโนมัติเมื่อใกล้ครบ quota เพื่อประหยัด</p>
         </div>
@@ -383,7 +383,7 @@ function SettingsContent() {
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={settings.send_countdown !== 'false'}
+            checked={settings.send_countdown === 'true'}
             onChange={e => saveSetting('send_countdown', e.target.checked ? 'true' : 'false')}
             className="rounded"
           />
@@ -393,7 +393,7 @@ function SettingsContent() {
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={settings.send_stats_line !== 'false'}
+            checked={settings.send_stats_line === 'true'}
             onChange={e => saveSetting('send_stats_line', e.target.checked ? 'true' : 'false')}
             className="rounded"
           />
