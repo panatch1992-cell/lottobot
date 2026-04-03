@@ -153,6 +153,7 @@ async function linePush(
 
       const data = await res.json().catch(() => ({}))
       const errorMsg = data.message || `HTTP ${res.status}`
+      const fullError = `[HTTP ${res.status}] ${errorMsg}${data.details ? ' | ' + JSON.stringify(data.details) : ''}`
 
       // 429 Rate Limit → retry with exponential backoff
       if (res.status === 429 && attempt < maxRetries) {
@@ -162,7 +163,7 @@ async function linePush(
         continue
       }
 
-      return { success: false, error: errorMsg, status: res.status }
+      return { success: false, error: fullError, status: res.status }
     } catch (err) {
       if (attempt < maxRetries) {
         await delay(attempt * 1000)
