@@ -10,15 +10,16 @@ const LINE_API = 'https://api.line.me/v2/bot'
 // ═══════════════════════════════════════════
 
 /**
- * ตรวจสอบว่า LINE ยังส่งได้ไหม (ไม่เกิน monthly quota)
- * เช็คจาก:
- * 1. bot_settings.line_monthly_limit_month — ถ้าตรงกับเดือนนี้ = ครบ limit แล้ว
- * 2. นับ send_logs ที่ sent สำเร็จเดือนนี้ vs line_monthly_quota
+ * ตรวจสอบว่า LINE ยังส่งได้ไหม
+ * เช็คจาก LINE API จริง (quota + consumption)
+ * ถ้า API เช็คไม่ได้ → fallback นับจาก DB
  */
 export async function checkLineQuota(): Promise<{
   canSend: boolean
   used: number
   quota: number
+  remaining: number
+  source: 'line_api' | 'db' | 'flag'
   reason?: string
 }> {
   try {
@@ -29,15 +30,43 @@ export async function checkLineQuota(): Promise<{
     const settings: Record<string, string> = {}
     for (const s of settingsData || []) settings[s.key] = s.value
 
-    const quota = parseInt(settings.line_monthly_quota || '500', 10)
-    const currentMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }).substring(0, 7) // "2026-04"
+    const currentMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }).substring(0, 7)
 
-    // ถ้าเคย flag ว่าเดือนนี้ครบ limit แล้ว → skip ทันที
+    // ถ้าเคย flag ว่าเดือนนี้ครบ limit แล้ว → skip ทันที (ไม่ต้องเรียก API)
     if (settings.line_monthly_limit_month === currentMonth) {
-      return { canSend: false, used: quota, quota, reason: `ครบ limit เดือน ${currentMonth} แล้ว (flag)` }
+      const q = parseInt(settings.line_monthly_quota || '500', 10)
+      return { canSend: false, used: q, quota: q, remaining: 0, source: 'flag', reason: `ครบ limit เดือน ${currentMonth} แล้ว` }
     }
 
-    // นับข้อความ LINE ที่ส่งสำเร็จเดือนนี้
+    // เช็คจาก LINE API จริง
+    const token = settings.line_channel_access_token
+    if (token) {
+      const apiQuota = await getLineQuotaFromAPI(token)
+      if (!apiQuota.error && apiQuota.remaining !== null) {
+        if (apiQuota.remaining <= 0) {
+          // Flag ไว้ไม่ต้องเรียก API ซ้ำ
+          await db.from('bot_settings').upsert({ key: 'line_monthly_limit_month', value: currentMonth })
+          return {
+            canSend: false,
+            used: apiQuota.used,
+            quota: apiQuota.quota || 500,
+            remaining: 0,
+            source: 'line_api',
+            reason: `LINE API: ใช้ ${apiQuota.used}/${apiQuota.quota} แล้ว`,
+          }
+        }
+        return {
+          canSend: true,
+          used: apiQuota.used,
+          quota: apiQuota.quota || 500,
+          remaining: apiQuota.remaining,
+          source: 'line_api',
+        }
+      }
+    }
+
+    // Fallback: นับจาก DB
+    const dbQuota = parseInt(settings.line_monthly_quota || '500', 10)
     const monthStart = `${currentMonth}-01`
     const { count } = await db.from('send_logs')
       .select('*', { count: 'exact', head: true })
@@ -46,17 +75,16 @@ export async function checkLineQuota(): Promise<{
       .gte('created_at', monthStart)
 
     const used = count || 0
+    const remaining = Math.max(0, dbQuota - used)
 
-    if (used >= quota) {
-      // Flag ไว้ไม่ต้องนับใหม่ทุกครั้ง
+    if (remaining <= 0) {
       await db.from('bot_settings').upsert({ key: 'line_monthly_limit_month', value: currentMonth })
-      return { canSend: false, used, quota, reason: `ใช้ ${used}/${quota} ข้อความแล้ว` }
+      return { canSend: false, used, quota: dbQuota, remaining: 0, source: 'db', reason: `DB: ใช้ ${used}/${dbQuota} แล้ว` }
     }
 
-    return { canSend: true, used, quota }
+    return { canSend: true, used, quota: dbQuota, remaining, source: 'db' }
   } catch {
-    // ถ้าเช็คไม่ได้ ให้ส่งได้ (fail open)
-    return { canSend: true, used: 0, quota: 500 }
+    return { canSend: true, used: 0, quota: 500, remaining: 500, source: 'db' }
   }
 }
 
@@ -161,6 +189,41 @@ export async function getGroupSummary(
     return { name: data.groupName, memberCount: data.memberCount }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
+ * เช็ค quota จริงจาก LINE API (ไม่ใช่แค่นับใน DB)
+ */
+export async function getLineQuotaFromAPI(channelAccessToken: string): Promise<{
+  quota: number | null   // null = unlimited
+  used: number
+  remaining: number | null
+  error?: string
+}> {
+  try {
+    const [quotaRes, usageRes] = await Promise.all([
+      fetch('https://api.line.me/v2/bot/message/quota', {
+        headers: { Authorization: `Bearer ${channelAccessToken}` },
+      }),
+      fetch('https://api.line.me/v2/bot/message/quota/consumption', {
+        headers: { Authorization: `Bearer ${channelAccessToken}` },
+      }),
+    ])
+
+    const quotaData = await quotaRes.json().catch(() => ({}))
+    const usageData = await usageRes.json().catch(() => ({}))
+
+    // quotaData.type: "limited" or "none" (unlimited)
+    // quotaData.value: number (only if type="limited")
+    // usageData.totalUsage: number
+    const totalQuota = quotaData.type === 'limited' ? quotaData.value : null
+    const totalUsage = usageData.totalUsage || 0
+    const remaining = totalQuota !== null ? Math.max(0, totalQuota - totalUsage) : null
+
+    return { quota: totalQuota, used: totalUsage, remaining }
+  } catch (err) {
+    return { quota: null, used: 0, remaining: null, error: err instanceof Error ? err.message : 'Unknown' }
   }
 }
 

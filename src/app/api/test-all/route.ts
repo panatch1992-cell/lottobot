@@ -41,12 +41,13 @@ async function runTest(id: string, name: string, fn: () => Promise<{ pass: boole
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get('secret')
   const sendReal = req.nextUrl.searchParams.get('send') === '1'
+  const resetLimit = req.nextUrl.searchParams.get('reset_limit') === '1'
 
   // Basic auth to prevent accidental triggers
   if (secret !== process.env.CRON_SECRET && process.env.NODE_ENV === 'production') {
     return NextResponse.json({
       error: 'ใส่ ?secret=YOUR_CRON_SECRET เพื่อรันทดสอบ',
-      hint: 'เพิ่ม &send=1 เพื่อส่งข้อความจริงไป LINE/TG',
+      hint: 'เพิ่ม &send=1 เพื่อส่งข้อความจริงไป LINE/TG | &reset_limit=1 เพื่อรีเซ็ต monthly limit flag',
     }, { status: 401 })
   }
 
@@ -54,6 +55,12 @@ export async function GET(req: NextRequest) {
   const settings = await getSettings()
   const todayStr = today()
   const results: TestResult[] = []
+
+  // Reset monthly limit flag if requested
+  if (resetLimit) {
+    await db.from('bot_settings').delete().eq('key', 'line_monthly_limit_month')
+    results.push({ id: '0.1', name: 'รีเซ็ต monthly limit flag', status: 'pass', detail: 'ลบ flag แล้ว — ระบบจะเช็ค quota จริงจาก LINE API ใหม่' })
+  }
 
   // ═══════════════════════════════════════════
   // 1. DATABASE CONNECTION
@@ -192,7 +199,7 @@ export async function GET(req: NextRequest) {
     const quota = await checkLineQuota()
     return {
       pass: quota.canSend,
-      detail: `${quota.used}/${quota.quota} ข้อความ ${quota.canSend ? '✅ ยังส่งได้' : `❌ ${quota.reason}`}`,
+      detail: `ใช้ ${quota.used}/${quota.quota} เหลือ ${quota.remaining} (${quota.source}) ${quota.canSend ? '✅ ยังส่งได้' : `❌ ${quota.reason}`}`,
     }
   }))
 
