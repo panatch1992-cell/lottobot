@@ -25,6 +25,12 @@ export async function GET(req: NextRequest) {
 
   // Get settings + countdown intervals
   const settings = await getSettings()
+
+  // ถ้าปิด countdown ไม่ต้องทำอะไร
+  if (settings.send_countdown === 'false') {
+    return NextResponse.json({ sent: 0, lotteries: [], skipped: 'countdown disabled', timestamp: new Date().toISOString() })
+  }
+
   const COUNTDOWN_INTERVALS = (settings.countdown_intervals || DEFAULT_COUNTDOWN)
     .split(',')
     .map(Number)

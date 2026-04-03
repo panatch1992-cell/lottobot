@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
   // Get settings
   const settings = await getSettings()
 
+  // ถ้าปิดส่งสถิติทาง LINE → ยังส่ง TG ได้ แต่ skip LINE
+  const sendStatsLine = settings.send_stats_line !== 'false'
+
   const statsCount = parseInt(settings.stats_count || '10')
 
   // Get active lotteries that have send_stats enabled and have a result today
@@ -83,8 +86,8 @@ export async function GET(req: NextRequest) {
 
     // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
     const lineToken = settings.line_channel_access_token
-    const statsQuota = lineToken ? await checkLineQuota() : null
-    if (lineToken && statsQuota?.canSend) {
+    const statsQuota = lineToken && sendStatsLine ? await checkLineQuota() : null
+    if (lineToken && sendStatsLine && statsQuota?.canSend) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
         if (!group.line_group_id) continue
