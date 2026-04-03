@@ -408,9 +408,15 @@
       <div class="section-title">🔄 Flow การทำงาน</div>
       <div class="flow-box">
         <div class="flow-step">
-          <div class="flow-icon" style="background:#22a867;">🤖</div>
-          <span class="flow-label">ดึงผลอัตโนมัติ</span>
-          <span class="flow-sub">หุ้น / เว็บ / Cron</span>
+          <div class="flow-icon" style="background:#22a867;">📈</div>
+          <span class="flow-label">หุ้น 22 ตัว</span>
+          <span class="flow-sub">Yahoo Finance</span>
+        </div>
+        <span class="flow-arrow">+</span>
+        <div class="flow-step">
+          <div class="flow-icon" style="background:#e89b1c;">🌐</div>
+          <span class="flow-label">เว็บ 21 ตัว</span>
+          <span class="flow-sub">Browser (Puppeteer)</span>
         </div>
         <span class="flow-arrow">→</span>
         <div class="flow-step">
@@ -418,15 +424,16 @@
           <span class="flow-label">Telegram</span>
           <span class="flow-sub">Admin Log</span>
         </div>
-        <span class="flow-arrow">→</span>
+        <span class="flow-arrow">+</span>
         <div class="flow-step">
           <div class="flow-icon" style="background:#06c755;">💬</div>
           <span class="flow-label">LINE กลุ่ม</span>
-          <span class="flow-sub">ส่งพร้อมรูป</span>
+          <span class="flow-sub">รูป + ข้อความ</span>
         </div>
       </div>
       <div class="tip-box">
-        ระบบดึงผลหวยทั้ง 43 รายการ <strong>อัตโนมัติ 100%</strong> ไม่ต้องกรอกมือ → ส่ง Telegram + LINE ทุกกลุ่มเอง
+        ระบบดึงผลหวยทั้ง 43 รายการ <strong>อัตโนมัติ 100%</strong> ไม่ต้องกรอกมือ → ส่ง Telegram + LINE ทุกกลุ่มพร้อมรูปตัวเลข + emoji numbers<br>
+        ตั้งค่าแยกแต่ละกลุ่ม LINE: เลือกหวยที่จะส่ง + ลิงก์เฉพาะกลุ่ม
       </div>
     </div>
 
@@ -438,11 +445,23 @@
           <span class="sub">ดึงราคาดัชนีหุ้นจริง → คำนวณเลข 3 ตัวบน + 2 ตัวล่าง อัตโนมัติ</span>
         </li>
         <li><strong>หวย Hanoi/Laos 21 รายการ</strong> (ฮานอย VIP, ลาว HD ฯลฯ)
-          <span class="sub">ดึงผลจากเว็บต้นทางอัตโนมัติด้วย Puppeteer</span>
+          <span class="sub">ดึงผลจากเว็บต้นทางอัตโนมัติด้วย Browser (Puppeteer)</span>
         </li>
         <li>ระบบทำงานผ่าน <strong>Cron ทุก 1 นาที</strong> ตามเวลาออกผลแต่ละหวย</li>
-        <li>ผลถูกส่งไปทั้ง <strong>Telegram + LINE</strong> พร้อมรูปตัวเลขอัตโนมัติ</li>
+        <li>ผลถูกส่งไปทั้ง <strong>Telegram + LINE</strong> พร้อมรูปตัวเลข + emoji numbers อัตโนมัติ</li>
+        <li><strong>Countdown</strong> แจ้งเตือนก่อนปิดรับ — ตั้งค่าช่วงเวลาได้จากหน้าตั้งค่า
+          <span class="sub">ค่า default: 5 นาที — แก้ได้ที่ ตั้งค่า → "Countdown แจ้งเตือนก่อนปิดรับ" (ใส่เลขคั่นคอมมา เช่น 20,10,5)</span>
+        </li>
+        <li><strong>ตั้งเวลาส่งข้อความ</strong> — กำหนดเวลา + วัน ส่งข้อความอัตโนมัติซ้ำได้
+          <span class="sub">เข้าที่หน้า "ตั้งเวลาส่ง" (/scheduled)</span>
+        </li>
         <li>เช็คสถานะได้ที่หน้า <strong>"หน้าหลัก"</strong> (ดูว่าหวยไหนส่งแล้ว / รอ)</li>
+        <li><strong>ส่งข้อความเอง</strong> / ประกาศพิเศษได้ที่หน้า <strong>"ข้อความ"</strong>
+          <span class="sub">พิมพ์ข้อความอะไรก็ได้ → เลือกส่ง LINE / Telegram / ทั้งสอง</span>
+        </li>
+        <li><strong>ตั้งค่าแยกแต่ละกลุ่ม LINE</strong> — เลือกหวยที่จะส่ง + ลิงก์เฉพาะกลุ่ม
+          <span class="sub">จัดการที่ ตั้งค่า → จัดการกลุ่ม (/groups)</span>
+        </li>
       </ol>
     </div>
 
@@ -452,9 +471,10 @@
       <ol class="step-list">
         <li>กดแท็บ <strong>"ตั้งค่า"</strong> ที่แถบด้านล่าง</li>
         <li>เลื่อนลงไปที่ <strong>"🎨 สไตล์รูปตัวเลข (ผล auto)"</strong>
-          <span class="sub">เลือกธีมสี 6 แบบ (🎀 Shopee / 🧁 Macaroon / 🍬 Candy / 🌊 Ocean / ✨ Gold / 🌙 Dark)</span>
-          <span class="sub">เลือกเรียงตัวเลข: แนวนอน หรือ แนวตั้ง</span>
-          <span class="sub">เลือกฟอนต์ 3 แบบ (● มน / ◆ คม / ○ เส้น) + ขนาด (S / M / L)</span>
+          <span class="sub">เลือกธีมสี 8 แบบ (✍️ Outline / 🖤 Dark Minimal / 🎀 Shopee / 🧁 Macaroon / 🍬 Candy / 🌊 Ocean / ✨ Gold / 🌙 Dark)</span>
+          <span class="sub">เลือกเรียงตัวเลข 3 แบบ: 🔺 Inline (แนะนำ) / ➡️ แนวนอน / ⬇️ แนวตั้ง</span>
+          <span class="sub">เลือกฟอนต์ 21 แบบ (ฟอนต์ไทย: มะลิ, ไอติม, มิตร, คณิต ฯลฯ) หรือพิมพ์ชื่อ Google Font เอง</span>
+          <span class="sub">ขนาดตัวเลข: S / M / L</span>
         </li>
         <li>ดู Preview ด้านล่าง — เห็นตัวอย่างรูปที่จะส่งไป LINE ทันที</li>
         <li>ระบบจำค่าที่ตั้งไว้ → ใช้กับ <strong>ผลหวยทุกตัวที่ดึงอัตโนมัติ</strong></li>
@@ -512,9 +532,13 @@
           <span class="sub">เพิ่มเพื่อน → เชิญเข้ากลุ่ม</span>
         </li>
         <li>ระบบจับกลุ่มอัตโนมัติ — <strong>ไม่ต้องตั้งค่าอะไรเพิ่ม</strong></li>
+        <li>จัดการกลุ่มได้ที่ <strong>ตั้งค่า → จัดการกลุ่ม</strong> หรือหน้า <strong>/groups</strong>
+          <span class="sub">ตั้งค่าต่อกลุ่ม: ลิงก์กลุ่ม, เลือกหวยที่จะส่ง, เปิด/ปิดกลุ่ม</span>
+        </li>
       </ol>
       <div class="tip-box">
-        เพิ่มได้หลายกลุ่ม ส่งผลพร้อมกันทุกกลุ่ม ถ้า bot ถูกเชิญออก เชิญเข้าใหม่ได้เลย
+        เพิ่มได้หลายกลุ่ม ส่งผลพร้อมกันทุกกลุ่ม ถ้า bot ถูกเชิญออก เชิญเข้าใหม่ได้เลย<br>
+        ตั้งค่าแยกแต่ละกลุ่ม: เลือกหวยที่จะส่ง + ลิงก์เฉพาะกลุ่ม
       </div>
     </div>
 
@@ -522,14 +546,16 @@
     <div class="section">
       <div class="section-title">📅 ตั้งเวลาส่งข้อความ</div>
       <ol class="step-list">
-        <li>กดแท็บ <strong>"ตั้งเวลาส่ง"</strong> ที่แถบด้านล่าง</li>
-        <li>เลือกหวยที่ต้องการตั้งเวลา → กำหนดวัน/เวลาที่ต้องการส่ง
-          <span class="sub">ระบบจะส่งข้อความไป Telegram + LINE อัตโนมัติตามเวลาที่ตั้ง</span>
+        <li>เข้าหน้า <strong>"ตั้งเวลาส่ง"</strong> (จาก menu หรือ /scheduled)
+          <span class="sub">ตั้งเวลา + วัน → ระบบส่งข้อความอัตโนมัติตามกำหนด</span>
+        </li>
+        <li>กำหนดข้อความ + เวลา + วันที่ต้องการส่ง
+          <span class="sub">ระบบจะส่งไป Telegram + LINE อัตโนมัติตามเวลาที่ตั้ง</span>
         </li>
         <li>ดูรายการที่ตั้งเวลาไว้ → แก้ไข / ลบได้ตลอด</li>
       </ol>
       <div class="tip-box">
-        ใช้สำหรับตั้งเวลาส่งข้อความล่วงหน้า เช่น ประกาศพิเศษ หรือแจ้งเตือนก่อนปิดรับ
+        ใช้สำหรับตั้งเวลาส่งข้อความล่วงหน้า เช่น ประกาศพิเศษ หรือข้อความที่ต้องส่งซ้ำทุกวัน
       </div>
     </div>
 
