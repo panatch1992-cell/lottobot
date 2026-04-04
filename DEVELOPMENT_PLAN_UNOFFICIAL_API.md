@@ -2,6 +2,8 @@
 
 เอกสารนี้วางแผนต่อยอดจากโครงสร้างปัจจุบันของโปรเจกต์ `lottobot` โดยลดความเสี่ยงการหยุดระบบ และยังคง fallback กลับมาใช้เส้นทางเดิมได้ทันที
 
+> ⚠️ **สำคัญ:** เอกสารนี้คือ “แผนพัฒนา” ไม่ใช่การการันตีว่า deploy แล้ว production จะเสถียรทันที  
+> ต้องผ่านการ implement จริง, ทดสอบครบทุกชั้น, canary rollout, และผ่าน KPI go-live ก่อนจึงค่อย cutover
 ---
 
 ## 1) ภาพรวมระบบปัจจุบัน (Current State)
@@ -210,3 +212,93 @@ interface MessagingProvider {
 ## 10) หมายเหตุสำคัญด้านความเสี่ยง
 
 การใช้ unofficial API มีความเสี่ยงเชิงนโยบายของผู้ให้บริการและอาจเปลี่ยนได้ตลอดเวลา จึงควรเก็บ official path ไว้เป็น fallback อย่างน้อย 1-2 release cycle และทำ canary แบบค่อยเป็นค่อยไปเท่านั้น
+
+---
+
+## 11) เงื่อนไขก่อนขึ้น Production (Production Readiness Gate)
+
+ทีมพัฒนาควรถือว่า “พร้อมขึ้น production” ก็ต่อเมื่อผ่านครบทุกข้อด้านล่าง:
+
+- [ ] ฟีเจอร์หลักส่งข้อความผ่าน `MessagingProvider` ครบทุก route ที่ใช้งานจริง
+- [ ] Unit/Integration/E2E สำคัญผ่านทั้งหมดใน CI
+- [ ] มีการทดสอบ failover จริง (primary ล่ม → secondary ทำงานได้)
+- [ ] มี runbook incident และ rollback ที่ทีม on-call ใช้ได้จริง
+- [ ] Canary อย่างน้อย 7 วัน โดย KPI ผ่านเกณฑ์
+- [ ] มี monitoring + alert ครบ (success rate, error rate, latency, duplicate)
+- [ ] ยืนยัน compliance/ToS และความเสี่ยงทางธุรกิจกับผู้มีอำนาจตัดสินใจแล้ว
+
+ถ้ายังไม่ผ่านครบทุกข้อ ให้ถือว่ายังเป็น **pre-production / staged rollout** และไม่ควร cutover เต็ม 100%
+
+---
+
+## 12) แผนขึ้น Production 100% (Cutover Plan)
+
+> ใช้แผนนี้เมื่อทีมต้องการขึ้นใช้งานจริง 100% ภายในรอบเดียว โดยยังคงมี fallback/rollback พร้อมใช้งานทันที
+
+### Phase A — เตรียมก่อนวัน cutover (T-14 ถึง T-2)
+
+**T-14 ถึง T-10**
+- ปิด scope ใหม่ทั้งหมด (feature freeze เฉพาะระบบส่งข้อความ)
+- implement provider abstraction + unofficial provider ให้ครบเส้นทางส่งจริง
+- เปิด logging โครงสร้างเดียวกันทุก provider
+
+**T-9 ถึง T-7**
+- รัน test pack ที่บังคับ:
+  - unit: provider contract, idempotency, error mapping
+  - integration: route → messaging-service → provider
+  - e2e: send success/failure/fallback
+- ทดสอบ failure injection (จำลอง unofficial ล่ม/ช้า/429)
+
+**T-6 ถึง T-4**
+- ซ้อม incident game day:
+  - ตัด unofficial กลางคัน
+  - ตัด official กลางคัน
+  - queue backlog พุ่ง
+- จับเวลา rollback ต้องไม่เกิน 10 นาที
+
+**T-3 ถึง T-2**
+- final readiness review กับผู้อนุมัติระบบ
+- lock config ทุกค่าที่เกี่ยวกับ provider
+- backup DB + export config + snapshot dashboard baseline
+
+### Phase B — วันขึ้นระบบจริง (T-0)
+
+**ก่อน cutover 2 ชั่วโมง**
+- ประกาศ maintenance window ให้ผู้เกี่ยวข้อง
+- เปิด war room (dev + ops + owner)
+- ตรวจ health check ทุก dependency
+
+**ขั้น cutover**
+1. ตั้ง `messaging_primary_provider=unofficial_line`
+2. ตั้ง `messaging_fallback_provider=official_line`
+3. เปิด `messaging_auto_failover_enabled=true`
+4. ปล่อย traffic 100% ไปที่ unofficial
+5. เฝ้าดู metric นาทีต่อนาที 60 นาทีแรก
+
+**เงื่อนไขผ่านช่วงวิกฤต 60 นาทีแรก**
+- success rate ≥ 99%
+- p95 latency ไม่เกิน baseline + 20%
+- duplicate rate ≤ 0.1%
+- ไม่มี error class วิกฤตต่อเนื่องเกิน 5 นาที
+
+### Phase C — หลัง cutover (T+1 ถึง T+7)
+
+- ติดตาม hourly dashboard + สรุป incident ทุกวัน
+- หยุด deploy ที่ไม่จำเป็น 7 วัน (stabilization window)
+- สรุป post-launch review และปิด war room เมื่อ KPI คงที่
+
+### Immediate Rollback Criteria (สั่งถอยทันที)
+
+ถ้าเกิดข้อใดข้อหนึ่ง ให้ rollback โดยไม่รอ:
+- success rate < 97% ต่อเนื่อง 10 นาที
+- เกิด duplicate ส่งซ้ำเป็นวงกว้าง
+- error auth/policy ที่ชี้ว่ามีความเสี่ยงโดน block
+- queue ค้างเกิน SLA ที่ธุรกิจกำหนด
+
+### Rollback Steps (ใช้ได้ทันที)
+
+1. สลับ `messaging_primary_provider=official_line`
+2. คง `messaging_fallback_provider=unofficial_line` หรือปิด fallback ชั่วคราว
+3. replay งานค้างจาก queue ตามลำดับเวลา
+4. freeze ระบบและเปิด incident response
+5. ออก RCA เบื้องต้นภายใน 24 ชั่วโมง
