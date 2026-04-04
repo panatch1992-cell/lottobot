@@ -197,6 +197,90 @@ export async function pushImageAndText(
   ])
 }
 
+// ═══════════════════════════════════════════
+// Broadcast (ส่งถึงเพื่อนทุกคนของ Bot)
+// นับ quota = จำนวนเพื่อน (ไม่คูณจำนวนกลุ่ม)
+// ═══════════════════════════════════════════
+
+async function lineBroadcast(
+  channelAccessToken: string,
+  messages: unknown[],
+): Promise<{ success: boolean; error?: string; status?: number }> {
+  const maxRetries = 3
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${LINE_API}/message/broadcast`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${channelAccessToken}`,
+        },
+        body: JSON.stringify({ messages }),
+      })
+
+      if (res.ok) {
+        return { success: true, status: res.status }
+      }
+
+      const data = await res.json().catch(() => ({}))
+      const errorMsg = data.message || `HTTP ${res.status}`
+      const fullError = `[HTTP ${res.status}] ${errorMsg}${data.details ? ' | ' + JSON.stringify(data.details) : ''}`
+
+      if (res.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10)
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : attempt * 2000
+        await delay(waitMs)
+        continue
+      }
+
+      return { success: false, error: fullError, status: res.status }
+    } catch (err) {
+      if (attempt < maxRetries) {
+        await delay(attempt * 1000)
+        continue
+      }
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+    }
+  }
+
+  return { success: false, error: 'Max retries exceeded' }
+}
+
+export async function broadcastText(
+  channelAccessToken: string,
+  text: string
+): Promise<{ success: boolean; error?: string }> {
+  return lineBroadcast(channelAccessToken, [{ type: 'text', text }])
+}
+
+export async function broadcastImageAndText(
+  channelAccessToken: string,
+  imageUrl: string,
+  text: string
+): Promise<{ success: boolean; error?: string }> {
+  return lineBroadcast(channelAccessToken, [
+    { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+    { type: 'text', text },
+  ])
+}
+
+// ดึงจำนวนเพื่อนของ Bot (สำหรับคำนวณ quota broadcast)
+export async function getFollowerCount(
+  channelAccessToken: string
+): Promise<{ count: number; error?: string }> {
+  try {
+    const res = await fetch(`${LINE_API}/insight/followers?date=${new Date().toISOString().substring(0, 10).replace(/-/g, '')}`, {
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    })
+    if (!res.ok) return { count: 0, error: `HTTP ${res.status}` }
+    const data = await res.json()
+    return { count: data.followers || 0 }
+  } catch (err) {
+    return { count: 0, error: err instanceof Error ? err.message : 'Unknown' }
+  }
+}
+
 export async function getGroupSummary(
   channelAccessToken: string,
   groupId: string
