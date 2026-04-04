@@ -380,6 +380,35 @@ function SettingsContent() {
           <p className="text-[10px] text-text-secondary mt-0.5">ระบบจะหยุดส่ง LINE อัตโนมัติเมื่อใกล้ครบ quota เพื่อประหยัด</p>
         </div>
 
+        <div>
+          <label className="label">📡 โหมดส่ง LINE</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveSetting('line_send_mode', 'push')}
+              className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                (settings.line_send_mode || 'push') === 'push'
+                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
+              }`}
+            >
+              📌 Push (ทีละกลุ่ม)
+            </button>
+            <button
+              onClick={() => saveSetting('line_send_mode', 'broadcast')}
+              className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                settings.line_send_mode === 'broadcast'
+                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
+              }`}
+            >
+              📢 Broadcast (ถึงเพื่อนทุกคน)
+            </button>
+          </div>
+          <p className="text-[10px] text-text-secondary mt-1">
+            {(settings.line_send_mode || 'push') === 'push'
+              ? 'Push: ส่งทีละกลุ่ม นับ quota ตามจำนวนสมาชิก × กลุ่ม (แพง แต่ custom ได้)'
+              : 'Broadcast: ส่งครั้งเดียวถึงเพื่อนทุกคน นับ quota ตามจำนวนเพื่อน (ประหยัด)'}
+          </p>
+        </div>
+
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"

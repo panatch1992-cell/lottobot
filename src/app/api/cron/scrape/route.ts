@@ -5,7 +5,7 @@ import { isStockLottery, fetchStockLotteryResult } from '@/lib/stock-fetcher'
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
+import { pushTextMessage, pushImageAndText, broadcastImageAndText, broadcastText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
 import type { Lottery, ScrapeSource, LineGroup } from '@/types'
 
@@ -77,17 +77,17 @@ async function saveAndSend(
     })
   }
 
-  // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
+  // Send to LINE
   const lineToken = settings.line_channel_access_token
+  const sendMode = settings.line_send_mode || 'push' // 'push' (ส่งทีละกลุ่ม) หรือ 'broadcast' (ส่งถึงเพื่อนทุกคน)
 
-  // Global quota check — ถ้าเดือนนี้ครบ limit แล้ว ไม่ต้องพยายามส่ง
+  // Global quota check
   const lineQuota = lineToken ? await checkLineQuota() : null
   if (lineToken && lineQuota && !lineQuota.canSend) {
     // ไม่ส่ง LINE แต่ยังบันทึกผลได้
   }
 
   if (lineToken && lineQuota?.canSend) {
-    const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
@@ -104,6 +104,39 @@ async function saveAndSend(
       layout: settings.default_layout || 'horizontal',
     })
     const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
+
+    // ═══ BROADCAST MODE: ส่งครั้งเดียวถึงเพื่อนทุกคน (ประหยัด quota) ═══
+    if (sendMode === 'broadcast') {
+      const alreadyBroadcast = existingLogs?.some(l => l.channel === 'line' && l.status === 'sent' && !l.line_group_id)
+      if (!alreadyBroadcast) {
+        const startLine = Date.now()
+        let lineResult = await broadcastImageAndText(lineToken, imageUrl, formatted.line)
+        if (!lineResult.success) {
+          if (lineResult.error?.includes('monthly limit')) {
+            await flagMonthlyLimitHit()
+          } else {
+            lineResult = await broadcastText(lineToken, formatted.line)
+            if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
+              await flagMonthlyLimitHit()
+            }
+          }
+        }
+        await db.from('send_logs').insert({
+          lottery_id: lottery.id,
+          result_id: savedResult.id,
+          channel: 'line',
+          msg_type: 'result',
+          status: lineResult.success ? 'sent' : 'failed',
+          sent_at: new Date().toISOString(),
+          duration_ms: Date.now() - startLine,
+          error_message: lineResult.error || null,
+        })
+      }
+    }
+
+    // ═══ PUSH MODE: ส่งทีละกลุ่ม (รองรับ per-group customization) ═══
+    if (sendMode === 'push') {
+    const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
 
     // Get group-lottery mapping for selective sending
     const { data: allGroupLotteries } = await db.from('group_lotteries').select('group_id, lottery_id')
@@ -135,7 +168,6 @@ async function saveAndSend(
       const startLine = Date.now()
       let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, lineMsg)
       if (!lineResult.success) {
-        // ถ้า image ส่งไม่ได้เพราะ limit → flag เลย ไม่ต้อง fallback
         if (lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
         } else {
@@ -157,6 +189,7 @@ async function saveAndSend(
         error_message: lineResult.error || null,
       })
     }
+    } // end push mode
   }
 
   return { success: true }
