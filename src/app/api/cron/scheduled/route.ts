@@ -29,25 +29,86 @@ export async function GET(req: NextRequest) {
     .eq('is_active', true)
 
   const sent: string[] = []
+  const debug: Array<{ id: string; msgTime: string; now: string; decision: string; lastSent: string; repeat: string }> = []
 
   for (const msg of messages || []) {
     // Check time match (HH:MM)
     const msgTime = msg.send_time?.substring(0, 5)
-    if (msgTime !== nowHHMM) continue
+    if (msgTime !== nowHHMM) {
+      if (testMode) {
+        debug.push({
+          id: msg.id,
+          msgTime: msgTime || '',
+          now: nowHHMM,
+          decision: 'skip:time_mismatch',
+          lastSent: msg.last_sent_at || '',
+          repeat: msg.repeat_days || 'daily',
+        })
+      }
+      continue
+    }
 
     // Check day match
     const repeat = msg.repeat_days || 'daily'
-    if (repeat === 'weekday' && (dayOfWeek === 0 || dayOfWeek === 6)) continue
-    if (repeat === 'weekend' && dayOfWeek >= 1 && dayOfWeek <= 5) continue
+    if (repeat === 'weekday' && (dayOfWeek === 0 || dayOfWeek === 6)) {
+      if (testMode) {
+        debug.push({
+          id: msg.id,
+          msgTime: msgTime || '',
+          now: nowHHMM,
+          decision: 'skip:weekday_rule',
+          lastSent: msg.last_sent_at || '',
+          repeat,
+        })
+      }
+      continue
+    }
+    if (repeat === 'weekend' && dayOfWeek >= 1 && dayOfWeek <= 5) {
+      if (testMode) {
+        debug.push({
+          id: msg.id,
+          msgTime: msgTime || '',
+          now: nowHHMM,
+          decision: 'skip:weekend_rule',
+          lastSent: msg.last_sent_at || '',
+          repeat,
+        })
+      }
+      continue
+    }
     if (repeat !== 'daily' && repeat !== 'weekday' && repeat !== 'weekend') {
       // Custom days: "1,2,3,4,5" format
       const days = repeat.split(',').map(Number)
-      if (!days.includes(dayOfWeek)) continue
+      if (!days.includes(dayOfWeek)) {
+        if (testMode) {
+          debug.push({
+            id: msg.id,
+            msgTime: msgTime || '',
+            now: nowHHMM,
+            decision: 'skip:custom_day_mismatch',
+            lastSent: msg.last_sent_at || '',
+            repeat,
+          })
+        }
+        continue
+      }
     }
 
     // Check not already sent today
     const lastSent = msg.last_sent_at ? new Date(msg.last_sent_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }) : ''
-    if (lastSent === todayStr) continue
+    if (lastSent === todayStr) {
+      if (testMode) {
+        debug.push({
+          id: msg.id,
+          msgTime: msgTime || '',
+          now: nowHHMM,
+          decision: 'skip:already_sent_today',
+          lastSent: msg.last_sent_at || '',
+          repeat,
+        })
+      }
+      continue
+    }
 
     const target = msg.target || 'both'
 
@@ -69,7 +130,24 @@ export async function GET(req: NextRequest) {
     await db.from('scheduled_messages').update({ last_sent_at: new Date().toISOString() }).eq('id', msg.id)
 
     sent.push(`${msgTime}: ${msg.message.substring(0, 30)}...`)
+
+    if (testMode) {
+      debug.push({
+        id: msg.id,
+        msgTime: msgTime || '',
+        now: nowHHMM,
+        decision: 'sent',
+        lastSent: msg.last_sent_at || '',
+        repeat,
+      })
+    }
   }
 
-  return NextResponse.json({ sent: sent.length, messages: sent, now: nowHHMM, timestamp: new Date().toISOString() })
+  return NextResponse.json({
+    sent: sent.length,
+    messages: sent,
+    now: nowHHMM,
+    timestamp: new Date().toISOString(),
+    ...(testMode ? { debug } : {}),
+  })
 }
