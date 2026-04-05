@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatCountdown } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
+import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import type { Lottery, LineGroup } from '@/types'
 
