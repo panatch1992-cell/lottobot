@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage } from '@/lib/line-messaging'
+import { pushTextMessage } from '@/lib/messaging-service'
 import { nowBangkok, today } from '@/lib/utils'
 import type { LineGroup } from '@/types'
 
