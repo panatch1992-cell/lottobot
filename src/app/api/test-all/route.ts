@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, verifyChannelToken, checkLineQuota, flagMonthlyLimitHit } from '@/lib/line-messaging'
+import { pushTextMessage, verifyChannelToken, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { formatResult, formatCountdown, formatStats } from '@/lib/formatter'
 import { today } from '@/lib/utils'
 import type { Lottery, LineGroup, Result } from '@/types'
