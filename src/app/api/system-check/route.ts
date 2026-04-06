@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
-import { checkUnofficialHealth, checkLineQuota, verifyChannelToken } from '@/lib/messaging-service'
+import { checkUnofficialHealth } from '@/lib/messaging-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,39 +51,22 @@ export async function GET() {
     checks.push({ name: 'TG Channel ID', status: 'warn', detail: 'ยังไม่ได้ตั้ง Channel ID' })
   }
 
-  // 4. LINE Channel Access Token
-  if (settings.line_channel_access_token) {
-    try {
-      const result = await verifyChannelToken(settings.line_channel_access_token)
-      checks.push({
-        name: 'LINE Token',
-        status: result.valid ? 'ok' : 'error',
-        detail: result.valid ? 'Token ใช้งานได้' : `Token ไม่ถูกต้อง: ${result.error || 'หมดอายุ'}`,
-      })
-    } catch {
-      checks.push({ name: 'LINE Token', status: 'warn', detail: 'ตรวจสอบไม่ได้ (อาจยังใช้ได้)' })
-    }
-  } else {
-    checks.push({ name: 'LINE Token', status: 'warn', detail: 'ยังไม่ได้ตั้ง Channel Access Token' })
+  // 4. Unofficial Endpoint (replaces LINE Token check)
+  {
+    const health = await checkUnofficialHealth()
+    checks.push({
+      name: 'Unofficial Endpoint',
+      status: health.ok ? 'ok' : 'error',
+      detail: health.ok
+        ? `ออนไลน์ (${health.latencyMs}ms, LINE Token: ${health.hasLineToken ? 'มี' : 'ไม่มี'})`
+        : `ออฟไลน์: ${health.error}`,
+    })
   }
 
-  // 5. LINE Quota
-  try {
-    const quota = await checkLineQuota()
-    if (quota.canSend) {
-      checks.push({ name: 'LINE Quota', status: 'ok', detail: `ส่งได้ (เหลือ ~${quota.remaining || 'ไม่จำกัด'})` })
-    } else {
-      checks.push({ name: 'LINE Quota', status: 'error', detail: `Quota เต็ม: ${quota.reason}` })
-    }
-  } catch {
-    checks.push({ name: 'LINE Quota', status: 'warn', detail: 'ตรวจสอบ quota ไม่ได้' })
-  }
-
-  // 6. LINE Groups
+  // 5. LINE Groups
   try {
     const { data: groups } = await db.from('line_groups').select('id, name, line_group_id, unofficial_group_id, is_active')
     const active = (groups || []).filter((g: { is_active: boolean }) => g.is_active)
-    const withOfficial = active.filter((g: { line_group_id: string | null }) => g.line_group_id)
     const withUnofficial = active.filter((g: { unofficial_group_id?: string | null }) => g.unofficial_group_id)
 
     if (active.length === 0) {
@@ -91,44 +74,16 @@ export async function GET() {
     } else {
       checks.push({
         name: 'กลุ่ม LINE',
-        status: 'ok',
-        detail: `${active.length} กลุ่มเปิดใช้ (Official ID: ${withOfficial.length}, Unofficial ID: ${withUnofficial.length})`,
+        status: withUnofficial.length > 0 ? 'ok' : 'warn',
+        detail: `${active.length} กลุ่มเปิดใช้ (มี Unofficial ID: ${withUnofficial.length}/${active.length})`,
       })
-      if (withUnofficial.length === 0 && settings.messaging_primary_provider === 'unofficial_line') {
-        checks.push({ name: 'Unofficial Group IDs', status: 'warn', detail: 'ใช้ Unofficial เป็น primary แต่ยังไม่มีกลุ่มใดใส่ Unofficial ID (c...)' })
+      if (withUnofficial.length < active.length) {
+        checks.push({ name: 'Unofficial Group IDs', status: 'warn', detail: `${active.length - withUnofficial.length} กลุ่มยังไม่มี Unofficial ID (c...)` })
       }
     }
   } catch {
     checks.push({ name: 'กลุ่ม LINE', status: 'error', detail: 'ดึงข้อมูลกลุ่มไม่ได้' })
   }
-
-  // 7. Unofficial Endpoint
-  if (settings.messaging_primary_provider === 'unofficial_line' || settings.messaging_fallback_provider === 'unofficial_line') {
-    if (!settings.unofficial_line_endpoint) {
-      checks.push({ name: 'Unofficial Endpoint', status: 'error', detail: 'ยังไม่ได้ตั้ง Endpoint URL' })
-    } else {
-      const health = await checkUnofficialHealth()
-      checks.push({
-        name: 'Unofficial Endpoint',
-        status: health.ok ? 'ok' : 'error',
-        detail: health.ok
-          ? `ออนไลน์ (${health.latencyMs}ms, LINE Token: ${health.hasLineToken ? 'มี' : 'ไม่มี'})`
-          : `ออฟไลน์: ${health.error}`,
-      })
-    }
-  } else {
-    checks.push({ name: 'Unofficial Endpoint', status: 'ok', detail: 'ไม่ได้ใช้ (ส่งผ่าน Official เท่านั้น)' })
-  }
-
-  // 8. Provider Config
-  const primary = settings.messaging_primary_provider || 'official_line'
-  const fallback = settings.messaging_fallback_provider || 'official_line'
-  const autoFailover = (settings.messaging_auto_failover_enabled || 'true') === 'true'
-  checks.push({
-    name: 'Provider Config',
-    status: autoFailover ? 'ok' : 'warn',
-    detail: `หลัก: ${primary === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official'} | สำรอง: ${fallback === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official'} | Failover: ${autoFailover ? 'เปิด' : 'ปิด'}`,
-  })
 
   // 9. Scrape Sources
   try {
