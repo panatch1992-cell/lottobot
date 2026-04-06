@@ -21,6 +21,7 @@ function SettingsContent() {
   const [tgStatus, setTgStatus] = useState<string>('')
   const [lineStatus, setLineStatus] = useState<string>('')
   const [unlockedFields, setUnlockedFields] = useState<Set<string>>(new Set())
+  const [unofficialStatus, setUnofficialStatus] = useState<string>('')
 
   useEffect(() => {
     loadSettings()
@@ -273,6 +274,153 @@ function SettingsContent() {
             {typeof window !== 'undefined' ? `${window.location.origin}/api/line/webhook` : '/api/line/webhook'}
           </code>
           <p>เมื่อเพิ่ม Bot เข้ากลุ่ม LINE จะจับกลุ่มอัตโนมัติ</p>
+        </div>
+      </div>
+
+      {/* Unofficial LINE Endpoint + Provider */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold">🔀 LINE Provider (Official / Unofficial)</h3>
+        <p className="text-xs text-text-secondary">ตั้งค่าให้ส่งผ่าน Unofficial endpoint เป็นหลัก แล้ว fallback เป็น Official LINE</p>
+
+        {/* Primary Provider */}
+        <div>
+          <label className="label">Primary Provider (ส่งหลัก)</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveSetting('messaging_primary_provider', 'official_line')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
+                (settings.messaging_primary_provider || 'official_line') === 'official_line'
+                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
+              }`}
+            >
+              💬 Official LINE
+            </button>
+            <button
+              onClick={() => saveSetting('messaging_primary_provider', 'unofficial_line')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
+                settings.messaging_primary_provider === 'unofficial_line'
+                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
+              }`}
+            >
+              🔧 Unofficial Endpoint
+            </button>
+          </div>
+        </div>
+
+        {/* Fallback Provider */}
+        <div>
+          <label className="label">Fallback Provider (สำรอง)</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveSetting('messaging_fallback_provider', 'official_line')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
+                (settings.messaging_fallback_provider || 'official_line') === 'official_line'
+                  ? 'border-green-500 bg-green-50 font-medium' : 'border-gray-200'
+              }`}
+            >
+              💬 Official LINE
+            </button>
+            <button
+              onClick={() => saveSetting('messaging_fallback_provider', 'unofficial_line')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
+                settings.messaging_fallback_provider === 'unofficial_line'
+                  ? 'border-green-500 bg-green-50 font-medium' : 'border-gray-200'
+              }`}
+            >
+              🔧 Unofficial Endpoint
+            </button>
+          </div>
+        </div>
+
+        {/* Auto Failover */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={(settings.messaging_auto_failover_enabled || 'true') === 'true'}
+            onChange={e => saveSetting('messaging_auto_failover_enabled', e.target.checked ? 'true' : 'false')}
+            className="rounded"
+          />
+          <span className="text-sm">Auto Failover (ส่งหลักล้ม → สลับไปสำรองอัตโนมัติ)</span>
+        </label>
+
+        <hr className="border-gray-100" />
+
+        {/* Unofficial Endpoint URL */}
+        <div>
+          <label className="label">Unofficial Endpoint URL</label>
+          <input
+            type="text"
+            value={settings.unofficial_line_endpoint || ''}
+            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
+            className="input font-mono text-xs"
+            placeholder="https://lottobot-unofficial-endpoint.onrender.com"
+          />
+        </div>
+
+        {/* Unofficial Auth Token */}
+        <div>
+          <label className="label">Unofficial Auth Token</label>
+          <input
+            type="password"
+            autoComplete="off"
+            value={settings.unofficial_line_token || ''}
+            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
+            className="input font-mono text-xs"
+            placeholder="UNOFFICIAL_AUTH_TOKEN ที่ตั้งใน Render"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={async () => {
+              setUnofficialStatus('')
+              setSaving(true)
+              const endpoint = settings.unofficial_line_endpoint || ''
+              const token = settings.unofficial_line_token || ''
+              if (endpoint) await saveSetting('unofficial_line_endpoint', endpoint)
+              if (token) await saveSetting('unofficial_line_token', token)
+              setSaving(false)
+              setUnofficialStatus('✅ บันทึกแล้ว')
+            }}
+            disabled={saving}
+            className="btn-primary text-sm"
+          >
+            {saving ? '...' : '💾 บันทึก'}
+          </button>
+          <button
+            onClick={async () => {
+              const endpoint = (settings.unofficial_line_endpoint || '').replace(/\/+$/, '')
+              if (!endpoint) {
+                setUnofficialStatus('❌ กรุณาใส่ Endpoint URL ก่อน')
+                return
+              }
+              setUnofficialStatus('กำลังทดสอบ...')
+              try {
+                const res = await fetch(`${endpoint}/health`)
+                const data = await res.json()
+                if (data.ok) {
+                  setUnofficialStatus(`✅ เชื่อมต่อสำเร็จ (LINE Token: ${data.hasLineToken ? 'มี' : 'ไม่มี'}, Auth: ${data.hasAuthToken ? 'มี' : 'ไม่มี'})`)
+                } else {
+                  setUnofficialStatus('❌ Endpoint ตอบกลับไม่ถูกต้อง')
+                }
+              } catch {
+                setUnofficialStatus('❌ ไม่สามารถเชื่อมต่อได้ — เช็คว่า Render ทำงานอยู่')
+              }
+            }}
+            disabled={unofficialStatus === 'กำลังทดสอบ...'}
+            className="btn-outline text-sm disabled:opacity-50"
+          >
+            🔍 ทดสอบ Endpoint
+          </button>
+          {unofficialStatus && <span className="text-xs">{unofficialStatus}</span>}
+        </div>
+
+        {/* Summary */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 space-y-1">
+          <p className="font-medium">สถานะปัจจุบัน:</p>
+          <p>📤 ส่งหลัก: <b>{settings.messaging_primary_provider === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official LINE'}</b></p>
+          <p>📥 สำรอง: <b>{settings.messaging_fallback_provider === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official LINE'}</b></p>
+          <p>🔄 Auto Failover: <b>{(settings.messaging_auto_failover_enabled || 'true') === 'true' ? 'เปิด' : 'ปิด'}</b></p>
         </div>
       </div>
 
