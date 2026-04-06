@@ -8,6 +8,7 @@ interface GroupInfo {
   id: string
   name: string
   line_group_id: string | null
+  unofficial_group_id: string | null
   is_active: boolean
   custom_link: string | null
   custom_message: string | null
@@ -27,6 +28,7 @@ export default function GroupsPage() {
   const [saving, setSaving] = useState(false)
   const [editLink, setEditLink] = useState('')
   const [editMessage, setEditMessage] = useState('')
+  const [editUnofficialId, setEditUnofficialId] = useState('')
   const [sendAll, setSendAll] = useState(true)
 
   useEffect(() => { loadData() }, [])
@@ -45,6 +47,7 @@ export default function GroupsPage() {
     setSelectedGroup(group)
     setEditLink(group.custom_link || '')
     setEditMessage(group.custom_message || '')
+    setEditUnofficialId(group.unofficial_group_id || '')
     setSendAll(group.send_all_lotteries)
 
     const { data } = await supabase.from('group_lotteries')
@@ -90,6 +93,7 @@ export default function GroupsPage() {
     await supabase.from('line_groups').update({
       custom_link: editLink || null,
       custom_message: editMessage || null,
+      unofficial_group_id: editUnofficialId || null,
       send_all_lotteries: sendAll,
       updated_at: new Date().toISOString(),
     }).eq('id', selectedGroup.id)
@@ -119,9 +123,10 @@ export default function GroupsPage() {
               <div className="min-w-0">
                 <p className="text-sm font-medium">{group.name}</p>
                 <p className="text-xs text-text-secondary">
-                  {group.line_group_id ? `ID: ••••${group.line_group_id.slice(-6)}` : 'ไม่มี ID'}
-                  {group.custom_link && ' · 🔗 มีลิงก์'}
-                  {!group.send_all_lotteries && ' · 🎯 เลือกหวย'}
+                  {group.line_group_id ? `💬 ••••${group.line_group_id.slice(-6)}` : 'ไม่มี Official ID'}
+                  {group.unofficial_group_id ? ` · 🔧 ••••${group.unofficial_group_id.slice(-6)}` : ''}
+                  {group.custom_link && ' · 🔗'}
+                  {!group.send_all_lotteries && ' · 🎯'}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -133,6 +138,25 @@ export default function GroupsPage() {
             {/* Expanded */}
             {selectedGroup?.id === group.id && (
               <div className="bg-gray-50 px-4 py-4 space-y-4">
+                {/* Group IDs */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label">💬 Official ID (Ca...)</label>
+                    <div className="input text-[10px] font-mono bg-white text-text-secondary truncate">
+                      {group.line_group_id || 'ยังไม่มี'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">🔧 Unofficial ID (c...)</label>
+                    <input
+                      value={editUnofficialId}
+                      onChange={e => setEditUnofficialId(e.target.value)}
+                      className="input text-[10px] font-mono"
+                      placeholder="c1a2b3c4d5e6..."
+                    />
+                  </div>
+                </div>
+
                 {/* Custom Link */}
                 <div>
                   <label className="label">🔗 ลิงก์ส่งท้ายข้อความ</label>
