@@ -1,59 +1,17 @@
-import {
-  checkLineQuota as checkOfficialLineQuota,
-  flagMonthlyLimitHit,
-  verifyChannelToken,
-  getLineQuotaFromAPI,
-} from '@/lib/line-messaging'
-import { createProvider, getProviderConfig } from '@/lib/providers/provider-factory'
-import { withFallback } from '@/lib/providers/provider-fallback'
-
-async function resolveProviders() {
-  const cfg = await getProviderConfig()
-  const primary = createProvider(cfg.primary, cfg)
-  const fallback = createProvider(cfg.fallback, cfg)
-  return { cfg, primary, fallback }
-}
-
-export async function sendText(to: string, text: string) {
-  const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.pushText(to, text))
-}
-
-export async function sendImageAndText(to: string, imageUrl: string, text: string) {
-  const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.pushImageAndText(to, imageUrl, text))
-}
-
-export async function broadcastTextMessage(text: string) {
-  const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.broadcastText(text))
-}
-
-export async function broadcastImageText(imageUrl: string, text: string) {
-  const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.broadcastImageAndText(imageUrl, text))
-}
-
-// Backward-compatible names to reduce route changes
-export async function pushTextMessage(_channelAccessToken: string, to: string, text: string) {
-  return sendText(to, text)
-}
-
-export async function pushImageAndText(_channelAccessToken: string, to: string, imageUrl: string, text: string) {
-  return sendImageAndText(to, imageUrl, text)
-}
-
-export async function broadcastText(_channelAccessToken: string, text: string) {
-  return broadcastTextMessage(text)
-}
-
-export async function broadcastImageAndText(_channelAccessToken: string, imageUrl: string, text: string) {
-  return broadcastImageText(imageUrl, text)
-}
-
 export async function checkLineQuota() {
   const cfg = await getProviderConfig()
-  if (cfg.primary === 'unofficial_line') {
+
+  // ต้องเช็ค quota ของ official LINE ทุกครั้งที่เส้นทางส่ง "มีโอกาส" ไป official ได้
+  // 1) primary เป็น official_line
+  // 2) primary เป็น unofficial_line แต่เปิด autoFailover และ fallback เป็น official_line
+  const canRouteToOfficialLine =
+    cfg.primary === 'official_line' ||
+    (cfg.primary === 'unofficial_line' &&
+      cfg.autoFailover &&
+      cfg.fallback === 'official_line')
+
+  // ข้าม quota gate ได้เฉพาะกรณีที่ official LINE ไม่อยู่ในเส้นทางส่งจริง ๆ
+  if (!canRouteToOfficialLine) {
     return {
       canSend: true,
       used: 0,
@@ -63,11 +21,9 @@ export async function checkLineQuota() {
       todaySent: 0,
       daysLeft: 1,
       source: 'flag' as const,
-      reason: 'primary provider is unofficial_line (skip official LINE quota gate)',
+      reason: 'official LINE is not in active send path (skip official LINE quota gate)',
     }
   }
+
   return checkOfficialLineQuota()
 }
-
-export { flagMonthlyLimitHit }
-export { verifyChannelToken, getLineQuotaFromAPI }
