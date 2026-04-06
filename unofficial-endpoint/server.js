@@ -53,15 +53,13 @@ app.get('/health', (_req, res) => {
 })
 
 app.post('/send', async (req, res) => {
-  // Required auth guard
-  if (!AUTH_TOKEN) {
-    return unauthorized(res, 'Service is not configured with UNOFFICIAL_AUTH_TOKEN')
-  }
-
-  const header = req.headers.authorization || ''
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
-  if (bearer !== AUTH_TOKEN) {
-    return unauthorized(res, 'Invalid unofficial auth token')
+  // Optional auth guard
+  if (AUTH_TOKEN) {
+    const header = req.headers.authorization || ''
+    const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
+    if (bearer !== AUTH_TOKEN) {
+      return unauthorized(res, 'Invalid unofficial auth token')
+    }
   }
 
   const { mode, to, text, imageUrl } = req.body || {}

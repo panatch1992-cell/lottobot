@@ -69,8 +69,10 @@ export async function POST(req: NextRequest) {
         for (const group of activeGroups) {
           if (dryRun) break
           if (!group.line_group_id) continue
+          
+          // เปลี่ยนมาใช้ sendText จากระบบ Provider ใหม่ที่ไม่ต้องส่ง token ไปใน arguments แล้ว
           const lineResult = await sendText(group.line_group_id, message.trim())
-
+          
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
           }
