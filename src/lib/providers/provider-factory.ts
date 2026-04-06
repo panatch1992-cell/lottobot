@@ -12,11 +12,19 @@ type ProviderConfig = {
   unofficialToken?: string
 }
 
+function normalizeProviderName(value: unknown): ProviderName {
+  if (value === 'official_line' || value === 'unofficial_line') {
+    return value
+  }
+
+  return 'official_line'
+}
+
 export async function getProviderConfig(): Promise<ProviderConfig> {
   const settings = await getSettings()
 
-  const primary = (settings.messaging_primary_provider as ProviderName) || 'official_line'
-  const fallback = (settings.messaging_fallback_provider as ProviderName) || 'official_line'
+  const primary = normalizeProviderName(settings.messaging_primary_provider)
+  const fallback = normalizeProviderName(settings.messaging_fallback_provider)
   const autoFailover = (settings.messaging_auto_failover_enabled || 'true') === 'true'
 
   return {
