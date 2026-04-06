@@ -18,6 +18,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   const [autoConfigured, setAutoConfigured] = useState(0)
+  const [flowStatus, setFlowStatus] = useState({
+    autoFetch: 'inactive' as 'active' | 'inactive',
+    countdownAndSchedule: 'inactive' as 'active' | 'inactive',
+    telegram: 'inactive' as 'active' | 'inactive',
+    line: 'inactive' as 'active' | 'inactive',
+  })
 
   useEffect(() => {
     loadDashboard()
@@ -27,12 +33,14 @@ export default function DashboardPage() {
     try {
       const todayStr = today()
 
-      const [lotteriesRes, groupsRes, resultsRes, logsRes, scrapeInfoRes] = await Promise.all([
+      const [lotteriesRes, groupsRes, resultsRes, logsRes, scrapeInfoRes, settingsRes, scheduledRes] = await Promise.all([
         supabase.from('lotteries').select('*').order('sort_order'),
         supabase.from('line_groups').select('*'),
         supabase.from('results').select('*').eq('draw_date', todayStr),
         supabase.from('send_logs').select('*').gte('created_at', todayStr),
         fetch('/api/scrape-sources').then(r => r.json()),
+        fetch('/api/settings').then(r => r.json()),
+        supabase.from('scheduled_messages').select('id', { count: 'exact', head: true }).eq('is_active', true),
       ])
 
       const lotteries = (lotteriesRes.data || []) as Lottery[]
@@ -50,6 +58,25 @@ export default function DashboardPage() {
       const scrapeIds = (scrapeInfoRes.sources || []).map((s: { lottery_id: string }) => s.lottery_id)
       const allAutoIds = new Set(stockIds.concat(browserIds).concat(scrapeIds))
       setAutoConfigured(allAutoIds.size)
+
+      const settingsMap = new Map<string, string>(
+        ((settingsRes?.settings || []) as { key: string; value: string }[]).map(s => [s.key, s.value || ''])
+      )
+      const hasTelegram = Boolean(settingsMap.get('telegram_bot_token') && settingsMap.get('telegram_admin_channel'))
+      const primaryProvider = settingsMap.get('messaging_primary_provider') || 'official_line'
+      const hasOfficialToken = Boolean(settingsMap.get('line_channel_access_token'))
+      const hasUnofficialEndpoint = Boolean(settingsMap.get('unofficial_line_endpoint'))
+      const hasLineProviderConfig = primaryProvider === 'unofficial_line' ? hasUnofficialEndpoint : hasOfficialToken
+      const hasLine = Boolean(hasLineProviderConfig && activeGroups.length > 0)
+      const hasCountdown = settingsMap.get('send_countdown') === 'true'
+      const hasScheduled = (scheduledRes.count || 0) > 0
+
+      setFlowStatus({
+        autoFetch: allAutoIds.size > 0 ? 'active' : 'inactive',
+        countdownAndSchedule: hasCountdown || hasScheduled ? 'active' : 'inactive',
+        telegram: hasTelegram ? 'active' : 'inactive',
+        line: hasLine ? 'active' : 'inactive',
+      })
 
       setStats({
         totalLotteries: lotteries.length,
@@ -102,7 +129,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* Flow Diagram */}
-      <FlowDiagram />
+      <FlowDiagram stepsState={flowStatus} />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-2">
