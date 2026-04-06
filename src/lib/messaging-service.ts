@@ -67,7 +67,7 @@ export async function checkLineQuota() {
       todaySent: 0,
       daysLeft: 1,
       source: 'flag' as const,
-      reason: 'primary provider is unofficial_line (skip official LINE quota gate)',
+      reason: 'official LINE is not in active send path (skip official LINE quota gate)',
     }
   }
 
