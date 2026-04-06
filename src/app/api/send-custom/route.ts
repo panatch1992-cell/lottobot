@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { sendText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import type { LineGroup } from '@/types'
 
 function shouldDeactivateGroupFromError(error?: string) {
   if (!error) return false
   const normalized = error.toLowerCase()
   return (
-    normalized.includes('invalid user id')
-    || normalized.includes('invalid group id')
-    || normalized.includes('invalid recipient')
-    || normalized.includes('not found')
-    || normalized.includes('cannot find')
-    || normalized.includes('failed to send messages')
+    normalized.includes(`property, 'to', in the request body is invalid`) ||
+    normalized.includes('"property":"to"') ||
+    normalized.includes('invalid user id') ||
+    normalized.includes('invalid group id') ||
+    normalized.includes('invalid recipient') ||
+    normalized.includes('not found') ||
+    normalized.includes('cannot find') ||
+    normalized.includes('failed to send messages')
   )
 }
 
@@ -68,7 +70,7 @@ export async function POST(req: NextRequest) {
           if (dryRun) break
           if (!group.line_group_id) continue
 
-          const lineResult = await pushTextMessage(settings.line_channel_access_token || '', group.line_group_id, message.trim())
+          const lineResult = await sendText(group.line_group_id, message.trim())
 
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
@@ -95,6 +97,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: allSuccess,
       results,
+      dryRun: !!dryRun,
+      selectedGroups: Array.isArray(groupNames) ? groupNames : null,
       error: results.length === 0
         ? 'ไม่มีช่องทางส่ง — เช็ค LINE Token และ TG Channel ID ในตั้งค่า'
         : failedResults.length > 0

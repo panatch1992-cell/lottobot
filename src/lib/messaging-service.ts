@@ -54,8 +54,11 @@ export async function broadcastImageAndText(_channelAccessToken: string, imageUr
 export async function checkLineQuota() {
   const cfg = await getProviderConfig()
 
-  const canRouteToOfficialLine = cfg.primary === 'official_line'
-    || (cfg.primary === 'unofficial_line' && cfg.autoFailover && cfg.fallback === 'official_line')
+  const canRouteToOfficialLine =
+    cfg.primary === 'official_line' ||
+    (cfg.primary === 'unofficial_line' &&
+      cfg.autoFailover &&
+      cfg.fallback === 'official_line')
 
   if (!canRouteToOfficialLine) {
     return {
