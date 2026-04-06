@@ -137,32 +137,23 @@ function SettingsContent() {
   async function testUnofficialEndpoint() {
     setProviderStatus('กำลังทดสอบ unofficial endpoint...')
     try {
-      const endpoint = (settings.unofficial_line_endpoint || '').trim()
+      const endpoint = (settings.unofficial_line_endpoint || '').trim().replace(/\/+$/, '')
       if (!endpoint) {
         setProviderStatus('❌ กรุณาใส่ Unofficial Endpoint ก่อน')
         return
       }
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(settings.unofficial_line_token
-            ? { Authorization: `Bearer ${settings.unofficial_line_token}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          mode: 'push_text',
-          to: 'U_TEST_ONLY',
-          text: 'health-check',
-        }),
-      })
+      const res = await fetch(`${endpoint}/health`)
 
       if (res.ok) {
-        setProviderStatus('✅ endpoint ตอบกลับปกติ (HTTP 2xx)')
+        const data = await res.json().catch(() => ({}))
+        if (data.ok) {
+          setProviderStatus(`✅ ออนไลน์ (LINE Token: ${data.hasLineToken ? 'มี' : 'ไม่มี'}, Auth: ${data.hasAuthToken ? 'มี' : 'ไม่มี'})`)
+        } else {
+          setProviderStatus('⚠️ endpoint ตอบกลับแต่ ok=false')
+        }
       } else {
-        const body = await res.text().catch(() => '')
-        setProviderStatus(`❌ endpoint ตอบกลับ ${res.status}${body ? `: ${body.slice(0, 80)}` : ''}`)
+        setProviderStatus(`❌ endpoint ตอบกลับ ${res.status}`)
       }
     } catch (err) {
       setProviderStatus(`❌ ทดสอบไม่สำเร็จ: ${err instanceof Error ? err.message : 'unknown error'}`)
