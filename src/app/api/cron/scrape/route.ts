@@ -166,12 +166,13 @@ async function saveAndSend(
       if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
 
       const startLine = Date.now()
-      let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, lineMsg)
+      const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || undefined
+      let lineResult = await pushImageAndText(lineToken, group.line_group_id, imageUrl, lineMsg, unofficialId)
       if (!lineResult.success) {
         if (lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
         } else {
-          lineResult = await pushTextMessage(lineToken, group.line_group_id, lineMsg)
+          lineResult = await pushTextMessage(lineToken, group.line_group_id, lineMsg, unofficialId)
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
           }
@@ -188,6 +189,9 @@ async function saveAndSend(
         duration_ms: Date.now() - startLine,
         error_message: lineResult.error || null,
       })
+
+      // Delay between groups to avoid LINE rate detection (especially unofficial)
+      if (unofficialId) await sleep(2000)
     }
     } // end push mode
   }
