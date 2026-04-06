@@ -13,9 +13,9 @@ export default defineConfig({
     trace: 'on-first-retry',
     navigationTimeout: 10000,
     actionTimeout: 5000,
-    launchOptions: {
-      executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-    },
+    launchOptions: process.env.PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
+      : undefined,
   },
   projects: [
     {
