@@ -53,7 +53,14 @@ export async function broadcastImageAndText(_channelAccessToken: string, imageUr
 
 export async function checkLineQuota() {
   const cfg = await getProviderConfig()
-  if (cfg.primary === 'unofficial_line') {
+
+  const canRouteToOfficialLine =
+    cfg.primary === 'official_line' ||
+    (cfg.primary === 'unofficial_line' &&
+      cfg.autoFailover &&
+      cfg.fallback === 'official_line')
+
+  if (!canRouteToOfficialLine) {
     return {
       canSend: true,
       used: 0,
@@ -63,9 +70,10 @@ export async function checkLineQuota() {
       todaySent: 0,
       daysLeft: 1,
       source: 'flag' as const,
-      reason: 'primary provider is unofficial_line (skip official LINE quota gate)',
+      reason: 'official LINE is not in active send path (skip official LINE quota gate)',
     }
   }
+
   return checkOfficialLineQuota()
 }
 

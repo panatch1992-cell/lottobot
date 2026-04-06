@@ -1,21 +1,19 @@
-const http = require('http')
+const express = require('express')
+
+const app = express()
+app.use(express.json({ limit: '1mb' }))
 
 const PORT = process.env.PORT || 8080
 const AUTH_TOKEN = process.env.UNOFFICIAL_AUTH_TOKEN || ''
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
 const LINE_API = 'https://api.line.me/v2/bot'
 
-function writeJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify(payload))
-}
-
 function unauthorized(res, message = 'Unauthorized') {
-  return writeJson(res, 401, { success: false, error: message })
+  return res.status(401).json({ success: false, error: message })
 }
 
 function badRequest(res, message) {
-  return writeJson(res, 400, { success: false, error: message })
+  return res.status(400).json({ success: false, error: message })
 }
 
 async function callLine(path, payload) {
@@ -44,41 +42,18 @@ async function callLine(path, payload) {
   }
 }
 
-function health(res) {
-  return writeJson(res, 200, {
+app.get('/health', (_req, res) => {
+  res.json({
     ok: true,
     service: 'lottobot-unofficial-endpoint',
     hasAuthToken: !!AUTH_TOKEN,
     hasLineToken: !!LINE_TOKEN,
     now: new Date().toISOString(),
   })
-}
+})
 
-async function parseJsonBody(req) {
-  const chunks = []
-  for await (const chunk of req) {
-    chunks.push(chunk)
-    if (Buffer.concat(chunks).length > 1024 * 1024) {
-      throw new Error('payload too large')
-    }
-  }
-
-  if (chunks.length === 0) return {}
-  const raw = Buffer.concat(chunks).toString('utf8')
-  if (!raw.trim()) return {}
-  return JSON.parse(raw)
-}
-
-async function handleSend(req, res) {
-  let body
-  try {
-    body = await parseJsonBody(req)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'invalid body'
-    return badRequest(res, message === 'payload too large' ? 'request body too large (max 1mb)' : 'invalid JSON body')
-  }
-
-  // Optional auth guard
+app.post('/send', async (req, res) => {
+  // Required auth guard
   if (!AUTH_TOKEN) {
     return unauthorized(res, 'Service is not configured with UNOFFICIAL_AUTH_TOKEN')
   }
@@ -89,7 +64,7 @@ async function handleSend(req, res) {
     return unauthorized(res, 'Invalid unofficial auth token')
   }
 
-  const { mode, to, text, imageUrl } = body || {}
+  const { mode, to, text, imageUrl } = req.body || {}
 
   if (!mode) return badRequest(res, 'mode is required')
 
@@ -141,26 +116,12 @@ async function handleSend(req, res) {
   }
 
   if (!result.success) {
-    return writeJson(res, 502, { success: false, error: result.error })
+    return res.status(502).json({ success: false, error: result.error })
   }
 
-  return writeJson(res, 200, { success: true })
-}
-
-const server = http.createServer(async (req, res) => {
-  const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-
-  if (req.method === 'GET' && requestUrl.pathname === '/health') {
-    return health(res)
-  }
-
-  if (req.method === 'POST' && requestUrl.pathname === '/send') {
-    return handleSend(req, res)
-  }
-
-  return writeJson(res, 404, { success: false, error: 'Not Found' })
+  return res.json({ success: true })
 })
 
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`[unofficial-endpoint] listening on :${PORT}`)
 })
