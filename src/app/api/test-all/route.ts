@@ -213,10 +213,9 @@ export async function GET(req: NextRequest) {
     return { pass: !!settings.line_channel_access_token, detail: settings.line_channel_access_token ? `...${settings.line_channel_access_token.slice(-6)}` : 'ไม่มี' }
   }))
 
-  results.push(await runTest('5.2', 'LINE: Token ใช้งานได้ (verify)', async () => {
-    if (!settings.line_channel_access_token) return { pass: false, detail: 'ไม่มี token' }
-    const r = await verifyChannelToken(settings.line_channel_access_token)
-    return { pass: r.valid, detail: r.valid ? 'Token valid' : (r.error || 'invalid') }
+  results.push(await runTest('5.2', 'Unofficial Endpoint: ออนไลน์', async () => {
+    const ok = await verifyChannelToken()
+    return { pass: ok, detail: ok ? 'Endpoint ออนไลน์' : 'Endpoint ออฟไลน์' }
   }))
 
   if (sendReal) {

@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
           if (dryRun) break
           if (!group.line_group_id) continue
 
-          const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || undefined
-          const lineResult = await sendText(group.line_group_id, message.trim(), unofficialId)
+          const groupId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || group.line_group_id
+          const lineResult = await sendText(groupId, message.trim())
 
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
