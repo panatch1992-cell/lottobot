@@ -54,13 +54,10 @@ export async function broadcastImageAndText(_channelAccessToken: string, imageUr
 export async function checkLineQuota() {
   const cfg = await getProviderConfig()
 
-  const canRouteToOfficialLine =
-    cfg.primary === 'official_line' ||
-    (cfg.primary === 'unofficial_line' &&
-      cfg.autoFailover &&
-      cfg.fallback === 'official_line')
-
-  if (!canRouteToOfficialLine) {
+  // If unofficial is primary, do not block sends with official quota gate.
+  // This keeps unofficial mode effectively unlimited from the app perspective.
+  // Official quota is still relevant only when/if a fallback attempt reaches official provider.
+  if (cfg.primary === 'unofficial_line') {
     return {
       canSend: true,
       used: 0,
