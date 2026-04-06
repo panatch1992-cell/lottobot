@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { sendText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import type { LineGroup } from '@/types'
 
 function shouldDeactivateGroupFromError(error?: string) {
@@ -64,7 +64,10 @@ export async function POST(req: NextRequest) {
         for (const group of activeGroups) {
           if (dryRun) break
           if (!group.line_group_id) continue
-          const lineResult = await pushTextMessage(settings.line_channel_access_token || '', group.line_group_id, message.trim())
+          
+          // เปลี่ยนมาใช้ sendText จากระบบ Provider ใหม่ที่ไม่ต้องส่ง token ไปใน arguments แล้ว
+          const lineResult = await sendText(group.line_group_id, message.trim())
+          
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
           }
