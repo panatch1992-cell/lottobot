@@ -77,5 +77,17 @@ export async function checkLineQuota() {
   return checkOfficialLineQuota()
 }
 
+/** Check unofficial endpoint health and return status */
+export async function checkUnofficialHealth() {
+  const cfg = await getProviderConfig()
+  if (cfg.primary !== 'unofficial_line' && cfg.fallback !== 'unofficial_line') {
+    return { ok: false, latencyMs: 0, error: 'Unofficial not configured as primary or fallback' }
+  }
+
+  const { UnofficialLineProvider } = await import('@/lib/providers/unofficial-line-provider')
+  const provider = new UnofficialLineProvider(cfg.unofficialEndpoint || '', cfg.unofficialToken)
+  return provider.healthCheck()
+}
+
 export { flagMonthlyLimitHit }
 export { verifyChannelToken, getLineQuotaFromAPI }

@@ -2,6 +2,14 @@ import { MessagingProvider, SendResult } from '@/lib/providers/types'
 
 type UnofficialMode = 'push_text' | 'push_image_text' | 'broadcast_text' | 'broadcast_image_text'
 
+export type HealthCheckResult = {
+  ok: boolean
+  hasAuthToken?: boolean
+  hasLineToken?: boolean
+  latencyMs: number
+  error?: string
+}
+
 export class UnofficialLineProvider implements MessagingProvider {
   name = 'unofficial_line' as const
 
@@ -9,6 +17,47 @@ export class UnofficialLineProvider implements MessagingProvider {
     private readonly endpoint: string,
     private readonly token?: string,
   ) {}
+
+  /** Check if the unofficial endpoint is alive and responsive */
+  async healthCheck(timeoutMs = 8000): Promise<HealthCheckResult> {
+    if (!this.endpoint) {
+      return { ok: false, latencyMs: 0, error: 'Unofficial endpoint not configured' }
+    }
+
+    const baseUrl = this.endpoint.replace(/\/send\/?$/, '')
+    const start = Date.now()
+
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+      const res = await fetch(`${baseUrl}/health`, { signal: controller.signal })
+      clearTimeout(timer)
+
+      const latencyMs = Date.now() - start
+
+      if (!res.ok) {
+        return { ok: false, latencyMs, error: `HTTP ${res.status}` }
+      }
+
+      const data = await res.json().catch(() => ({}))
+      return {
+        ok: !!data.ok,
+        hasAuthToken: data.hasAuthToken,
+        hasLineToken: data.hasLineToken,
+        latencyMs,
+        error: data.ok ? undefined : 'health endpoint returned ok=false',
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error
+          ? (err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : err.message)
+          : 'Unknown error',
+      }
+    }
+  }
 
   private async call(mode: UnofficialMode, payload: Record<string, string>): Promise<SendResult> {
     if (!this.endpoint) {
