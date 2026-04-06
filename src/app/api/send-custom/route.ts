@@ -10,6 +10,11 @@ function shouldDeactivateGroupFromError(error?: string) {
   return (
     normalized.includes(`property, 'to', in the request body is invalid`) ||
     normalized.includes('"property":"to"') ||
+    normalized.includes('invalid user id') ||
+    normalized.includes('invalid group id') ||
+    normalized.includes('invalid recipient') ||
+    normalized.includes('not found') ||
+    normalized.includes('cannot find') ||
     normalized.includes('failed to send messages')
   )
 }
