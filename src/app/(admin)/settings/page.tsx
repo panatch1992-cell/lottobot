@@ -23,6 +23,8 @@ function SettingsContent() {
   const [providerStatus, setProviderStatus] = useState<string>('')
   const [unlockedFields, setUnlockedFields] = useState<Set<string>>(new Set())
   const [unofficialStatus, setUnofficialStatus] = useState<string>('')
+  const [systemCheck, setSystemCheck] = useState<{ overall: string; checks: { name: string; status: string; detail: string }[] } | null>(null)
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -189,6 +191,60 @@ function SettingsContent() {
           <span className="text-xl">👥</span>
           <p className="text-xs text-text-secondary mt-1">จัดการกลุ่ม</p>
         </a>
+      </div>
+
+      {/* System Health Check */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">🛠 ตรวจสอบระบบ</h3>
+          {systemCheck && (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              systemCheck.overall === 'ok' ? 'bg-green-100 text-green-700'
+                : systemCheck.overall === 'warn' ? 'bg-amber-100 text-amber-700'
+                : 'bg-red-100 text-red-700'
+            }`}>
+              {systemCheck.overall === 'ok' ? '✅ ปกติ' : systemCheck.overall === 'warn' ? '⚠️ มีข้อสังเกต' : '❌ มีปัญหา'}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-text-secondary">กดปุ่มเดียว เช็คทุกอย่าง — DB, Telegram, LINE, Unofficial, Quota, Scraping</p>
+
+        <button
+          onClick={async () => {
+            setChecking(true)
+            setSystemCheck(null)
+            try {
+              const res = await fetch(`/api/system-check?t=${Date.now()}`)
+              const data = await res.json()
+              setSystemCheck(data)
+            } catch {
+              setSystemCheck({ overall: 'error', checks: [{ name: 'System Check', status: 'error', detail: 'เรียก API ไม่ได้' }] })
+            }
+            setChecking(false)
+          }}
+          disabled={checking}
+          className="btn-primary text-sm w-full disabled:opacity-50"
+        >
+          {checking ? '🔍 กำลังตรวจสอบ...' : '🔍 ตรวจสอบระบบทั้งหมด'}
+        </button>
+
+        {systemCheck && (
+          <div className="space-y-1.5">
+            {systemCheck.checks.map((c, i) => (
+              <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
+                c.status === 'ok' ? 'bg-green-50' : c.status === 'warn' ? 'bg-amber-50' : 'bg-red-50'
+              }`}>
+                <span className="shrink-0 mt-0.5">
+                  {c.status === 'ok' ? '✅' : c.status === 'warn' ? '⚠️' : '❌'}
+                </span>
+                <div className="min-w-0">
+                  <span className="font-medium">{c.name}</span>
+                  <p className="text-text-secondary break-all">{c.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Telegram Bot */}

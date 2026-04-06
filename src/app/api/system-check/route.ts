@@ -1,0 +1,173 @@
+import { NextResponse } from 'next/server'
+import { getServiceClient, getSettings } from '@/lib/supabase'
+import { checkUnofficialHealth, checkLineQuota, verifyChannelToken } from '@/lib/messaging-service'
+
+export const dynamic = 'force-dynamic'
+
+type CheckItem = {
+  name: string
+  status: 'ok' | 'warn' | 'error'
+  detail: string
+}
+
+export async function GET() {
+  const checks: CheckItem[] = []
+  const settings = await getSettings()
+  const db = getServiceClient()
+
+  // 1. Supabase connection
+  try {
+    const { count } = await db.from('lotteries').select('*', { count: 'exact', head: true })
+    checks.push({ name: 'Supabase DB', status: 'ok', detail: `เชื่อมต่อสำเร็จ (${count} หวย)` })
+  } catch (err) {
+    checks.push({ name: 'Supabase DB', status: 'error', detail: `เชื่อมต่อไม่ได้: ${err instanceof Error ? err.message : 'unknown'}` })
+  }
+
+  // 2. Telegram Bot Token
+  if (settings.telegram_bot_token) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${settings.telegram_bot_token}/getMe`)
+      const data = await res.json()
+      if (data.ok) {
+        checks.push({ name: 'Telegram Bot', status: 'ok', detail: `@${data.result.username}` })
+      } else {
+        checks.push({ name: 'Telegram Bot', status: 'error', detail: `Token ไม่ถูกต้อง: ${data.description}` })
+      }
+    } catch {
+      checks.push({ name: 'Telegram Bot', status: 'error', detail: 'เชื่อมต่อ Telegram API ไม่ได้' })
+    }
+  } else {
+    checks.push({ name: 'Telegram Bot', status: 'warn', detail: 'ยังไม่ได้ตั้ง Bot Token' })
+  }
+
+  // 3. Telegram Channel ID
+  if (settings.telegram_admin_channel) {
+    if (settings.telegram_admin_channel.startsWith('-100')) {
+      checks.push({ name: 'TG Channel ID', status: 'ok', detail: `••••${settings.telegram_admin_channel.slice(-4)}` })
+    } else {
+      checks.push({ name: 'TG Channel ID', status: 'warn', detail: `รูปแบบไม่ปกติ (ควรขึ้นต้น -100): ${settings.telegram_admin_channel.slice(0, 6)}...` })
+    }
+  } else {
+    checks.push({ name: 'TG Channel ID', status: 'warn', detail: 'ยังไม่ได้ตั้ง Channel ID' })
+  }
+
+  // 4. LINE Channel Access Token
+  if (settings.line_channel_access_token) {
+    try {
+      const result = await verifyChannelToken(settings.line_channel_access_token)
+      checks.push({
+        name: 'LINE Token',
+        status: result.valid ? 'ok' : 'error',
+        detail: result.valid ? 'Token ใช้งานได้' : `Token ไม่ถูกต้อง: ${result.error || 'หมดอายุ'}`,
+      })
+    } catch {
+      checks.push({ name: 'LINE Token', status: 'warn', detail: 'ตรวจสอบไม่ได้ (อาจยังใช้ได้)' })
+    }
+  } else {
+    checks.push({ name: 'LINE Token', status: 'warn', detail: 'ยังไม่ได้ตั้ง Channel Access Token' })
+  }
+
+  // 5. LINE Quota
+  try {
+    const quota = await checkLineQuota()
+    if (quota.canSend) {
+      checks.push({ name: 'LINE Quota', status: 'ok', detail: `ส่งได้ (เหลือ ~${quota.remaining || 'ไม่จำกัด'})` })
+    } else {
+      checks.push({ name: 'LINE Quota', status: 'error', detail: `Quota เต็ม: ${quota.reason}` })
+    }
+  } catch {
+    checks.push({ name: 'LINE Quota', status: 'warn', detail: 'ตรวจสอบ quota ไม่ได้' })
+  }
+
+  // 6. LINE Groups
+  try {
+    const { data: groups } = await db.from('line_groups').select('id, name, line_group_id, unofficial_group_id, is_active')
+    const active = (groups || []).filter((g: { is_active: boolean }) => g.is_active)
+    const withOfficial = active.filter((g: { line_group_id: string | null }) => g.line_group_id)
+    const withUnofficial = active.filter((g: { unofficial_group_id?: string | null }) => g.unofficial_group_id)
+
+    if (active.length === 0) {
+      checks.push({ name: 'กลุ่ม LINE', status: 'warn', detail: 'ยังไม่มีกลุ่มที่เปิดใช้ — เชิญ Bot เข้ากลุ่ม' })
+    } else {
+      checks.push({
+        name: 'กลุ่ม LINE',
+        status: 'ok',
+        detail: `${active.length} กลุ่มเปิดใช้ (Official ID: ${withOfficial.length}, Unofficial ID: ${withUnofficial.length})`,
+      })
+      if (withUnofficial.length === 0 && settings.messaging_primary_provider === 'unofficial_line') {
+        checks.push({ name: 'Unofficial Group IDs', status: 'warn', detail: 'ใช้ Unofficial เป็น primary แต่ยังไม่มีกลุ่มใดใส่ Unofficial ID (c...)' })
+      }
+    }
+  } catch {
+    checks.push({ name: 'กลุ่ม LINE', status: 'error', detail: 'ดึงข้อมูลกลุ่มไม่ได้' })
+  }
+
+  // 7. Unofficial Endpoint
+  if (settings.messaging_primary_provider === 'unofficial_line' || settings.messaging_fallback_provider === 'unofficial_line') {
+    if (!settings.unofficial_line_endpoint) {
+      checks.push({ name: 'Unofficial Endpoint', status: 'error', detail: 'ยังไม่ได้ตั้ง Endpoint URL' })
+    } else {
+      const health = await checkUnofficialHealth()
+      checks.push({
+        name: 'Unofficial Endpoint',
+        status: health.ok ? 'ok' : 'error',
+        detail: health.ok
+          ? `ออนไลน์ (${health.latencyMs}ms, LINE Token: ${health.hasLineToken ? 'มี' : 'ไม่มี'})`
+          : `ออฟไลน์: ${health.error}`,
+      })
+    }
+  } else {
+    checks.push({ name: 'Unofficial Endpoint', status: 'ok', detail: 'ไม่ได้ใช้ (ส่งผ่าน Official เท่านั้น)' })
+  }
+
+  // 8. Provider Config
+  const primary = settings.messaging_primary_provider || 'official_line'
+  const fallback = settings.messaging_fallback_provider || 'official_line'
+  const autoFailover = (settings.messaging_auto_failover_enabled || 'true') === 'true'
+  checks.push({
+    name: 'Provider Config',
+    status: autoFailover ? 'ok' : 'warn',
+    detail: `หลัก: ${primary === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official'} | สำรอง: ${fallback === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official'} | Failover: ${autoFailover ? 'เปิด' : 'ปิด'}`,
+  })
+
+  // 9. Scrape Sources
+  try {
+    const { count: totalSources } = await db.from('scrape_sources').select('*', { count: 'exact', head: true }).eq('is_active', true)
+    const { count: withError } = await db.from('scrape_sources').select('*', { count: 'exact', head: true }).eq('is_active', true).not('last_error', 'is', null)
+    if ((totalSources || 0) === 0) {
+      checks.push({ name: 'Scrape Sources', status: 'warn', detail: 'ยังไม่มี scrape source ที่เปิดใช้' })
+    } else if ((withError || 0) > 0) {
+      checks.push({ name: 'Scrape Sources', status: 'warn', detail: `${totalSources} sources (${withError} มี error)` })
+    } else {
+      checks.push({ name: 'Scrape Sources', status: 'ok', detail: `${totalSources} sources พร้อมใช้` })
+    }
+  } catch {
+    checks.push({ name: 'Scrape Sources', status: 'warn', detail: 'ตรวจสอบไม่ได้' })
+  }
+
+  // 10. Today's results
+  try {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+    const { count: todayResults } = await db.from('results').select('*', { count: 'exact', head: true }).eq('draw_date', todayStr)
+    const { count: todaySent } = await db.from('send_logs').select('*', { count: 'exact', head: true }).eq('status', 'sent').gte('sent_at', `${todayStr}T00:00:00`)
+    const { count: todayFailed } = await db.from('send_logs').select('*', { count: 'exact', head: true }).eq('status', 'failed').gte('sent_at', `${todayStr}T00:00:00`)
+    checks.push({
+      name: 'วันนี้',
+      status: (todayFailed || 0) > 0 ? 'warn' : 'ok',
+      detail: `ผลหวย: ${todayResults || 0} | ส่งสำเร็จ: ${todaySent || 0} | ล้มเหลว: ${todayFailed || 0}`,
+    })
+  } catch {
+    checks.push({ name: 'วันนี้', status: 'warn', detail: 'ดึงข้อมูลวันนี้ไม่ได้' })
+  }
+
+  const errorCount = checks.filter(c => c.status === 'error').length
+  const warnCount = checks.filter(c => c.status === 'warn').length
+
+  return NextResponse.json({
+    overall: errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok',
+    errorCount,
+    warnCount,
+    checks,
+    timestamp: new Date().toISOString(),
+  })
+}
