@@ -19,12 +19,12 @@ export class OfficialLineProvider implements MessagingProvider {
 
   async pushText(to: string, text: string): Promise<SendResult> {
     this.ensureChannelAccessTokenConfigured()
-  async pushText(to: string, text: string): Promise<SendResult> {
     const r = await linePushText(this.channelAccessToken, to, text)
     return { ...r, provider: this.name }
   }
 
   async pushImageAndText(to: string, imageUrl: string, text: string): Promise<SendResult> {
+    this.ensureChannelAccessTokenConfigured()
     const r = await linePushImageAndText(this.channelAccessToken, to, imageUrl, text)
     return { ...r, provider: this.name }
   }
