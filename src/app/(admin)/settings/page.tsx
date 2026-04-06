@@ -20,6 +20,7 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false)
   const [tgStatus, setTgStatus] = useState<string>('')
   const [lineStatus, setLineStatus] = useState<string>('')
+  const [providerStatus, setProviderStatus] = useState<string>('')
   const [unlockedFields, setUnlockedFields] = useState<Set<string>>(new Set())
   const [unofficialStatus, setUnofficialStatus] = useState<string>('')
 
@@ -128,6 +129,41 @@ function SettingsContent() {
       setLineStatus(data.valid ? '✅ Token ใช้งานได้' : `❌ ${data.error || 'Token ไม่ถูกต้อง'}`)
     } catch {
       setLineStatus('❌ ไม่สามารถเชื่อมต่อได้')
+    }
+  }
+
+  async function testUnofficialEndpoint() {
+    setProviderStatus('กำลังทดสอบ unofficial endpoint...')
+    try {
+      const endpoint = (settings.unofficial_line_endpoint || '').trim()
+      if (!endpoint) {
+        setProviderStatus('❌ กรุณาใส่ Unofficial Endpoint ก่อน')
+        return
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.unofficial_line_token
+            ? { Authorization: `Bearer ${settings.unofficial_line_token}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          mode: 'push_text',
+          to: 'U_TEST_ONLY',
+          text: 'health-check',
+        }),
+      })
+
+      if (res.ok) {
+        setProviderStatus('✅ endpoint ตอบกลับปกติ (HTTP 2xx)')
+      } else {
+        const body = await res.text().catch(() => '')
+        setProviderStatus(`❌ endpoint ตอบกลับ ${res.status}${body ? `: ${body.slice(0, 80)}` : ''}`)
+      }
+    } catch (err) {
+      setProviderStatus(`❌ ทดสอบไม่สำเร็จ: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
   }
 
@@ -274,6 +310,114 @@ function SettingsContent() {
             {typeof window !== 'undefined' ? `${window.location.origin}/api/line/webhook` : '/api/line/webhook'}
           </code>
           <p>เมื่อเพิ่ม Bot เข้ากลุ่ม LINE จะจับกลุ่มอัตโนมัติ</p>
+        </div>
+
+        <hr className="border-gray-100" />
+
+        <div className="space-y-2">
+          <h4 className="font-medium text-sm">🧭 Messaging Provider + Auto Failover</h4>
+          <p className="text-xs text-text-secondary">
+            ถ้า auto failover ไม่ทำงาน ให้ตั้งค่าส่วนนี้ก่อน: primary/fallback/auto + unofficial endpoint/token
+          </p>
+
+          <div>
+            <label className="label">Primary Provider</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => saveSetting('messaging_primary_provider', 'official_line')}
+                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                  (settings.messaging_primary_provider || 'official_line') === 'official_line'
+                    ? 'border-gold bg-gold/10 font-medium'
+                    : 'border-gray-200'
+                }`}
+              >
+                official_line
+              </button>
+              <button
+                onClick={() => saveSetting('messaging_primary_provider', 'unofficial_line')}
+                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                  settings.messaging_primary_provider === 'unofficial_line'
+                    ? 'border-gold bg-gold/10 font-medium'
+                    : 'border-gray-200'
+                }`}
+              >
+                unofficial_line
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Fallback Provider</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => saveSetting('messaging_fallback_provider', 'official_line')}
+                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                  (settings.messaging_fallback_provider || 'official_line') === 'official_line'
+                    ? 'border-gold bg-gold/10 font-medium'
+                    : 'border-gray-200'
+                }`}
+              >
+                official_line
+              </button>
+              <button
+                onClick={() => saveSetting('messaging_fallback_provider', 'unofficial_line')}
+                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
+                  settings.messaging_fallback_provider === 'unofficial_line'
+                    ? 'border-gold bg-gold/10 font-medium'
+                    : 'border-gray-200'
+                }`}
+              >
+                unofficial_line
+              </button>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(settings.messaging_auto_failover_enabled || 'true') === 'true'}
+              onChange={e => saveSetting('messaging_auto_failover_enabled', e.target.checked ? 'true' : 'false')}
+              className="rounded"
+            />
+            <span className="text-sm">เปิด Auto Failover (ลองส่ง fallback อัตโนมัติเมื่อ primary ล้มเหลว)</span>
+          </label>
+
+          <div>
+            <label className="label">Unofficial Endpoint URL</label>
+            <input
+              type="text"
+              value={settings.unofficial_line_endpoint || ''}
+              onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
+              className="input font-mono text-xs"
+              placeholder="https://your-unofficial-service.example/send"
+            />
+          </div>
+
+          <div>
+            <label className="label">Unofficial Bearer Token</label>
+            <input
+              type="password"
+              value={settings.unofficial_line_token || ''}
+              onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
+              className="input font-mono text-xs"
+              placeholder="optional bearer token"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={async () => {
+                await saveSetting('unofficial_line_endpoint', settings.unofficial_line_endpoint || '')
+                await saveSetting('unofficial_line_token', settings.unofficial_line_token || '')
+                setProviderStatus('✅ บันทึก Provider config แล้ว')
+              }}
+              className="btn-primary text-sm"
+            >
+              💾 บันทึก Provider Config
+            </button>
+            <button onClick={testUnofficialEndpoint} className="btn-outline text-sm">🔍 ทดสอบ Unofficial Endpoint</button>
+            {providerStatus && <span className="text-xs">{providerStatus}</span>}
+          </div>
         </div>
       </div>
 
