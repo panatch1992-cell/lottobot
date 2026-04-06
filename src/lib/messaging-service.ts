@@ -14,14 +14,25 @@ async function resolveProviders() {
   return { cfg, primary, fallback }
 }
 
-export async function sendText(to: string, text: string) {
+/**
+ * Send text to a group. Pass both IDs for dual-provider support.
+ * officialId = Ca... (LINE Messaging API)
+ * unofficialId = c... (linepy personal account)
+ */
+export async function sendText(to: string, text: string, unofficialTo?: string) {
   const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.pushText(to, text))
+  return withFallback(primary, fallback, cfg.autoFailover, p => {
+    const targetId = (p.name === 'unofficial_line' && unofficialTo) ? unofficialTo : to
+    return p.pushText(targetId, text)
+  })
 }
 
-export async function sendImageAndText(to: string, imageUrl: string, text: string) {
+export async function sendImageAndText(to: string, imageUrl: string, text: string, unofficialTo?: string) {
   const { cfg, primary, fallback } = await resolveProviders()
-  return withFallback(primary, fallback, cfg.autoFailover, p => p.pushImageAndText(to, imageUrl, text))
+  return withFallback(primary, fallback, cfg.autoFailover, p => {
+    const targetId = (p.name === 'unofficial_line' && unofficialTo) ? unofficialTo : to
+    return p.pushImageAndText(targetId, imageUrl, text)
+  })
 }
 
 export async function broadcastTextMessage(text: string) {
@@ -35,12 +46,12 @@ export async function broadcastImageText(imageUrl: string, text: string) {
 }
 
 // Backward-compatible names to reduce route changes
-export async function pushTextMessage(_channelAccessToken: string, to: string, text: string) {
-  return sendText(to, text)
+export async function pushTextMessage(_channelAccessToken: string, to: string, text: string, unofficialTo?: string) {
+  return sendText(to, text, unofficialTo)
 }
 
-export async function pushImageAndText(_channelAccessToken: string, to: string, imageUrl: string, text: string) {
-  return sendImageAndText(to, imageUrl, text)
+export async function pushImageAndText(_channelAccessToken: string, to: string, imageUrl: string, text: string, unofficialTo?: string) {
+  return sendImageAndText(to, imageUrl, text, unofficialTo)
 }
 
 export async function broadcastText(_channelAccessToken: string, text: string) {
@@ -72,6 +83,18 @@ export async function checkLineQuota() {
   }
 
   return checkOfficialLineQuota()
+}
+
+/** Check unofficial endpoint health and return status */
+export async function checkUnofficialHealth() {
+  const cfg = await getProviderConfig()
+  if (cfg.primary !== 'unofficial_line' && cfg.fallback !== 'unofficial_line') {
+    return { ok: false, latencyMs: 0, error: 'Unofficial not configured as primary or fallback' }
+  }
+
+  const { UnofficialLineProvider } = await import('@/lib/providers/unofficial-line-provider')
+  const provider = new UnofficialLineProvider(cfg.unofficialEndpoint || '', cfg.unofficialToken)
+  return provider.healthCheck()
 }
 
 export { flagMonthlyLimitHit }
