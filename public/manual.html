@@ -387,7 +387,7 @@
   <div class="header">
     <h1>LottoBot</h1>
     <p>ระบบส่งผลหวยต่างประเทศอัตโนมัติ</p>
-    <span class="badge">คู่มือใช้งาน v3.0</span>
+    <span class="badge">คู่มือใช้งาน v4.0</span>
   </div>
 
   <div class="content">
@@ -396,7 +396,7 @@
     <div class="section">
       <div class="section-title">🔐 เข้าสู่ระบบ</div>
       <ol class="step-list">
-        <li>เปิดเว็บ <strong>(URL ของระบบ)</strong>
+        <li>เปิดเว็บ <strong>lottobot-chi.vercel.app</strong>
           <span class="sub">ใช้ได้ทั้งมือถือและคอมพิวเตอร์</span>
         </li>
         <li>กรอก Email / Password ที่ได้รับ แล้วกด <strong>เข้าสู่ระบบ</strong></li>
@@ -432,7 +432,8 @@
         </div>
       </div>
       <div class="tip-box">
-        ระบบดึงผลหวยทั้ง 43 รายการ <strong>อัตโนมัติ 100%</strong> ไม่ต้องกรอกมือ → ส่ง Telegram + LINE ทุกกลุ่มพร้อมรูปตัวเลข + emoji numbers<br>
+        ระบบดึงผลหวยทั้ง 43 รายการ <strong>อัตโนมัติ 100%</strong> ไม่ต้องกรอกมือ → ส่ง Telegram (admin log) + LINE ทุกกลุ่มพร้อมรูปตัวเลข<br>
+        ส่งผ่าน <strong>Unofficial API — ไม่จำกัดจำนวนข้อความ</strong> ไม่มี quota<br>
         ตั้งค่าแยกแต่ละกลุ่ม LINE: เลือกหวยที่จะส่ง + ลิงก์เฉพาะกลุ่ม
       </div>
     </div>
@@ -616,7 +617,7 @@
           <div class="icon">⚙️</div>
           <div class="info">
             <h4>ตั้งค่า</h4>
-            <p>TG / LINE / ธีม / ฟอนต์ / Countdown</p>
+            <p>ตรวจสอบระบบ / กลุ่ม LINE / ธีมรูป</p>
           </div>
         </div>
       </div>
@@ -660,11 +661,11 @@
     <div class="section">
       <div class="section-title">📋 ข้อมูลระบบ</div>
       <table class="info-table">
-        <tr><td>เว็บ Admin</td><td>(URL ของระบบ)</td></tr>
+        <tr><td>เว็บ Admin</td><td>lottobot-chi.vercel.app</td></tr>
         <tr><td>จำนวนหวย</td><td>43 รายการ (auto 100% ไม่ต้องกรอกมือ)</td></tr>
         <tr><td>หวยหุ้น</td><td>22 ตัว — ดึงจาก Yahoo Finance อัตโนมัติ</td></tr>
         <tr><td>หวย Hanoi/Laos</td><td>21 ตัว — ดึงจากเว็บด้วย Browser (Puppeteer) อัตโนมัติ</td></tr>
-        <tr><td>ส่งผลผ่าน</td><td>Telegram + LINE (อัตโนมัติ พร้อมรูป + emoji numbers)</td></tr>
+        <tr><td>ส่งผลผ่าน</td><td>Unofficial API → LINE กลุ่ม (<strong>ไม่จำกัดข้อความ</strong>) + Telegram (admin log)</td></tr>
         <tr><td>รูปแบบ LINE</td><td>รูปตัวเลข + ข้อความ (ตั้งค่าธีม/ฟอนต์/ขนาดได้)</td></tr>
         <tr><td>ธีมสี</td><td>8 ธีม: ✍️ Outline / 🖤 Dark Minimal / 🎀 Shopee / 🧁 Macaroon / 🍬 Candy / 🌊 Ocean / ✨ Gold / 🌙 Dark</td></tr>
         <tr><td>ฟอนต์</td><td>21 ฟอนต์ในตัว (มะลิ, ไอติม, มิตร, คณิต ฯลฯ) + พิมพ์ชื่อ Google Font เอง</td></tr>
@@ -677,6 +678,36 @@
         <tr><td>ตั้งค่าต่อกลุ่ม</td><td>ลิงก์กลุ่ม + เลือกหวยที่จะส่ง + เปิด/ปิด</td></tr>
         <tr><td>รับประกัน</td><td>แก้ Bug ฟรี 30 วัน</td></tr>
       </table>
+    </div>
+
+    <!-- Section: System Check -->
+    <div class="section">
+      <div class="section-title">🔍 ตรวจสอบระบบ</div>
+      <ol class="step-list">
+        <li>กดแท็บ <strong>"ตั้งค่า"</strong> ที่แถบด้านล่าง</li>
+        <li>กดปุ่ม <strong>"🔍 ตรวจสอบระบบทั้งหมด"</strong>
+          <span class="sub">ระบบจะเช็คทุกอย่าง: DB, Telegram, LINE Endpoint, กลุ่ม, Scraping</span>
+        </li>
+        <li>ดูผลลัพธ์ — ✅ เขียว = ปกติ / ⚠️ เหลือง = มีข้อสังเกต / ❌ แดง = ต้องแก้</li>
+      </ol>
+      <div class="tip-box">
+        แนะนำกดตรวจสอบเป็นประจำ เพื่อให้แน่ใจว่าระบบพร้อมส่งผลหวย
+      </div>
+    </div>
+
+    <!-- Section: Unofficial API -->
+    <div class="section">
+      <div class="section-title">🔧 ระบบ Unofficial API (ส่งไม่จำกัด)</div>
+      <ol class="step-list">
+        <li>ระบบส่งข้อความผ่าน <strong>Unofficial API</strong> — ไม่มี quota ส่งได้ไม่จำกัด
+          <span class="sub">ถ้า Unofficial ล้ม → ระบบสลับไปใช้ Official API อัตโนมัติ (Smart Fallback)</span>
+        </li>
+        <li>Token <strong>refresh อัตโนมัติ</strong> — ไม่ต้องดูแล
+          <span class="sub">ระบบเช็คทุก 6 ชม. + refresh ก่อนหมดอายุ</span>
+        </li>
+        <li>มีระบบ <strong>กันแบน</strong> — หน่วงเวลาสุ่มระหว่างกลุ่ม + แจ้งเตือนถ้ากลุ่มเกิน 15</li>
+        <li><strong>Heartbeat Monitor</strong> — เช็คสถานะทุก 5 นาที แจ้ง Telegram ถ้าระบบล่ม</li>
+      </ol>
     </div>
 
     <!-- Section: Troubleshooting -->
@@ -696,12 +727,12 @@
             <td>เช็คว่า bot "หน้าบ้าน" ยังอยู่ในกลุ่ม + กลุ่มเปิดอยู่ในหน้า "จัดการกลุ่ม"</td>
           </tr>
           <tr>
-            <td>LINE ส่งไม่ครบ / limit</td>
-            <td>LINE Messaging API มี limit 500 ข้อความ/เดือน (Free plan) — อัปเกรดเป็น Light plan ถ้าส่งเยอะ</td>
+            <td>LINE ส่งไม่ได้</td>
+            <td>เข้าหน้า "ตั้งค่า" → กด "ตรวจสอบระบบทั้งหมด" → ดูว่า Unofficial Endpoint ออนไลน์ไหม / Token หมดอายุหรือเปล่า (ระบบ refresh อัตโนมัติ)</td>
           </tr>
           <tr>
             <td>Bot เด้งออกกลุ่ม</td>
-            <td>LINE Developers → เปิด "Allow bot to join group chats" → เชิญ bot เข้ากลุ่มใหม่</td>
+            <td>เชิญบัญชี LINE Bot เข้ากลุ่มใหม่ (เหมือนเชิญเพื่อน)</td>
           </tr>
           <tr>
             <td>Telegram "chat not found"</td>
@@ -709,7 +740,7 @@
           </tr>
           <tr>
             <td>Webhook ไม่ทำงาน</td>
-            <td>LINE Developers → ใส่ Webhook URL: (URL ของระบบ)/api/line/webhook → เปิด "Use webhook"</td>
+            <td>LINE Developers → ใส่ Webhook URL: lottobot-chi.vercel.app/api/line/webhook → เปิด "Use webhook"</td>
           </tr>
           <tr>
             <td>ผลหวยไม่ออก auto</td>
@@ -734,8 +765,8 @@
   </div>
 
   <div class="footer">
-    LottoBot v3.0 — ระบบดึงผลอัตโนมัติ 100%<br>
-    อัปเดตล่าสุด 3 เม.ย. 2569
+    LottoBot v4.0 — ระบบดึงผลอัตโนมัติ 100% + Unofficial API ส่งไม่จำกัด<br>
+    อัปเดตล่าสุด 7 เม.ย. 2569
   </div>
 </div>
 
