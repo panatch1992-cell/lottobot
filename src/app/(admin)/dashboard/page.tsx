@@ -63,11 +63,8 @@ export default function DashboardPage() {
         ((settingsRes?.settings || []) as { key: string; value: string }[]).map(s => [s.key, s.value || ''])
       )
       const hasTelegram = Boolean(settingsMap.get('telegram_bot_token') && settingsMap.get('telegram_admin_channel'))
-      const primaryProvider = settingsMap.get('messaging_primary_provider') || 'official_line'
-      const hasOfficialToken = Boolean(settingsMap.get('line_channel_access_token'))
       const hasUnofficialEndpoint = Boolean(settingsMap.get('unofficial_line_endpoint'))
-      const hasLineProviderConfig = primaryProvider === 'unofficial_line' ? hasUnofficialEndpoint : hasOfficialToken
-      const hasLine = Boolean(hasLineProviderConfig && activeGroups.length > 0)
+      const hasLine = Boolean(hasUnofficialEndpoint && activeGroups.length > 0)
       const hasCountdown = settingsMap.get('send_countdown') === 'true'
       const hasScheduled = (scheduledRes.count || 0) > 0
 
