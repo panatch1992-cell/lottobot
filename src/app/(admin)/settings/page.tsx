@@ -301,14 +301,31 @@ function SettingsContent() {
                     {group.line_group_id ? `ID: ••••${group.line_group_id.slice(-8)}` : 'รอเชิญ Bot เข้ากลุ่ม'}
                   </p>
                 </div>
-                <button
-                  onClick={() => toggleGroup(group.id, group.is_active)}
-                  role="switch"
-                  aria-checked={group.is_active}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${group.is_active ? 'bg-success' : 'bg-gray-300'}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${group.is_active ? 'left-5' : 'left-0.5'}`} />
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => toggleGroup(group.id, group.is_active)}
+                    role="switch"
+                    aria-checked={group.is_active}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${group.is_active ? 'bg-success' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${group.is_active ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`ลบกลุ่ม "${group.name}" จริงหรือไม่?`)) return
+                      await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'delete_group', id: group.id }),
+                      })
+                      setGroups(prev => prev.filter(g => g.id !== group.id))
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 p-1"
+                    title="ลบกลุ่ม"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -360,6 +377,18 @@ function SettingsContent() {
       </div>
 
       {/* ═══ 5. ตั้งค่าขั้นสูง (ซ่อนไว้) ═══ */}
+      {/* ═══ 5. วิธีใช้งาน ═══ */}
+      <div className="card space-y-2">
+        <h3 className="font-semibold">📖 วิธีใช้งาน</h3>
+        <div className="text-xs text-text-secondary space-y-1.5">
+          <p><b>เพิ่มกลุ่ม:</b> เชิญ LINE Bot เข้ากลุ่ม → ระบบจับอัตโนมัติ</p>
+          <p><b>ส่งข้อความเอง:</b> ไปที่ <a href="/messages" className="text-gold underline">ข้อความ</a> → พิมพ์ → กดส่ง</p>
+          <p><b>ดูประวัติ:</b> ไปที่ <a href="/history" className="text-gold underline">ประวัติ</a> → ดูสถานะส่งสำเร็จ/ล้มเหลว</p>
+          <p><b>หวยออกอัตโนมัติ:</b> ระบบดึงผลทุก 1 นาที → ส่ง TG + LINE อัตโนมัติ</p>
+          <p><b>เปลี่ยนสไตล์รูป:</b> เลือกธีมด้านบน → เห็นตัวอย่างทันที</p>
+        </div>
+      </div>
+
       <button
         onClick={() => setShowAdvanced(!showAdvanced)}
         className="w-full text-center text-xs text-text-secondary py-2 hover:text-gold transition-colors"

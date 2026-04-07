@@ -42,10 +42,10 @@ export async function GET() {
 
   // 3. Telegram Channel ID
   if (settings.telegram_admin_channel) {
-    if (settings.telegram_admin_channel.startsWith('-100')) {
+    if (settings.telegram_admin_channel.startsWith('-')) {
       checks.push({ name: 'TG Channel ID', status: 'ok', detail: `••••${settings.telegram_admin_channel.slice(-4)}` })
     } else {
-      checks.push({ name: 'TG Channel ID', status: 'warn', detail: `รูปแบบไม่ปกติ (ควรขึ้นต้น -100): ${settings.telegram_admin_channel.slice(0, 6)}...` })
+      checks.push({ name: 'TG Channel ID', status: 'warn', detail: 'รูปแบบไม่ปกติ (ควรขึ้นต้นด้วย -)' })
     }
   } else {
     checks.push({ name: 'TG Channel ID', status: 'warn', detail: 'ยังไม่ได้ตั้ง Channel ID' })
