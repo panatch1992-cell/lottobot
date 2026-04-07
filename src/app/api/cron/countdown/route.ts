@@ -112,8 +112,8 @@ export async function GET(req: NextRequest) {
             sent_at: new Date().toISOString(),
             error_message: lineResult.success ? `${mins}min` : `${mins}min: ${lineResult.error}`,
           })
-          // Random delay between groups (2-5s)
-          await sleep(2000 + Math.floor(Math.random() * 3000))
+          // Short delay between groups
+          await sleep(500 + Math.floor(Math.random() * 1000))
         }
       }
 
