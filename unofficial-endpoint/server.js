@@ -15,86 +15,127 @@ app.use(express.json({ limit: '1mb' }))
 
 const PORT = process.env.PORT || 8080
 const AUTH_TOKEN = process.env.UNOFFICIAL_AUTH_TOKEN || ''
-
-// LINE internal API config
-// authToken ได้จาก LINEJS login หรือ LINE app extraction
 const LINE_AUTH_TOKEN = process.env.LINE_AUTH_TOKEN || ''
-const LINE_INTERNAL_API = 'https://gd2.line.naver.jp'
-const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
 const LINE_CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
 
-const LINE_HEADERS = {
-  'User-Agent': 'Line/13.4.0 iPad8,6 17.0',
-  'X-Line-Application': 'IOSIPAD\t13.4.0\tiOS\t17.0',
+const LINE_THRIFT_API = 'https://gd2.line.naver.jp'
+const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
+
+const LINE_APP_HEADER = {
+  'User-Agent': 'Line/13.4.2',
+  'X-Line-Application': 'DESKTOPWIN\t13.4.2\tWindows\t10.0',
   'X-Line-Carrier': 'wifi',
-  'Content-Type': 'application/json',
 }
 
-// ─── Auth guard ──────────────────────────────────────────
+// ─── Thrift Compact Protocol Encoder ─────────────────────
+// LINE uses TCompactProtocol for internal API
+// We only need sendMessage which is method ID 0 on TalkService
 
-function unauthorized(res, message = 'Unauthorized') {
-  return res.status(401).json({ success: false, error: message })
-}
-
-function badRequest(res, message) {
-  return res.status(400).json({ success: false, error: message })
-}
-
-function checkAuth(req, res) {
-  if (!AUTH_TOKEN) return true
-  const header = req.headers.authorization || ''
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
-  if (bearer !== AUTH_TOKEN) {
-    unauthorized(res, 'Invalid auth token')
-    return false
+function writeVarint(value) {
+  const bytes = []
+  value = (value << 1) ^ (value >> 31) // zigzag encode for signed
+  while ((value & ~0x7f) !== 0) {
+    bytes.push((value & 0x7f) | 0x80)
+    value >>>= 7
   }
-  return true
+  bytes.push(value & 0x7f)
+  return Buffer.from(bytes)
 }
 
-// ─── LINE Internal API (Unofficial — no quota) ──────────
+function writeUVarint(value) {
+  const bytes = []
+  while ((value & ~0x7f) !== 0) {
+    bytes.push((value & 0x7f) | 0x80)
+    value >>>= 7
+  }
+  bytes.push(value & 0x7f)
+  return Buffer.from(bytes)
+}
 
-async function sendViaUnofficial(to, messages) {
+function writeString(str) {
+  const buf = Buffer.from(str, 'utf-8')
+  return Buffer.concat([writeUVarint(buf.length), buf])
+}
+
+function writeByte(val) {
+  return Buffer.from([val & 0xff])
+}
+
+// Build TCompact sendMessage payload
+// TalkService.sendMessage(seq: i32, message: Message)
+// Message struct: { to: string(2), text: string(10), contentType: i32(15) }
+function buildSendMessageThrift(seq, to, text, contentType = 0) {
+  const parts = []
+
+  // Method header: sendMessage, CALL, seqid
+  // Compact protocol method call: [protocol_id, version, type, method_name, seqid]
+  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol_id=0x82, version=1, type=CALL
+  parts.push(writeString('sendMessage')) // method name
+  parts.push(writeVarint(seq)) // sequence id
+
+  // Field 1: seq (i32) - field delta 1, type 5 (i32)
+  parts.push(Buffer.from([0x15])) // delta=1, type=5(i32)
+  parts.push(writeVarint(0)) // seq = 0
+
+  // Field 2: message (struct) - field delta 1, type 12 (struct)
+  parts.push(Buffer.from([0x1c])) // delta=1, type=12(struct)
+
+  // Message.to (field 2, string) - field id 2, type 8 (string)
+  parts.push(Buffer.from([0x28])) // delta=2, type=8(string)
+  parts.push(writeString(to))
+
+  // Message.text (field 10, string) - field id 10
+  // delta from 2 to 10 = 8
+  parts.push(Buffer.from([0x88])) // delta=8, type=8(string)
+  parts.push(writeString(text))
+
+  // Message.contentType (field 15, i32)
+  // delta from 10 to 15 = 5
+  parts.push(Buffer.from([0x55])) // delta=5, type=5(i32)
+  parts.push(writeVarint(contentType))
+
+  // End of Message struct
+  parts.push(Buffer.from([0x00]))
+
+  // End of args struct
+  parts.push(Buffer.from([0x00]))
+
+  return Buffer.concat(parts)
+}
+
+// ─── Send via Unofficial (Thrift) ────────────────────────
+
+async function sendViaUnofficial(to, text) {
   if (!LINE_AUTH_TOKEN) {
     return { success: false, error: 'LINE_AUTH_TOKEN not configured' }
   }
 
   try {
-    for (const msg of messages) {
-      const payload = {
-        to: to,
-        contentType: msg.type === 'image' ? 1 : 0,
-        text: msg.text || '',
-      }
+    const payload = buildSendMessageThrift(0, to, text)
 
-      if (msg.type === 'image' && msg.originalContentUrl) {
-        payload.contentMetadata = {
-          PREVIEW_URL: msg.originalContentUrl,
-          DOWNLOAD_URL: msg.originalContentUrl,
-          PUBLIC: 'TRUE',
-        }
-      }
+    const res = await fetch(LINE_THRIFT_API + '/S4', {
+      method: 'POST',
+      headers: {
+        ...LINE_APP_HEADER,
+        'X-Line-Access': LINE_AUTH_TOKEN,
+        'Content-Type': 'application/x-thrift',
+        'Accept': 'application/x-thrift',
+      },
+      body: payload,
+    })
 
-      const res = await fetch(`${LINE_INTERNAL_API}/S4`, {
-        method: 'POST',
-        headers: {
-          ...LINE_HEADERS,
-          'X-Line-Access': LINE_AUTH_TOKEN,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        return { success: false, error: `Unofficial HTTP ${res.status}: ${body.slice(0, 200)}` }
-      }
+    if (res.ok) {
+      return { success: true, via: 'unofficial' }
     }
-    return { success: true, via: 'unofficial' }
+
+    const body = await res.text().catch(() => '')
+    return { success: false, error: `Thrift HTTP ${res.status}: ${body.slice(0, 200)}` }
   } catch (err) {
     return { success: false, error: `Unofficial: ${err.message}` }
   }
 }
 
-// ─── LINE Official API (Fallback — has quota) ────────────
+// ─── Send via Official (Fallback) ────────────────────────
 
 async function sendViaOfficial(to, messages) {
   if (!LINE_CHANNEL_TOKEN) {
@@ -121,26 +162,20 @@ async function sendViaOfficial(to, messages) {
   }
 }
 
-// ─── Smart Send: unofficial first → fallback official ────
+// ─── Auth guard ──────────────────────────────────────────
 
-async function smartSend(to, officialTo, messages) {
-  // 1. Try unofficial first (if configured)
-  if (LINE_AUTH_TOKEN && to) {
-    const result = await sendViaUnofficial(to, messages)
-    if (result.success) return result
-    console.warn(`[unofficial failed] ${result.error} → trying official`)
+function checkAuth(req, res) {
+  if (!AUTH_TOKEN) return true
+  const header = req.headers.authorization || ''
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
+  if (bearer !== AUTH_TOKEN) {
+    res.status(401).json({ success: false, error: 'Invalid auth token' })
+    return false
   }
-
-  // 2. Fallback to official
-  const target = officialTo || to
-  if (LINE_CHANNEL_TOKEN && target) {
-    return sendViaOfficial(target, messages)
-  }
-
-  return { success: false, error: 'No LINE credentials configured (neither unofficial nor official)' }
+  return true
 }
 
-// ─── Endpoints ───────────────────────────────────────────
+// ─── Health ──────────────────────────────────────────────
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -154,93 +189,90 @@ app.get('/health', (_req, res) => {
   })
 })
 
+// ─── Send endpoint ───────────────────────────────────────
+
 app.post('/send', async (req, res) => {
   if (!checkAuth(req, res)) return
 
   const { mode, to, officialTo, text, imageUrl } = req.body || {}
-  if (!mode) return badRequest(res, 'mode is required')
+  if (!mode) return res.status(400).json({ success: false, error: 'mode is required' })
 
-  let messages
-  let result
+  const officialGroupId = officialTo || to
 
-  switch (mode) {
-    case 'push_text': {
-      if (!to || !text) return badRequest(res, 'push_text requires: to, text')
-      messages = [{ type: 'text', text }]
-      result = await smartSend(to, officialTo, messages)
-      break
+  // For text messages: try unofficial first
+  if (mode === 'push_text') {
+    if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
+
+    // 1. Try unofficial (Thrift)
+    if (LINE_AUTH_TOKEN) {
+      const result = await sendViaUnofficial(to, text)
+      if (result.success) return res.json(result)
+      console.warn('[unofficial failed]', result.error, '→ trying official')
     }
 
-    case 'push_image_text': {
-      if (!to || !imageUrl || !text) return badRequest(res, 'push_image_text requires: to, imageUrl, text')
-      messages = [
+    // 2. Fallback to official
+    if (LINE_CHANNEL_TOKEN && officialGroupId) {
+      const result = await sendViaOfficial(officialGroupId, [{ type: 'text', text }])
+      return result.success ? res.json(result) : res.status(502).json(result)
+    }
+
+    return res.status(502).json({ success: false, error: 'No working LINE credentials' })
+  }
+
+  // For image+text: try unofficial text only, then official for full message
+  if (mode === 'push_image_text') {
+    if (!to || !imageUrl || !text) return res.status(400).json({ success: false, error: 'push_image_text requires: to, imageUrl, text' })
+
+    // 1. Try unofficial (text only — Thrift image is complex)
+    if (LINE_AUTH_TOKEN) {
+      const fullText = `${text}`
+      const result = await sendViaUnofficial(to, fullText)
+      if (result.success) return res.json(result)
+      console.warn('[unofficial failed]', result.error, '→ trying official')
+    }
+
+    // 2. Fallback to official (image + text)
+    if (LINE_CHANNEL_TOKEN && officialGroupId) {
+      const result = await sendViaOfficial(officialGroupId, [
         { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
         { type: 'text', text },
-      ]
-      result = await smartSend(to, officialTo, messages)
-      break
+      ])
+      return result.success ? res.json(result) : res.status(502).json(result)
     }
 
-    case 'broadcast_text': {
-      if (!text) return badRequest(res, 'broadcast_text requires: text')
-      if (LINE_CHANNEL_TOKEN) {
-        result = await sendViaOfficial(null, [{ type: 'text', text }])
-        // override for broadcast
-        try {
-          const broadcastRes = await fetch(`${LINE_OFFICIAL_API}/message/broadcast`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${LINE_CHANNEL_TOKEN}`,
-            },
-            body: JSON.stringify({ messages: [{ type: 'text', text }] }),
-          })
-          result = { success: broadcastRes.ok, via: 'official_broadcast' }
-        } catch (err) {
-          result = { success: false, error: err.message }
-        }
-      } else {
-        result = { success: false, error: 'Broadcast requires official token' }
-      }
-      break
-    }
-
-    case 'broadcast_image_text': {
-      if (!imageUrl || !text) return badRequest(res, 'broadcast_image_text requires: imageUrl, text')
-      try {
-        const broadcastRes = await fetch(`${LINE_OFFICIAL_API}/message/broadcast`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${LINE_CHANNEL_TOKEN}`,
-          },
-          body: JSON.stringify({
-            messages: [
-              { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
-              { type: 'text', text },
-            ],
-          }),
-        })
-        result = { success: broadcastRes.ok, via: 'official_broadcast' }
-      } catch (err) {
-        result = { success: false, error: err.message }
-      }
-      break
-    }
-
-    default:
-      return badRequest(res, `unsupported mode: ${mode}`)
+    return res.status(502).json({ success: false, error: 'No working LINE credentials' })
   }
 
-  if (!result.success) {
-    return res.status(502).json(result)
+  // Broadcast modes (official only)
+  if (mode === 'broadcast_text' || mode === 'broadcast_image_text') {
+    if (!LINE_CHANNEL_TOKEN) return res.status(502).json({ success: false, error: 'Broadcast requires official token' })
+
+    const messages = mode === 'broadcast_text'
+      ? [{ type: 'text', text }]
+      : [
+          { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+          { type: 'text', text },
+        ]
+
+    try {
+      const broadcastRes = await fetch(`${LINE_OFFICIAL_API}/message/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LINE_CHANNEL_TOKEN}` },
+        body: JSON.stringify({ messages }),
+      })
+      const result = { success: broadcastRes.ok, via: 'official_broadcast' }
+      return broadcastRes.ok ? res.json(result) : res.status(502).json(result)
+    } catch (err) {
+      return res.status(502).json({ success: false, error: err.message })
+    }
   }
-  return res.json(result)
+
+  return res.status(400).json({ success: false, error: `unsupported mode: ${mode}` })
 })
 
 app.listen(PORT, () => {
   console.log(`[unofficial-endpoint] listening on :${PORT}`)
-  console.log(`  mode: ${LINE_AUTH_TOKEN ? 'UNOFFICIAL (primary) + Official (fallback)' : 'Official only'}`)
+  console.log(`  mode: ${LINE_AUTH_TOKEN ? 'UNOFFICIAL (Thrift) + Official (fallback)' : 'Official only'}`)
   console.log(`  unofficial token: ${LINE_AUTH_TOKEN ? 'YES' : 'NO'}`)
   console.log(`  official token: ${LINE_CHANNEL_TOKEN ? 'YES' : 'NO'}`)
 })
