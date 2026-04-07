@@ -203,6 +203,20 @@ function SettingsContent() {
         <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
         <p className="text-xs text-text-secondary">กลุ่มจะเพิ่มอัตโนมัติเมื่อเชิญ Bot เข้ากลุ่ม</p>
 
+        {groups.filter(g => g.is_active).length > 15 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+            <p className="font-medium">⚠️ เปิดใช้เกิน 15 กลุ่ม!</p>
+            <p>แนะนำไม่เกิน 10-15 กลุ่มต่อ 1 บัญชี Bot เพื่อป้องกันโดนแบน</p>
+            <p>ถ้ามีกลุ่มมากกว่านี้ → สมัครบัญชี LINE Bot เพิ่ม</p>
+          </div>
+        )}
+        {groups.filter(g => g.is_active).length > 10 && groups.filter(g => g.is_active).length <= 15 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+            <p className="font-medium">⚠️ ใกล้ถึงขีดจำกัด ({groups.filter(g => g.is_active).length}/15 กลุ่ม)</p>
+            <p>แนะนำไม่เกิน 15 กลุ่มต่อ 1 บัญชี Bot — เตรียมสมัครบัญชีเพิ่มถ้าจะเพิ่มกลุ่ม</p>
+          </div>
+        )}
+
         {groups.length === 0 ? (
           <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม — เชิญ Bot เข้ากลุ่ม LINE เพื่อเริ่มใช้งาน</p>
         ) : (
