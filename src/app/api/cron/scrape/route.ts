@@ -192,8 +192,8 @@ async function saveAndSend(
         error_message: lineResult.error || null,
       })
 
-      // Random delay between groups to look natural (2-5 seconds)
-      await sleep(2000 + Math.floor(Math.random() * 3000))
+      // Short delay between groups (500ms-1.5s) to stay within Vercel 60s limit
+      await sleep(500 + Math.floor(Math.random() * 1000))
     }
     } // end push mode
   }
