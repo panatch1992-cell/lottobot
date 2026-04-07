@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "LottoBot — ระบบส่งผลหวยอัตโนมัติ",
-  description: "ระบบส่งผลหวยต่างประเทศอัตโนมัติ ผ่าน Telegram → n8n → LINE",
+  description: "ระบบส่งผลหวยต่างประเทศอัตโนมัติ ผ่าน Telegram + LINE",
 };
 
 export default function RootLayout({

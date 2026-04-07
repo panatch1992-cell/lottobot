@@ -123,8 +123,11 @@ export default function GroupsPage() {
               <div className="min-w-0">
                 <p className="text-sm font-medium">{group.name}</p>
                 <p className="text-xs text-text-secondary">
-                  {group.line_group_id ? `💬 ••••${group.line_group_id.slice(-6)}` : 'ไม่มี Official ID'}
-                  {group.unofficial_group_id ? ` · 🔧 ••••${group.unofficial_group_id.slice(-6)}` : ''}
+                  {group.unofficial_group_id
+                    ? `🔧 ID: ••••${group.unofficial_group_id.slice(-6)}`
+                    : group.line_group_id
+                      ? `💬 ID: ••••${group.line_group_id.slice(-6)}`
+                      : 'รอเชิญ Bot เข้ากลุ่ม'}
                   {group.custom_link && ' · 🔗'}
                   {!group.send_all_lotteries && ' · 🎯'}
                 </p>
@@ -139,22 +142,15 @@ export default function GroupsPage() {
             {selectedGroup?.id === group.id && (
               <div className="bg-gray-50 px-4 py-4 space-y-4">
                 {/* Group IDs */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="label">💬 Official ID (Ca...)</label>
-                    <div className="input text-[10px] font-mono bg-white text-text-secondary truncate">
-                      {group.line_group_id || 'ยังไม่มี'}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label">🔧 Unofficial ID (c...)</label>
-                    <input
-                      value={editUnofficialId}
-                      onChange={e => setEditUnofficialId(e.target.value)}
-                      className="input text-[10px] font-mono"
-                      placeholder="c1a2b3c4d5e6..."
-                    />
-                  </div>
+                <div>
+                  <label className="label">🔧 Group ID สำหรับส่งข้อความ</label>
+                  <input
+                    value={editUnofficialId}
+                    onChange={e => setEditUnofficialId(e.target.value)}
+                    className="input text-[10px] font-mono"
+                    placeholder="c1a2b3c4d5e6... (Dev กรอกให้)"
+                  />
+                  <p className="text-[10px] text-text-secondary mt-0.5">Dev จะตั้งค่า ID ให้หลังได้ข้อมูลจากลูกค้า</p>
                 </div>
 
                 {/* Custom Link */}
