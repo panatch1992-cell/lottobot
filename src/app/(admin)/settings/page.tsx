@@ -18,17 +18,12 @@ function SettingsContent() {
   const [groups, setGroups] = useState<LineGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [tgStatus, setTgStatus] = useState<string>('')
-  const [lineStatus, setLineStatus] = useState<string>('')
-  const [providerStatus, setProviderStatus] = useState<string>('')
-  const [unlockedFields, setUnlockedFields] = useState<Set<string>>(new Set())
-  const [unofficialStatus, setUnofficialStatus] = useState<string>('')
+  const [status, setStatus] = useState('')
   const [systemCheck, setSystemCheck] = useState<{ overall: string; checks: { name: string; status: string; detail: string }[] } | null>(null)
   const [checking, setChecking] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
-  useEffect(() => {
-    loadSettings()
-  }, [searchParams])
+  useEffect(() => { loadSettings() }, [searchParams])
 
   async function loadSettings() {
     try {
@@ -38,71 +33,38 @@ function SettingsContent() {
       ;(data.settings || []).forEach((s: { key: string; value: string }) => { map[s.key] = s.value })
       setSettings(map)
       setGroups(data.groups || [])
-    } catch {
-      console.error('Failed to load settings')
-    }
+    } catch { /* ignore */ }
     setLoading(false)
   }
 
-  function maskValue(val: string): string {
-    if (!val || val.length < 8) return val ? '••••••••' : ''
-    return '••••••••' + val.slice(-4)
-  }
-
-  function isFieldLocked(key: string): boolean {
-    const criticalKeys = ['telegram_bot_token', 'telegram_admin_channel', 'line_channel_access_token', 'line_channel_secret']
-    if (!criticalKeys.includes(key)) return false
-    if (!settings[key]) return false // empty = unlocked (need to enter)
-    return !unlockedFields.has(key)
-  }
-
-  function toggleLock(key: string) {
-    setUnlockedFields(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
   async function saveSetting(key: string, value: string) {
-    // ป้องกันเผลอลบ key สำคัญ
-    const criticalKeys = ['telegram_bot_token', 'telegram_admin_channel', 'line_channel_access_token']
-    if (criticalKeys.includes(key) && !value.trim()) {
-      return // ไม่ save ค่าว่างสำหรับ key สำคัญ
-    }
-
     setSaving(true)
     try {
-      const res = await fetch('/api/settings', {
+      await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value }),
       })
-      if (res.ok) {
-        setSettings(prev => ({ ...prev, [key]: value }))
-        // Lock field after save
-        setUnlockedFields(prev => { const next = new Set(prev); next.delete(key); return next })
-      }
-    } catch {
-      // silently fail
-    }
+      setSettings(prev => ({ ...prev, [key]: value }))
+    } catch { /* ignore */ }
     setSaving(false)
   }
 
-  async function testTelegram() {
-    setTgStatus('กำลังทดสอบ...')
-    try {
-      const res = await fetch('/api/telegram/send', {
-        method: 'POST',
+  async function saveMultiple(pairs: { key: string; value: string }[]) {
+    setSaving(true)
+    setStatus('')
+    for (const { key, value } of pairs) {
+      if (!value.trim()) continue
+      await fetch('/api/settings', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: true }),
-      })
-      const data = await res.json()
-      setTgStatus(data.success ? `✅ เชื่อมต่อสำเร็จ (${data.username || 'ระบบ'})` : `❌ ${data.error}`)
-    } catch {
-      setTgStatus('❌ ไม่สามารถเชื่อมต่อได้')
+        body: JSON.stringify({ key, value }),
+      }).catch(() => {})
+      setSettings(prev => ({ ...prev, [key]: value }))
     }
+    setSaving(false)
+    setStatus('✅ บันทึกเรียบร้อย')
+    setTimeout(() => setStatus(''), 3000)
   }
 
   async function toggleGroup(id: string, current: boolean) {
@@ -114,52 +76,6 @@ function SettingsContent() {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, is_active: !current } : g))
   }
 
-  async function deleteGroup(id: string) {
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete_group', id }),
-    })
-    setGroups(prev => prev.filter(g => g.id !== id))
-  }
-
-  async function testLine() {
-    setLineStatus('กำลังตรวจสอบ...')
-    try {
-      const res = await fetch(`/api/line/test?t=${Date.now()}`)
-      const data = await res.json()
-      setLineStatus(data.valid ? '✅ Token ใช้งานได้' : `❌ ${data.error || 'Token ไม่ถูกต้อง'}`)
-    } catch {
-      setLineStatus('❌ ไม่สามารถเชื่อมต่อได้')
-    }
-  }
-
-  async function testUnofficialEndpoint() {
-    setProviderStatus('กำลังทดสอบ unofficial endpoint...')
-    try {
-      const endpoint = (settings.unofficial_line_endpoint || '').trim().replace(/\/+$/, '')
-      if (!endpoint) {
-        setProviderStatus('❌ กรุณาใส่ Unofficial Endpoint ก่อน')
-        return
-      }
-
-      const res = await fetch(`${endpoint}/health`)
-
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}))
-        if (data.ok) {
-          setProviderStatus(`✅ ออนไลน์ (LINE Token: ${data.hasLineToken ? 'มี' : 'ไม่มี'}, Auth: ${data.hasAuthToken ? 'มี' : 'ไม่มี'})`)
-        } else {
-          setProviderStatus('⚠️ endpoint ตอบกลับแต่ ok=false')
-        }
-      } else {
-        setProviderStatus(`❌ endpoint ตอบกลับ ${res.status}`)
-      }
-    } catch (err) {
-      setProviderStatus(`❌ ทดสอบไม่สำเร็จ: ${err instanceof Error ? err.message : 'unknown error'}`)
-    }
-  }
-
   if (loading) {
     return <div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin text-3xl">⚙️</div></div>
   }
@@ -168,37 +84,20 @@ function SettingsContent() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">⚙️ ตั้งค่า</h2>
 
-      {/* Quick links */}
-      <div className="grid grid-cols-3 gap-2">
-        <a href="/lotteries" className="card text-center py-3 hover:bg-gray-50 transition-colors">
-          <span className="text-xl">🎰</span>
-          <p className="text-xs text-text-secondary mt-1">จัดการหวย</p>
-        </a>
-        <a href="/results" className="card text-center py-3 hover:bg-gray-50 transition-colors">
-          <span className="text-xl">✏️</span>
-          <p className="text-xs text-text-secondary mt-1">แก้ไขผล</p>
-        </a>
-        <a href="/groups" className="card text-center py-3 hover:bg-gray-50 transition-colors">
-          <span className="text-xl">👥</span>
-          <p className="text-xs text-text-secondary mt-1">จัดการกลุ่ม</p>
-        </a>
-      </div>
-
-      {/* System Health Check */}
+      {/* ═══ 1. ตรวจสอบระบบ ═══ */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">🛠 ตรวจสอบระบบ</h3>
+          <h3 className="font-semibold">🔍 ตรวจสอบระบบ</h3>
           {systemCheck && (
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
               systemCheck.overall === 'ok' ? 'bg-green-100 text-green-700'
                 : systemCheck.overall === 'warn' ? 'bg-amber-100 text-amber-700'
                 : 'bg-red-100 text-red-700'
             }`}>
-              {systemCheck.overall === 'ok' ? '✅ ปกติ' : systemCheck.overall === 'warn' ? '⚠️ มีข้อสังเกต' : '❌ มีปัญหา'}
+              {systemCheck.overall === 'ok' ? '✅ พร้อมใช้งาน' : systemCheck.overall === 'warn' ? '⚠️ มีข้อสังเกต' : '❌ มีปัญหา'}
             </span>
           )}
         </div>
-        <p className="text-xs text-text-secondary">กดปุ่มเดียว เช็คทุกอย่าง — DB, Telegram, LINE, Unofficial, Quota, Scraping</p>
 
         <button
           onClick={async () => {
@@ -206,10 +105,9 @@ function SettingsContent() {
             setSystemCheck(null)
             try {
               const res = await fetch(`/api/system-check?t=${Date.now()}`)
-              const data = await res.json()
-              setSystemCheck(data)
+              setSystemCheck(await res.json())
             } catch {
-              setSystemCheck({ overall: 'error', checks: [{ name: 'System Check', status: 'error', detail: 'เรียก API ไม่ได้' }] })
+              setSystemCheck({ overall: 'error', checks: [{ name: 'ระบบ', status: 'error', detail: 'เรียก API ไม่ได้' }] })
             }
             setChecking(false)
           }}
@@ -225,9 +123,7 @@ function SettingsContent() {
               <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
                 c.status === 'ok' ? 'bg-green-50' : c.status === 'warn' ? 'bg-amber-50' : 'bg-red-50'
               }`}>
-                <span className="shrink-0 mt-0.5">
-                  {c.status === 'ok' ? '✅' : c.status === 'warn' ? '⚠️' : '❌'}
-                </span>
+                <span className="shrink-0 mt-0.5">{c.status === 'ok' ? '✅' : c.status === 'warn' ? '⚠️' : '❌'}</span>
                 <div className="min-w-0">
                   <span className="font-medium">{c.name}</span>
                   <p className="text-text-secondary break-all">{c.detail}</p>
@@ -238,390 +134,77 @@ function SettingsContent() {
         )}
       </div>
 
-      {/* Telegram Bot */}
+      {/* ═══ 2. ตั้งค่าบัญชี LINE Bot (สำหรับลูกค้า) ═══ */}
       <div className="card space-y-3">
-        <h3 className="font-semibold">✈️ Telegram Bot</h3>
-        <div>
-          <label className="label">Bot Token {settings.telegram_bot_token && '🔒'}</label>
-          {isFieldLocked('telegram_bot_token') ? (
-            <div className="flex items-center gap-2">
-              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.telegram_bot_token)}</div>
-              <button onClick={() => toggleLock('telegram_bot_token')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                type="password"
-                value={settings.telegram_bot_token || ''}
-                onChange={e => setSettings(prev => ({ ...prev, telegram_bot_token: e.target.value }))}
-                className="input font-mono text-xs flex-1"
-                placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-              />
-              <button onClick={() => saveSetting('telegram_bot_token', settings.telegram_bot_token || '')} className="btn-primary text-xs shrink-0">💾</button>
-            </div>
-          )}
-        </div>
-        <div>
-          <label className="label">Admin Channel ID {settings.telegram_admin_channel && '🔒'}</label>
-          {isFieldLocked('telegram_admin_channel') ? (
-            <div className="flex items-center gap-2">
-              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.telegram_admin_channel)}</div>
-              <button onClick={() => toggleLock('telegram_admin_channel')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={settings.telegram_admin_channel || ''}
-                onChange={e => setSettings(prev => ({ ...prev, telegram_admin_channel: e.target.value }))}
-                className="input font-mono text-xs flex-1"
-                placeholder="-1001234567890"
-              />
-              <button onClick={() => saveSetting('telegram_admin_channel', settings.telegram_admin_channel || '')} className="btn-primary text-xs shrink-0">💾</button>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={testTelegram} disabled={tgStatus === 'กำลังทดสอบ...'} className="btn-outline text-sm disabled:opacity-50">🔍 ทดสอบเชื่อมต่อ</button>
-          {tgStatus && <span className="text-xs">{tgStatus}</span>}
-        </div>
-      </div>
+        <h3 className="font-semibold">📱 ตั้งค่าบัญชี LINE Bot</h3>
+        <p className="text-xs text-text-secondary">สมัคร LINE ด้วยเบอร์ใหม่ แล้วกรอกข้อมูลด้านล่าง</p>
 
-      {/* LINE Messaging API */}
-      <div className="card space-y-3">
-        <h3 className="font-semibold">💬 LINE Messaging API</h3>
-        <div>
-          <label className="label">Channel Access Token {settings.line_channel_access_token && '🔒'}</label>
-          {isFieldLocked('line_channel_access_token') ? (
-            <div className="flex items-center gap-2">
-              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.line_channel_access_token)}</div>
-              <button onClick={() => toggleLock('line_channel_access_token')} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
-            </div>
-          ) : (
-            <input
-              type="password"
-              autoComplete="off"
-              value={settings.line_channel_access_token || ''}
-              onChange={e => setSettings(prev => ({ ...prev, line_channel_access_token: e.target.value }))}
-              className="input font-mono text-xs"
-              placeholder="Channel Access Token (Long-lived)"
-            />
-          )}
-        </div>
-        <div>
-          <label className="label">Channel Secret {settings.line_channel_secret && '🔒'}</label>
-          {isFieldLocked('line_channel_secret') ? (
-            <div className="flex items-center gap-2">
-              <div className="input font-mono text-xs bg-gray-50 text-text-secondary flex-1">{maskValue(settings.line_channel_secret)}</div>
-              <button onClick={() => { toggleLock('line_channel_secret'); toggleLock('line_channel_access_token') }} className="btn-outline text-xs shrink-0">🔓 แก้ไข</button>
-            </div>
-          ) : (
-            <input
-              type="password"
-              autoComplete="off"
-              value={settings.line_channel_secret || ''}
-              onChange={e => setSettings(prev => ({ ...prev, line_channel_secret: e.target.value }))}
-              className="input font-mono text-xs"
-              placeholder="Channel Secret"
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={async () => {
-              setLineStatus('')
-              setSaving(true)
-              const token = settings.line_channel_access_token || ''
-              const secret = settings.line_channel_secret || ''
-              if (!token) {
-                setLineStatus('❌ กรุณาใส่ Channel Access Token')
-                setSaving(false)
-                return
-              }
-              await saveSetting('line_channel_access_token', token)
-              if (secret) await saveSetting('line_channel_secret', secret)
-              setSaving(false)
-              setLineStatus('✅ บันทึกแล้ว — กดทดสอบ Token ได้เลย')
-            }}
-            disabled={saving}
-            className="btn-primary text-sm"
-          >
-            {saving ? '...' : '💾 บันทึก'}
-          </button>
-          <button onClick={testLine} disabled={lineStatus === 'กำลังตรวจสอบ...'} className="btn-outline text-sm disabled:opacity-50">🔍 ทดสอบ Token</button>
-          {lineStatus && <span className="text-xs">{lineStatus}</span>}
-        </div>
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
-          <p className="font-medium">Webhook URL (ใส่ใน LINE Developers Console):</p>
-          <code className="block bg-white rounded px-2 py-1 text-blue-900 break-all">
-            {typeof window !== 'undefined' ? `${window.location.origin}/api/line/webhook` : '/api/line/webhook'}
-          </code>
-          <p>เมื่อเพิ่ม Bot เข้ากลุ่ม LINE จะจับกลุ่มอัตโนมัติ</p>
+          <p className="font-medium">📋 ขั้นตอน:</p>
+          <p>1. สมัคร LINE ด้วย <b>เบอร์ใหม่</b> (อย่าใช้เบอร์ส่วนตัว)</p>
+          <p>2. ตั้ง Email + Password ในบัญชี LINE</p>
+          <p>3. กรอกข้อมูลด้านล่าง แล้วกด <b>บันทึก</b></p>
+          <p>4. <b>เชิญบัญชีนี้เข้ากลุ่ม LINE</b> ที่ต้องการส่งผลหวย</p>
         </div>
 
-        <hr className="border-gray-100" />
-
-        <div className="space-y-2">
-          <h4 className="font-medium text-sm">🧭 Messaging Provider + Auto Failover</h4>
-          <p className="text-xs text-text-secondary">
-            ถ้า auto failover ไม่ทำงาน ให้ตั้งค่าส่วนนี้ก่อน: primary/fallback/auto + unofficial endpoint/token
-          </p>
-
-          <div>
-            <label className="label">Primary Provider</label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => saveSetting('messaging_primary_provider', 'official_line')}
-                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                  (settings.messaging_primary_provider || 'official_line') === 'official_line'
-                    ? 'border-gold bg-gold/10 font-medium'
-                    : 'border-gray-200'
-                }`}
-              >
-                official_line
-              </button>
-              <button
-                onClick={() => saveSetting('messaging_primary_provider', 'unofficial_line')}
-                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                  settings.messaging_primary_provider === 'unofficial_line'
-                    ? 'border-gold bg-gold/10 font-medium'
-                    : 'border-gray-200'
-                }`}
-              >
-                unofficial_line
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Fallback Provider</label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => saveSetting('messaging_fallback_provider', 'official_line')}
-                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                  (settings.messaging_fallback_provider || 'official_line') === 'official_line'
-                    ? 'border-gold bg-gold/10 font-medium'
-                    : 'border-gray-200'
-                }`}
-              >
-                official_line
-              </button>
-              <button
-                onClick={() => saveSetting('messaging_fallback_provider', 'unofficial_line')}
-                className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                  settings.messaging_fallback_provider === 'unofficial_line'
-                    ? 'border-gold bg-gold/10 font-medium'
-                    : 'border-gray-200'
-                }`}
-              >
-                unofficial_line
-              </button>
-            </div>
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={(settings.messaging_auto_failover_enabled || 'true') === 'true'}
-              onChange={e => saveSetting('messaging_auto_failover_enabled', e.target.checked ? 'true' : 'false')}
-              className="rounded"
-            />
-            <span className="text-sm">เปิด Auto Failover (ลองส่ง fallback อัตโนมัติเมื่อ primary ล้มเหลว)</span>
-          </label>
-
-          <div>
-            <label className="label">Unofficial Endpoint URL</label>
-            <input
-              type="text"
-              value={settings.unofficial_line_endpoint || ''}
-              onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
-              className="input font-mono text-xs"
-              placeholder="https://your-unofficial-service.example/send"
-            />
-          </div>
-
-          <div>
-            <label className="label">Unofficial Bearer Token</label>
-            <input
-              type="password"
-              value={settings.unofficial_line_token || ''}
-              onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
-              className="input font-mono text-xs"
-              placeholder="optional bearer token"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={async () => {
-                await saveSetting('unofficial_line_endpoint', settings.unofficial_line_endpoint || '')
-                await saveSetting('unofficial_line_token', settings.unofficial_line_token || '')
-                setProviderStatus('✅ บันทึก Provider config แล้ว')
-              }}
-              className="btn-primary text-sm"
-            >
-              💾 บันทึก Provider Config
-            </button>
-            <button onClick={testUnofficialEndpoint} className="btn-outline text-sm">🔍 ทดสอบ Unofficial Endpoint</button>
-            {providerStatus && <span className="text-xs">{providerStatus}</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* Unofficial LINE Endpoint + Provider */}
-      <div className="card space-y-3">
-        <h3 className="font-semibold">🔀 LINE Provider (Official / Unofficial)</h3>
-        <p className="text-xs text-text-secondary">ตั้งค่าให้ส่งผ่าน Unofficial endpoint เป็นหลัก แล้ว fallback เป็น Official LINE</p>
-
-        {/* Primary Provider */}
         <div>
-          <label className="label">Primary Provider (ส่งหลัก)</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => saveSetting('messaging_primary_provider', 'official_line')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
-                (settings.messaging_primary_provider || 'official_line') === 'official_line'
-                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
-              }`}
-            >
-              💬 Official LINE
-            </button>
-            <button
-              onClick={() => saveSetting('messaging_primary_provider', 'unofficial_line')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
-                settings.messaging_primary_provider === 'unofficial_line'
-                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
-              }`}
-            >
-              🔧 Unofficial Endpoint
-            </button>
-          </div>
-        </div>
-
-        {/* Fallback Provider */}
-        <div>
-          <label className="label">Fallback Provider (สำรอง)</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => saveSetting('messaging_fallback_provider', 'official_line')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
-                (settings.messaging_fallback_provider || 'official_line') === 'official_line'
-                  ? 'border-green-500 bg-green-50 font-medium' : 'border-gray-200'
-              }`}
-            >
-              💬 Official LINE
-            </button>
-            <button
-              onClick={() => saveSetting('messaging_fallback_provider', 'unofficial_line')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm border-2 transition-all ${
-                settings.messaging_fallback_provider === 'unofficial_line'
-                  ? 'border-green-500 bg-green-50 font-medium' : 'border-gray-200'
-              }`}
-            >
-              🔧 Unofficial Endpoint
-            </button>
-          </div>
-        </div>
-
-        {/* Auto Failover */}
-        <label className="flex items-center gap-2 cursor-pointer">
+          <label className="label">เบอร์โทรที่ใช้สมัคร LINE</label>
           <input
-            type="checkbox"
-            checked={(settings.messaging_auto_failover_enabled || 'true') === 'true'}
-            onChange={e => saveSetting('messaging_auto_failover_enabled', e.target.checked ? 'true' : 'false')}
-            className="rounded"
-          />
-          <span className="text-sm">Auto Failover (ส่งหลักล้ม → สลับไปสำรองอัตโนมัติ)</span>
-        </label>
-
-        <hr className="border-gray-100" />
-
-        {/* Unofficial Endpoint URL */}
-        <div>
-          <label className="label">Unofficial Endpoint URL</label>
-          <input
-            type="text"
-            value={settings.unofficial_line_endpoint || ''}
-            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
-            className="input font-mono text-xs"
-            placeholder="https://lottobot-unofficial-endpoint.onrender.com"
+            type="tel"
+            value={settings.line_bot_phone || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_bot_phone: e.target.value }))}
+            className="input text-sm"
+            placeholder="0xx-xxx-xxxx"
           />
         </div>
 
-        {/* Unofficial Auth Token */}
         <div>
-          <label className="label">Unofficial Auth Token</label>
+          <label className="label">Email ที่ตั้งในบัญชี LINE</label>
+          <input
+            type="email"
+            value={settings.line_bot_email || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_bot_email: e.target.value }))}
+            className="input text-sm"
+            placeholder="bot@example.com"
+          />
+        </div>
+
+        <div>
+          <label className="label">Password</label>
           <input
             type="password"
-            autoComplete="off"
-            value={settings.unofficial_line_token || ''}
-            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
-            className="input font-mono text-xs"
-            placeholder="UNOFFICIAL_AUTH_TOKEN ที่ตั้งใน Render"
+            autoComplete="new-password"
+            value={settings.line_bot_password || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_bot_password: e.target.value }))}
+            className="input text-sm"
+            placeholder="••••••••"
           />
+          <p className="text-[10px] text-text-secondary mt-0.5">Dev จะใช้เพื่อดึง Token เข้าระบบเท่านั้น</p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           <button
-            onClick={async () => {
-              setUnofficialStatus('')
-              setSaving(true)
-              const endpoint = settings.unofficial_line_endpoint || ''
-              const token = settings.unofficial_line_token || ''
-              if (endpoint) await saveSetting('unofficial_line_endpoint', endpoint)
-              if (token) await saveSetting('unofficial_line_token', token)
-              setSaving(false)
-              setUnofficialStatus('✅ บันทึกแล้ว')
-            }}
+            onClick={() => saveMultiple([
+              { key: 'line_bot_phone', value: settings.line_bot_phone || '' },
+              { key: 'line_bot_email', value: settings.line_bot_email || '' },
+              { key: 'line_bot_password', value: settings.line_bot_password || '' },
+            ])}
             disabled={saving}
             className="btn-primary text-sm"
           >
             {saving ? '...' : '💾 บันทึก'}
           </button>
-          <button
-            onClick={async () => {
-              const endpoint = (settings.unofficial_line_endpoint || '').replace(/\/+$/, '')
-              if (!endpoint) {
-                setUnofficialStatus('❌ กรุณาใส่ Endpoint URL ก่อน')
-                return
-              }
-              setUnofficialStatus('กำลังทดสอบ...')
-              try {
-                const res = await fetch(`${endpoint}/health`)
-                const data = await res.json()
-                if (data.ok) {
-                  setUnofficialStatus(`✅ เชื่อมต่อสำเร็จ (LINE Token: ${data.hasLineToken ? 'มี' : 'ไม่มี'}, Auth: ${data.hasAuthToken ? 'มี' : 'ไม่มี'})`)
-                } else {
-                  setUnofficialStatus('❌ Endpoint ตอบกลับไม่ถูกต้อง')
-                }
-              } catch {
-                setUnofficialStatus('❌ ไม่สามารถเชื่อมต่อได้ — เช็คว่า Render ทำงานอยู่')
-              }
-            }}
-            disabled={unofficialStatus === 'กำลังทดสอบ...'}
-            className="btn-outline text-sm disabled:opacity-50"
-          >
-            🔍 ทดสอบ Endpoint
-          </button>
-          {unofficialStatus && <span className="text-xs">{unofficialStatus}</span>}
-        </div>
-
-        {/* Summary */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 space-y-1">
-          <p className="font-medium">สถานะปัจจุบัน:</p>
-          <p>📤 ส่งหลัก: <b>{settings.messaging_primary_provider === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official LINE'}</b></p>
-          <p>📥 สำรอง: <b>{settings.messaging_fallback_provider === 'unofficial_line' ? '🔧 Unofficial' : '💬 Official LINE'}</b></p>
-          <p>🔄 Auto Failover: <b>{(settings.messaging_auto_failover_enabled || 'true') === 'true' ? 'เปิด' : 'ปิด'}</b></p>
+          {status && <span className="text-xs">{status}</span>}
         </div>
       </div>
 
-      {/* LINE Groups (auto-detected) */}
+      {/* ═══ 3. กลุ่ม LINE ═══ */}
       <div className="card space-y-3">
         <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
-        <p className="text-xs text-text-secondary">กลุ่มจะเพิ่มอัตโนมัติเมื่อเชิญ Bot เข้ากลุ่ม LINE</p>
+        <p className="text-xs text-text-secondary">กลุ่มจะเพิ่มอัตโนมัติเมื่อเชิญ Bot เข้ากลุ่ม</p>
 
         {groups.length === 0 ? (
-          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม — เพิ่ม Bot เข้ากลุ่ม LINE เพื่อเริ่มใช้งาน</p>
+          <p className="text-sm text-text-secondary text-center py-4">ยังไม่มีกลุ่ม — เชิญ Bot เข้ากลุ่ม LINE เพื่อเริ่มใช้งาน</p>
         ) : (
           <div className="divide-y divide-gray-50">
             {groups.map(group => (
@@ -629,337 +212,50 @@ function SettingsContent() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{group.name}</p>
                   <p className="text-xs text-text-secondary font-mono truncate">
-                    {group.line_group_id ? `ID: ••••${group.line_group_id.slice(-8)}` : 'ไม่มี Group ID'}
+                    {group.line_group_id ? `ID: ••••${group.line_group_id.slice(-8)}` : 'รอเชิญ Bot เข้ากลุ่ม'}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => toggleGroup(group.id, group.is_active)}
-                    role="switch"
-                    aria-checked={group.is_active}
-                    aria-label={`${group.is_active ? 'ปิด' : 'เปิด'} กลุ่ม ${group.name}`}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${group.is_active ? 'bg-success' : 'bg-gray-300'}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${group.is_active ? 'left-5' : 'left-0.5'}`} />
-                  </button>
-                  <button onClick={() => deleteGroup(group.id)} aria-label={`ลบกลุ่ม ${group.name}`} className="text-danger text-sm hover:bg-danger/10 rounded p-1">✕</button>
-                </div>
+                <button
+                  onClick={() => toggleGroup(group.id, group.is_active)}
+                  role="switch"
+                  aria-checked={group.is_active}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${group.is_active ? 'bg-success' : 'bg-gray-300'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${group.is_active ? 'left-5' : 'left-0.5'}`} />
+                </button>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Scraping */}
+      {/* ═══ 4. สไตล์รูปตัวเลข ═══ */}
       <div className="card space-y-3">
-        <h3 className="font-semibold">🤖 ดึงผลอัตโนมัติ</h3>
-        <p className="text-xs text-text-secondary">ตั้งค่าพฤติกรรมการดึงผลหวยอัตโนมัติจากเว็บต้นทาง</p>
+        <h3 className="font-semibold">🎨 สไตล์รูปตัวเลข</h3>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">หน้าต่างเวลาดึงผล (นาที)</label>
-            <input
-              type="number"
-              value={settings.scrape_window_minutes || '30'}
-              onChange={e => setSettings(prev => ({ ...prev, scrape_window_minutes: e.target.value }))}
-              onBlur={e => saveSetting('scrape_window_minutes', e.target.value)}
-              className="input"
-              min="5"
-              max="60"
-            />
-            <p className="text-[10px] text-text-secondary mt-0.5">ดึงผลได้ถึงกี่นาทีหลังเวลาออก</p>
-          </div>
-          <div>
-            <label className="label">จำนวน Retry</label>
-            <input
-              type="number"
-              value={settings.scrape_max_retries || '3'}
-              onChange={e => setSettings(prev => ({ ...prev, scrape_max_retries: e.target.value }))}
-              onBlur={e => saveSetting('scrape_max_retries', e.target.value)}
-              className="input"
-              min="1"
-              max="10"
-            />
-            <p className="text-[10px] text-text-secondary mt-0.5">ลองดึงซ้ำกี่ครั้งถ้าไม่สำเร็จ</p>
-          </div>
-        </div>
-
-        <div>
-          <label className="label">หน่วงเวลาระหว่าง Retry (วินาที)</label>
-          <input
-            type="number"
-            value={Math.round(parseInt(settings.scrape_retry_delay_ms || '10000') / 1000)}
-            onChange={e => {
-              const ms = String(Number(e.target.value) * 1000)
-              setSettings(prev => ({ ...prev, scrape_retry_delay_ms: ms }))
-            }}
-            onBlur={e => saveSetting('scrape_retry_delay_ms', String(Number(e.target.value) * 1000))}
-            className="input w-24"
-            min="5"
-            max="60"
-          />
-        </div>
-
-        <hr className="border-gray-100" />
-
-        <div>
-          <label className="label">📊 LINE Quota (ข้อความ/เดือน)</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={settings.line_monthly_quota || '300'}
-              onChange={e => setSettings(prev => ({ ...prev, line_monthly_quota: e.target.value }))}
-              onBlur={e => saveSetting('line_monthly_quota', e.target.value)}
-              className="input w-32"
-              min="100"
-              max="50000"
-            />
-            <span className="text-xs text-text-secondary">Free=200-500 / Light=5,000</span>
-          </div>
-          <p className="text-[10px] text-text-secondary mt-0.5">ระบบจะหยุดส่ง LINE อัตโนมัติเมื่อใกล้ครบ quota เพื่อประหยัด</p>
-        </div>
-
-        <div>
-          <label className="label">📡 โหมดส่ง LINE</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => saveSetting('line_send_mode', 'push')}
-              className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                (settings.line_send_mode || 'push') === 'push'
-                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
-              }`}
-            >
-              📌 Push (ทีละกลุ่ม)
-            </button>
-            <button
-              onClick={() => saveSetting('line_send_mode', 'broadcast')}
-              className={`px-3 py-2 rounded-lg text-sm border-2 transition-all ${
-                settings.line_send_mode === 'broadcast'
-                  ? 'border-gold bg-gold/10 font-medium' : 'border-gray-200'
-              }`}
-            >
-              📢 Broadcast (ถึงเพื่อนทุกคน)
-            </button>
-          </div>
-          <p className="text-[10px] text-text-secondary mt-1">
-            {(settings.line_send_mode || 'push') === 'push'
-              ? 'Push: ส่งทีละกลุ่ม นับ quota ตามจำนวนสมาชิก × กลุ่ม (แพง แต่ custom ได้)'
-              : 'Broadcast: ส่งครั้งเดียวถึงเพื่อนทุกคน นับ quota ตามจำนวนเพื่อน (ประหยัด)'}
-          </p>
-        </div>
-
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.send_countdown === 'true'}
-            onChange={e => saveSetting('send_countdown', e.target.checked ? 'true' : 'false')}
-            className="rounded"
-          />
-          <span className="text-sm">ส่ง Countdown (แจ้งเตือนก่อนปิดรับ) — ใช้ quota เพิ่ม</span>
-        </label>
-
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.send_stats_line === 'true'}
-            onChange={e => saveSetting('send_stats_line', e.target.checked ? 'true' : 'false')}
-            className="rounded"
-          />
-          <span className="text-sm">ส่งสถิติย้อนหลังทาง LINE — ใช้ quota เพิ่ม</span>
-        </label>
-
-        <hr className="border-gray-100" />
-
-        <div>
-          <label className="label">จำนวนงวดสถิติ</label>
-          <input
-            type="number"
-            value={settings.stats_count || '10'}
-            onChange={e => setSettings(prev => ({ ...prev, stats_count: e.target.value }))}
-            onBlur={e => saveSetting('stats_count', e.target.value)}
-            className="input w-24"
-            min="5"
-            max="30"
-          />
-        </div>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.fallback_enabled === 'true'}
-            onChange={e => saveSetting('fallback_enabled', e.target.checked ? 'true' : 'false')}
-            className="rounded"
-          />
-          <span className="text-sm">เปิดใช้แหล่งสำรอง (Fallback)</span>
-        </label>
-
-        <hr className="border-gray-100" />
-
-        <div>
-          <label className="label">Countdown แจ้งเตือนก่อนปิดรับ (นาที)</label>
-          <input
-            type="text"
-            value={settings.countdown_intervals || '20,10,5'}
-            onChange={e => setSettings(prev => ({ ...prev, countdown_intervals: e.target.value }))}
-            className="input font-mono text-sm"
-            placeholder="20,10,5"
-          />
-          <p className="text-[10px] text-text-secondary mt-1">{'ใส่นาทีคั่นด้วยคอมมา เช่น 20,10,5 = แจ้งเตือน 3 ครั้ง ใส่ 5 = แจ้งเตือนครั้งเดียว'}</p>
-          <button
-            onClick={() => saveSetting('countdown_intervals', settings.countdown_intervals || '20,10,5')}
-            className="btn-primary text-xs mt-2"
-          >
-            💾 บันทึก Countdown
-          </button>
-        </div>
-      </div>
-
-      {/* Default Result Style */}
-      <div className="card space-y-3">
-        <h3 className="font-semibold">🎨 สไตล์รูปตัวเลข (ผล auto)</h3>
-        <p className="text-xs text-text-secondary">เลือกธีม + สไตล์ตัวเลขสำหรับผลหวยที่ดึงอัตโนมัติ</p>
-
-        {/* Theme */}
         <div>
           <label className="label">ธีม</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {[
-              { id: 'outline', label: '✍️', colors: ['#8E44AD', '#27AE60', '#E84393'] },
-              { id: 'darkminimal', label: '🖤', colors: ['#2D2D44', '#4FC3F7', '#90CAF9'] },
-              { id: 'shopee', label: '🎀', colors: ['#F48FB1', '#FFB74D', '#AED581'] },
-              { id: 'macaroon', label: '🧁', colors: ['#FFD1DC', '#FFE5B4', '#FFFACD'] },
-              { id: 'candy', label: '🍬', colors: ['#FF6B8A', '#FF9F43', '#FFDD59'] },
-              { id: 'ocean', label: '🌊', colors: ['#2B6CB0', '#3182CE', '#4299E1'] },
-              { id: 'gold', label: '✨', colors: ['#F59E0B', '#FBBF24', '#FCD34D'] },
-              { id: 'dark', label: '🌙', colors: ['#E53E3E', '#DD6B20', '#D69E2E'] },
+              { id: 'outline', label: '✍️' },
+              { id: 'darkminimal', label: '🖤' },
+              { id: 'shopee', label: '🎀' },
+              { id: 'macaroon', label: '🧁' },
+              { id: 'candy', label: '🍬' },
+              { id: 'ocean', label: '🌊' },
+              { id: 'gold', label: '✨' },
+              { id: 'dark', label: '🌙' },
             ].map(t => (
               <button
                 key={t.id}
                 onClick={() => saveSetting('default_theme', t.id)}
-                className={`p-2 rounded-lg border-2 transition-all ${
+                className={`py-2 rounded-lg border-2 text-center transition-all ${
                   (settings.default_theme || 'macaroon') === t.id
-                    ? 'border-gold shadow-sm scale-105'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-gold shadow-sm scale-105' : 'border-gray-200'
                 }`}
               >
-                <div className="text-center text-lg mb-1">{t.label}</div>
-                <div className="flex justify-center gap-0.5">
-                  {t.colors.map((c, i) => (
-                    <span key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
-                  ))}
-                </div>
-                <p className="text-[9px] text-text-secondary mt-1 text-center capitalize">{t.id}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Font */}
-        <div>
-          <label className="label">ฟอนต์ตัวเลข</label>
-          <p className="text-[10px] text-text-secondary mb-2">ฟอนต์ไทย Playful + ฟอนต์กลม Bubble จาก Google Fonts</p>
-
-          <p className="text-[10px] font-medium text-text-secondary mb-1">🇹🇭 ฟอนต์ไทย:</p>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {[
-              { id: 'mali', label: 'มะลิ', desc: 'น่ารัก กลม' },
-              { id: 'itim', label: 'ไอติม', desc: 'หนา ลายมือ' },
-              { id: 'mitr', label: 'มิตร', desc: 'สะอาด มน' },
-              { id: 'kanit', label: 'คณิต', desc: 'โมเดิร์น' },
-              { id: 'prompt', label: 'Prompt', desc: 'เรขาคณิต' },
-              { id: 'sriracha', label: 'ศรีราชา', desc: 'ลายมือ สนุก' },
-              { id: 'kodchasan', label: 'คชสาร', desc: 'โค้งมน' },
-              { id: 'k2d', label: 'K2D', desc: 'มน ทันสมัย' },
-              { id: 'chonburi', label: 'ชลบุรี', desc: 'หนา display' },
-              { id: 'baijamjuree', label: 'ใบจามจุรี', desc: 'สดใส' },
-              { id: 'charm', label: 'จาม', desc: 'ตกแต่ง' },
-              { id: 'charmonman', label: 'ชาร์มนต์แมน', desc: 'สวยงาม' },
-            ].map(f => (
-              <button
-                key={f.id}
-                onClick={() => saveSetting('default_font_style', f.id)}
-                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
-                  (settings.default_font_style || 'rounded') === f.id
-                    ? 'border-gold bg-gold/5'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="font-medium">{f.label}</div>
-                <div className="text-[10px] text-text-secondary">{f.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Custom Font */}
-        <div className="bg-gray-50 rounded-lg p-3">
-          <label className="label">หรือพิมพ์ชื่อฟอนต์จาก Google Fonts:</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={settings.default_font_style?.startsWith('custom:') ? settings.default_font_style.replace('custom:', '') : ''}
-              onChange={e => {
-                const val = e.target.value.trim()
-                if (val) setSettings(prev => ({ ...prev, default_font_style: `custom:${val}` }))
-              }}
-              className="input text-xs flex-1"
-              placeholder="เช่น Lobster, Pacifico, Sarabun..."
-            />
-            <button
-              onClick={() => {
-                const val = settings.default_font_style || ''
-                if (val.startsWith('custom:')) saveSetting('default_font_style', val)
-              }}
-              className="btn-primary text-xs shrink-0"
-            >
-              💾 ใช้ฟอนต์นี้
-            </button>
-          </div>
-          <p className="text-[10px] text-text-secondary mt-1">{'เลือกฟอนต์จาก fonts.google.com แล้วพิมพ์ชื่อมา ระบบโหลดอัตโนมัติ'}</p>
-        </div>
-
-        {/* Digit Size */}
-        <div>
-          <label className="label">ขนาดตัวเลข</label>
-          <div className="flex gap-2">
-            {[
-              { id: 's', label: 'S', desc: 'เล็ก' },
-              { id: 'm', label: 'M', desc: 'กลาง' },
-              { id: 'l', label: 'L', desc: 'ใหญ่' },
-            ].map(s => (
-              <button
-                key={s.id}
-                onClick={() => saveSetting('default_digit_size', s.id)}
-                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
-                  (settings.default_digit_size || 'm') === s.id
-                    ? 'border-gold bg-gold/5'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="font-bold text-lg">{s.label}</div>
-                <div className="text-[10px] text-text-secondary">{s.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Layout */}
-        <div>
-          <label className="label">เรียงตัวเลข</label>
-          <div className="flex gap-2">
-            {[
-              { id: 'inline', label: '🔺 Inline', desc: 'บน: 1 2 3 (แนะนำ)' },
-              { id: 'horizontal', label: '➡️ แนวนอน', desc: 'กลาง 1 2 3' },
-              { id: 'vertical', label: '⬇️ แนวตั้ง', desc: 'ลงล่าง' },
-            ].map(l => (
-              <button
-                key={l.id}
-                onClick={() => saveSetting('default_layout', l.id)}
-                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center text-xs transition-all ${
-                  (settings.default_layout || 'inline') === l.id ? 'border-gold bg-gold/5' : 'border-gray-200'
-                }`}
-              >
-                <div className="font-medium">{l.label}</div>
-                <div className="text-[10px] text-text-secondary">{l.desc}</div>
+                <div className="text-xl">{t.label}</div>
+                <p className="text-[9px] text-text-secondary capitalize">{t.id}</p>
               </button>
             ))}
           </div>
@@ -967,16 +263,127 @@ function SettingsContent() {
 
         {/* Preview */}
         <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-xs font-medium text-text-secondary mb-1">👁 ตัวอย่างรูปที่จะส่งไป LINE จริง</p>
-          <p className="text-[10px] text-green-600 mb-2">ตั้งค่าครั้งเดียว → บันทึกถาวร ใช้กับผล auto ทุกรายการ</p>
+          <p className="text-xs text-text-secondary mb-2">ตัวอย่างรูปที่จะส่ง</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/generate-image?lottery_name=${encodeURIComponent('ตัวอย่าง')}&flag=${encodeURIComponent('🎰')}&date=${encodeURIComponent('2 เม.ย. 69')}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'outline'}&font_style=${settings.default_font_style || 'mali'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'inline'}`}
+            src={`/api/generate-image?lottery_name=${encodeURIComponent('ตัวอย่าง')}&flag=${encodeURIComponent('🎰')}&date=${encodeURIComponent('7 เม.ย. 69')}&top_number=123&bottom_number=45&theme=${settings.default_theme || 'macaroon'}&font_style=${settings.default_font_style || 'mali'}&digit_size=${settings.default_digit_size || 'm'}&layout=${settings.default_layout || 'inline'}`}
             alt="Preview"
             className="mx-auto rounded-lg shadow-sm max-w-[280px]"
           />
         </div>
       </div>
+
+      {/* ═══ 5. ตั้งค่าขั้นสูง (ซ่อนไว้) ═══ */}
+      <button
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="w-full text-center text-xs text-text-secondary py-2 hover:text-gold transition-colors"
+      >
+        {showAdvanced ? '▲ ซ่อนตั้งค่าขั้นสูง' : '▼ ตั้งค่าขั้นสูง (สำหรับผู้ดูแลระบบ)'}
+      </button>
+
+      {showAdvanced && (
+        <div className="space-y-4">
+          {/* Telegram */}
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-sm">✈️ Telegram Bot</h3>
+            <div>
+              <label className="label">Bot Token</label>
+              <input
+                type="password"
+                value={settings.telegram_bot_token || ''}
+                onChange={e => setSettings(prev => ({ ...prev, telegram_bot_token: e.target.value }))}
+                onBlur={e => { if (e.target.value) saveSetting('telegram_bot_token', e.target.value) }}
+                className="input font-mono text-xs"
+                placeholder="123456789:ABCdef..."
+              />
+            </div>
+            <div>
+              <label className="label">Admin Channel ID</label>
+              <input
+                type="text"
+                value={settings.telegram_admin_channel || ''}
+                onChange={e => setSettings(prev => ({ ...prev, telegram_admin_channel: e.target.value }))}
+                onBlur={e => { if (e.target.value) saveSetting('telegram_admin_channel', e.target.value) }}
+                className="input font-mono text-xs"
+                placeholder="-1001234567890"
+              />
+            </div>
+          </div>
+
+          {/* Unofficial Endpoint */}
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-sm">🔧 Unofficial Endpoint (Render)</h3>
+            <div>
+              <label className="label">Endpoint URL</label>
+              <input
+                type="text"
+                value={settings.unofficial_line_endpoint || ''}
+                onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
+                onBlur={e => { if (e.target.value) saveSetting('unofficial_line_endpoint', e.target.value) }}
+                className="input font-mono text-xs"
+                placeholder="https://lottobot-unofficial-endpoint.onrender.com"
+              />
+            </div>
+            <div>
+              <label className="label">Auth Token</label>
+              <input
+                type="password"
+                value={settings.unofficial_line_token || ''}
+                onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
+                onBlur={e => { if (e.target.value) saveSetting('unofficial_line_token', e.target.value) }}
+                className="input font-mono text-xs"
+                placeholder="Bearer token"
+              />
+            </div>
+          </div>
+
+          {/* Scraping */}
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-sm">🤖 ดึงผลอัตโนมัติ</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">หน้าต่างเวลา (นาที)</label>
+                <input
+                  type="number"
+                  value={settings.scrape_window_minutes || '30'}
+                  onChange={e => setSettings(prev => ({ ...prev, scrape_window_minutes: e.target.value }))}
+                  onBlur={e => saveSetting('scrape_window_minutes', e.target.value)}
+                  className="input"
+                  min="5" max="60"
+                />
+              </div>
+              <div>
+                <label className="label">Retry</label>
+                <input
+                  type="number"
+                  value={settings.scrape_max_retries || '3'}
+                  onChange={e => setSettings(prev => ({ ...prev, scrape_max_retries: e.target.value }))}
+                  onBlur={e => saveSetting('scrape_max_retries', e.target.value)}
+                  className="input"
+                  min="1" max="10"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Countdown */}
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-sm">⏰ Countdown</h3>
+            <div>
+              <label className="label">แจ้งเตือนก่อนปิดรับ (นาที)</label>
+              <input
+                type="text"
+                value={settings.countdown_intervals || '20,10,5'}
+                onChange={e => setSettings(prev => ({ ...prev, countdown_intervals: e.target.value }))}
+                className="input font-mono text-sm"
+                placeholder="20,10,5"
+              />
+              <p className="text-[10px] text-text-secondary mt-1">คั่นด้วยคอมมา เช่น 20,10,5 = แจ้ง 3 ครั้ง</p>
+              <button onClick={() => saveSetting('countdown_intervals', settings.countdown_intervals || '20,10,5')} className="btn-primary text-xs mt-2">💾 บันทึก</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {saving && <p className="text-xs text-text-secondary text-center">กำลังบันทึก...</p>}
     </div>
