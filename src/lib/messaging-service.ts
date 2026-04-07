@@ -71,12 +71,12 @@ async function callUnofficial(
 
 // ─── Public API ─────────────────────────────────────────
 
-export async function sendText(to: string, text: string): Promise<SendResult> {
-  return callUnofficial('push_text', { to, text })
+export async function sendText(to: string, text: string, officialTo?: string): Promise<SendResult> {
+  return callUnofficial('push_text', { to, text, ...(officialTo ? { officialTo } : {}) })
 }
 
-export async function sendImageAndText(to: string, imageUrl: string, text: string): Promise<SendResult> {
-  return callUnofficial('push_image_text', { to, imageUrl, text })
+export async function sendImageAndText(to: string, imageUrl: string, text: string, officialTo?: string): Promise<SendResult> {
+  return callUnofficial('push_image_text', { to, imageUrl, text, ...(officialTo ? { officialTo } : {}) })
 }
 
 export async function broadcastTextMessage(text: string): Promise<SendResult> {
@@ -88,12 +88,12 @@ export async function broadcastImageText(imageUrl: string, text: string): Promis
 }
 
 // Backward-compatible wrappers (old code passes token as first arg — ignore it)
-export async function pushTextMessage(_token: string, to: string, text: string) {
-  return sendText(to, text)
+export async function pushTextMessage(_token: string, to: string, text: string, officialTo?: string) {
+  return sendText(to, text, officialTo)
 }
 
-export async function pushImageAndText(_token: string, to: string, imageUrl: string, text: string) {
-  return sendImageAndText(to, imageUrl, text)
+export async function pushImageAndText(_token: string, to: string, imageUrl: string, text: string, officialTo?: string) {
+  return sendImageAndText(to, imageUrl, text, officialTo)
 }
 
 export async function broadcastText(_token: string, text: string) {

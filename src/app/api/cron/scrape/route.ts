@@ -166,13 +166,15 @@ async function saveAndSend(
       if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
 
       const startLine = Date.now()
-      const groupId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || group.line_group_id
-      let lineResult = await pushImageAndText(lineToken, groupId, imageUrl, lineMsg)
+      const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+      const officialId = group.line_group_id || ''
+      const primaryId = unofficialId || officialId  // unofficial first, fallback official
+      let lineResult = await pushImageAndText(lineToken, primaryId, imageUrl, lineMsg, officialId)
       if (!lineResult.success) {
         if (lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
         } else {
-          lineResult = await pushTextMessage(lineToken, groupId, lineMsg)
+          lineResult = await pushTextMessage(lineToken, primaryId, lineMsg, officialId)
           if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
             await flagMonthlyLimitHit()
           }
