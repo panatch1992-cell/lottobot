@@ -190,8 +190,8 @@ async function saveAndSend(
         error_message: lineResult.error || null,
       })
 
-      // Delay between groups to avoid LINE rate detection
-      await sleep(2000)
+      // Random delay between groups to look natural (2-5 seconds)
+      await sleep(2000 + Math.floor(Math.random() * 3000))
     }
     } // end push mode
   }

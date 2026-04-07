@@ -3,6 +3,7 @@ import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatStats } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { sleep } from '@/lib/utils'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import type { Lottery, Result, LineGroup } from '@/types'
 
@@ -107,6 +108,8 @@ export async function GET(req: NextRequest) {
           sent_at: new Date().toISOString(),
           error_message: lineResult.error || null,
         })
+        // Random delay between groups (2-5s)
+        await sleep(2000 + Math.floor(Math.random() * 3000))
       }
     }
 
