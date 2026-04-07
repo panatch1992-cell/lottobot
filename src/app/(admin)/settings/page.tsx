@@ -136,9 +136,18 @@ function SettingsContent() {
         )}
       </div>
 
-      {/* ═══ 2. ตั้งค่าบัญชี LINE Bot (สำหรับลูกค้า) ═══ */}
+      {/* ═══ 2. ตั้งค่าบัญชี LINE Bot ═══ */}
       <div className="card space-y-3">
         <h3 className="font-semibold">📱 ตั้งค่าบัญชี LINE Bot</h3>
+
+        {settings.line_bot_password === '***USED***' || settings.line_unofficial_auth_token ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700">
+            <p className="font-medium">✅ ตั้งค่าเรียบร้อยแล้ว</p>
+            <p>บัญชี: {settings.line_bot_email || '-'} | เบอร์: {settings.line_bot_phone || '-'}</p>
+            <p>Token: ได้รับแล้ว | ระบบ refresh อัตโนมัติ</p>
+          </div>
+        ) : (
+          <>
         <p className="text-xs text-text-secondary">สมัคร LINE ด้วยเบอร์ใหม่ แล้วกรอกข้อมูลด้านล่าง</p>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
@@ -268,6 +277,8 @@ function SettingsContent() {
             </div>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {/* ═══ 3. กลุ่ม LINE ═══ */}
@@ -336,6 +347,7 @@ function SettingsContent() {
       <div className="card space-y-3">
         <h3 className="font-semibold">🎨 สไตล์รูปตัวเลข</h3>
 
+        {/* ธีม */}
         <div>
           <label className="label">ธีม</label>
           <div className="grid grid-cols-4 gap-2">
@@ -361,6 +373,81 @@ function SettingsContent() {
                 <p className="text-[9px] text-text-secondary capitalize">{t.id}</p>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* ฟอนต์ */}
+        <div>
+          <label className="label">ฟอนต์ตัวเลข</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'mali', label: 'มะลิ' },
+              { id: 'itim', label: 'ไอติม' },
+              { id: 'mitr', label: 'มิตร' },
+              { id: 'kanit', label: 'คณิต' },
+              { id: 'prompt', label: 'Prompt' },
+              { id: 'sriracha', label: 'ศรีราชา' },
+              { id: 'kodchasan', label: 'คชสาร' },
+              { id: 'k2d', label: 'K2D' },
+              { id: 'chonburi', label: 'ชลบุรี' },
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => saveSetting('default_font_style', f.id)}
+                className={`py-1.5 px-2 rounded-lg border-2 text-center text-xs transition-all ${
+                  (settings.default_font_style || 'mali') === f.id
+                    ? 'border-gold bg-gold/5' : 'border-gray-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ขนาด + เรียง */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">ขนาดตัวเลข</label>
+            <div className="flex gap-2">
+              {[
+                { id: 's', label: 'S' },
+                { id: 'm', label: 'M' },
+                { id: 'l', label: 'L' },
+              ].map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => saveSetting('default_digit_size', s.id)}
+                  className={`flex-1 py-1.5 rounded-lg border-2 text-center text-sm font-bold transition-all ${
+                    (settings.default_digit_size || 'm') === s.id
+                      ? 'border-gold bg-gold/5' : 'border-gray-200'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label">เรียงตัวเลข</label>
+            <div className="flex gap-2">
+              {[
+                { id: 'inline', label: '🔺' },
+                { id: 'horizontal', label: '➡️' },
+                { id: 'vertical', label: '⬇️' },
+              ].map(l => (
+                <button
+                  key={l.id}
+                  onClick={() => saveSetting('default_layout', l.id)}
+                  className={`flex-1 py-1.5 rounded-lg border-2 text-center transition-all ${
+                    (settings.default_layout || 'inline') === l.id
+                      ? 'border-gold bg-gold/5' : 'border-gray-200'
+                  }`}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -390,14 +477,24 @@ function SettingsContent() {
       </div>
 
       <button
-        onClick={() => setShowAdvanced(!showAdvanced)}
+        onClick={() => {
+          if (!showAdvanced) {
+            if (!confirm('⚠️ ส่วนนี้สำหรับผู้ดูแลระบบเท่านั้น\n\nการแก้ไขค่าผิดอาจทำให้ระบบหยุดทำงาน\n\nต้องการเปิดหรือไม่?')) return
+          }
+          setShowAdvanced(!showAdvanced)
+        }}
         className="w-full text-center text-xs text-text-secondary py-2 hover:text-gold transition-colors"
       >
-        {showAdvanced ? '▲ ซ่อนตั้งค่าขั้นสูง' : '▼ ตั้งค่าขั้นสูง (สำหรับผู้ดูแลระบบ)'}
+        {showAdvanced ? '▲ ซ่อนตั้งค่าขั้นสูง' : '🔒 ตั้งค่าขั้นสูง (สำหรับผู้ดูแลระบบ)'}
       </button>
 
       {showAdvanced && (
         <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600">
+            <p className="font-medium">⚠️ ระวัง! แก้ไขเฉพาะเมื่อได้รับคำแนะนำจาก dev</p>
+            <p>การเปลี่ยนค่าในส่วนนี้อาจทำให้ระบบส่งข้อความไม่ได้</p>
+          </div>
+
           {/* Telegram */}
           <div className="card space-y-3">
             <h3 className="font-semibold text-sm">✈️ Telegram Bot</h3>
