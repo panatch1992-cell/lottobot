@@ -130,6 +130,98 @@ app.post('/send', async (req, res) => {
   return res.json({ success: true })
 })
 
+app.post('/login', async (req, res) => {
+  // Auth guard
+  if (AUTH_TOKEN) {
+    const header = req.headers.authorization || ''
+    const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
+    if (bearer !== AUTH_TOKEN) {
+      return unauthorized(res, 'Invalid auth token')
+    }
+  }
+
+  const { email, password } = req.body || {}
+  if (!email || !password) return badRequest(res, 'email and password required')
+
+  try {
+    // LINE internal login API
+    const loginRes = await fetch('https://gd2.line.naver.jp/api/v4p/rs', {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Line/12.0.0 iPad8,6 16.0',
+        'X-Line-Application': 'IOSIPAD\t12.0.0\tiOS\t16.0',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        type: '1',
+        identityProvider: 'LINE',
+        identifier: email,
+        password: password,
+        keepLoggedIn: 'true',
+        accessLocation: '127.0.0.1',
+        systemName: 'LottoBot',
+        e2eeVersion: '0',
+      }).toString(),
+    })
+
+    const text = await loginRes.text()
+    let data
+    try { data = JSON.parse(text) } catch { data = { raw: text.slice(0, 500) } }
+
+    if (loginRes.ok && data?.result?.authToken) {
+      return res.json({
+        success: true,
+        authToken: data.result.authToken,
+        message: 'Login สำเร็จ — เก็บ authToken ไว้ใน LINE_AUTH_TOKEN env',
+      })
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'Login failed',
+      detail: data,
+      hint: 'เช็ค email/password หรือต้อง verify ผ่าน LINE app บนมือถือ',
+    })
+  } catch (err) {
+    return res.status(502).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    })
+  }
+})
+
+app.post('/groups', async (req, res) => {
+  // Auth guard
+  if (AUTH_TOKEN) {
+    const header = req.headers.authorization || ''
+    const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
+    if (bearer !== AUTH_TOKEN) {
+      return unauthorized(res, 'Invalid auth token')
+    }
+  }
+
+  const { authToken } = req.body || {}
+  if (!authToken) return badRequest(res, 'authToken required')
+
+  try {
+    const groupRes = await fetch('https://gd2.line.naver.jp/api/v4p/rs', {
+      headers: {
+        'User-Agent': 'Line/12.0.0 iPad8,6 16.0',
+        'X-Line-Application': 'IOSIPAD\t12.0.0\tiOS\t16.0',
+        'X-Line-Access': authToken,
+      },
+    })
+
+    const data = await groupRes.json().catch(() => ({}))
+    return res.json({ success: true, groups: data })
+  } catch (err) {
+    return res.status(502).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`[unofficial-endpoint] listening on :${PORT}`)
 })
