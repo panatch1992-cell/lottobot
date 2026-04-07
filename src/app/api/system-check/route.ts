@@ -65,21 +65,18 @@ export async function GET() {
 
   // 5. LINE Groups
   try {
-    const { data: groups } = await db.from('line_groups').select('id, name, line_group_id, unofficial_group_id, is_active')
+    const { data: groups } = await db.from('line_groups').select('id, name, line_group_id, is_active')
     const active = (groups || []).filter((g: { is_active: boolean }) => g.is_active)
-    const withUnofficial = active.filter((g: { unofficial_group_id?: string | null }) => g.unofficial_group_id)
+    const withGroupId = active.filter((g: { line_group_id: string | null }) => g.line_group_id)
 
     if (active.length === 0) {
       checks.push({ name: 'กลุ่ม LINE', status: 'warn', detail: 'ยังไม่มีกลุ่มที่เปิดใช้ — เชิญ Bot เข้ากลุ่ม' })
     } else {
       checks.push({
         name: 'กลุ่ม LINE',
-        status: withUnofficial.length > 0 ? 'ok' : 'warn',
-        detail: `${active.length} กลุ่มเปิดใช้ (มี Unofficial ID: ${withUnofficial.length}/${active.length})`,
+        status: withGroupId.length > 0 ? 'ok' : 'warn',
+        detail: `${active.length} กลุ่มเปิดใช้ (มี Group ID: ${withGroupId.length}/${active.length})`,
       })
-      if (withUnofficial.length < active.length) {
-        checks.push({ name: 'Unofficial Group IDs', status: 'warn', detail: `${active.length - withUnofficial.length} กลุ่มยังไม่มี Unofficial ID (c...)` })
-      }
     }
   } catch {
     checks.push({ name: 'กลุ่ม LINE', status: 'error', detail: 'ดึงข้อมูลกลุ่มไม่ได้' })
