@@ -66,6 +66,8 @@ async function refreshTokenIfNeeded() {
 
   try {
     // LINE token refresh: call issueV3TokenForPrimary with current token
+    const controller1 = new AbortController()
+    setTimeout(() => controller1.abort(), 10000)
     const refreshRes = await fetch(LINE_THRIFT_API + '/RS4', {
       method: 'POST',
       headers: {
@@ -75,6 +77,7 @@ async function refreshTokenIfNeeded() {
         'Accept': 'application/x-thrift',
       },
       body: buildRefreshTokenThrift(),
+      signal: controller1.signal,
     })
 
     if (refreshRes.ok) {
@@ -89,6 +92,8 @@ async function refreshTokenIfNeeded() {
     }
 
     // Alternative: try v4 auth refresh endpoint
+    const controller2 = new AbortController()
+    setTimeout(() => controller2.abort(), 10000)
     const refreshRes2 = await fetch(LINE_THRIFT_API + '/api/v4/auth/refreshToken', {
       method: 'POST',
       headers: {
@@ -97,6 +102,7 @@ async function refreshTokenIfNeeded() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ refreshToken: LINE_AUTH_TOKEN }),
+      signal: controller2.signal,
     })
 
     if (refreshRes2.ok) {
@@ -126,14 +132,19 @@ function buildRefreshTokenThrift() {
   return Buffer.concat(parts)
 }
 
-// Auto-refresh every 6 hours
-setInterval(async () => {
-  const result = await refreshTokenIfNeeded()
-  console.log('[auto-refresh]', JSON.stringify(result))
+// Auto-refresh every 6 hours (non-blocking)
+setInterval(() => {
+  refreshTokenIfNeeded()
+    .then(r => console.log('[auto-refresh]', JSON.stringify(r)))
+    .catch(e => console.error('[auto-refresh] error:', e.message))
 }, 6 * 60 * 60 * 1000)
 
-// Refresh on startup
-setTimeout(() => refreshTokenIfNeeded().then(r => console.log('[startup-refresh]', JSON.stringify(r))), 5000)
+// Refresh on startup (delayed, non-blocking — don't block health check)
+setTimeout(() => {
+  refreshTokenIfNeeded()
+    .then(r => console.log('[startup-refresh]', JSON.stringify(r)))
+    .catch(e => console.error('[startup-refresh] error:', e.message))
+}, 30000) // wait 30s after startup to avoid blocking health check
 
 // ─── Thrift Compact Protocol Encoder ─────────────────────
 // LINE uses TCompactProtocol for internal API
