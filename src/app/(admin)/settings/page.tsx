@@ -22,6 +22,8 @@ function SettingsContent() {
   const [systemCheck, setSystemCheck] = useState<{ overall: string; checks: { name: string; status: string; detail: string }[] } | null>(null)
   const [checking, setChecking] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [setupResult, setSetupResult] = useState<{ success: boolean; steps: { step: string; status: string; detail: string }[]; summary?: string } | null>(null)
+  const [settingUp, setSettingUp] = useState(false)
 
   useEffect(() => { loadSettings() }, [searchParams])
 
@@ -182,7 +184,7 @@ function SettingsContent() {
           <p className="text-[10px] text-text-secondary mt-0.5">Dev จะใช้เพื่อดึง Token เข้าระบบเท่านั้น</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => saveMultiple([
               { key: 'line_bot_phone', value: settings.line_bot_phone || '' },
@@ -194,8 +196,78 @@ function SettingsContent() {
           >
             {saving ? '...' : '💾 บันทึก'}
           </button>
+          <button
+            onClick={async () => {
+              // Save first, then setup
+              await saveMultiple([
+                { key: 'line_bot_phone', value: settings.line_bot_phone || '' },
+                { key: 'line_bot_email', value: settings.line_bot_email || '' },
+                { key: 'line_bot_password', value: settings.line_bot_password || '' },
+              ])
+              setSettingUp(true)
+              setSetupResult(null)
+              try {
+                const res = await fetch('/api/setup-unofficial', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    email: settings.line_bot_email,
+                    password: settings.line_bot_password,
+                  }),
+                })
+                const data = await res.json()
+                setSetupResult(data)
+                if (data.success) loadSettings() // reload groups
+              } catch {
+                setSetupResult({
+                  success: false,
+                  steps: [{ step: 'เชื่อมต่อ', status: 'fail', detail: 'ไม่สามารถเชื่อมต่อ API ได้' }],
+                })
+              }
+              setSettingUp(false)
+            }}
+            disabled={settingUp || !settings.line_bot_email || !settings.line_bot_password}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+          >
+            {settingUp ? '⏳ กำลังตั้งค่า...' : '🚀 ตั้งค่าอัตโนมัติ'}
+          </button>
           {status && <span className="text-xs">{status}</span>}
         </div>
+
+        {/* Setup Progress */}
+        {settingUp && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+            <p className="font-medium mb-1">⏳ กำลังตั้งค่า...</p>
+            <p>1. Login เข้าบัญชี LINE</p>
+            <p>2. ดึง Group ID ทุกกลุ่ม</p>
+            <p>3. อัพเดทฐานข้อมูล</p>
+            <p>4. ล้าง password (ความปลอดภัย)</p>
+            <p className="mt-1 text-blue-500">อาจใช้เวลา 30 วินาที...</p>
+          </div>
+        )}
+
+        {/* Setup Result */}
+        {setupResult && (
+          <div className={`rounded-lg p-3 space-y-2 ${setupResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+            <p className={`font-medium text-sm ${setupResult.success ? 'text-green-700' : 'text-red-700'}`}>
+              {setupResult.success ? '✅ ตั้งค่าเสร็จสมบูรณ์!' : '❌ ตั้งค่ายังไม่เสร็จ'}
+            </p>
+            {setupResult.summary && (
+              <p className="text-xs text-text-secondary">{setupResult.summary}</p>
+            )}
+            <div className="space-y-1">
+              {setupResult.steps.map((s, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="shrink-0">{s.status === 'ok' ? '✅' : s.status === 'skip' ? '⏭' : '❌'}</span>
+                  <div>
+                    <span className="font-medium">{s.step}</span>
+                    <span className="text-text-secondary"> — {s.detail}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ═══ 3. กลุ่ม LINE ═══ */}
