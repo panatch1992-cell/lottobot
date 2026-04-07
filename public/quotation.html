@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ใบเสนอราคา MF-2026012 — LottoBot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    background: #f5f3ee;
+    color: #333;
+    line-height: 1.6;
+    padding: 20px;
+  }
+
+  .page {
+    max-width: 800px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 40px 40px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .header-left h1 {
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .header-left p {
+    font-size: 13px;
+    opacity: 0.6;
+    margin-top: 4px;
+  }
+
+  .header-right {
+    text-align: right;
+  }
+
+  .header-right .doc-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #c9a84c;
+  }
+
+  .header-right .doc-no {
+    font-size: 14px;
+    opacity: 0.7;
+    margin-top: 4px;
+  }
+
+  .content {
+    padding: 40px;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .info-box h3 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .info-box p {
+    font-size: 14px;
+    color: #333;
+  }
+
+  .ref-box {
+    background: #f8f6f1;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: #666;
+    border-left: 4px solid #c9a84c;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+  }
+
+  thead th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  thead th:first-child { border-radius: 8px 0 0 0; }
+  thead th:last-child { border-radius: 0 8px 0 0; text-align: right; }
+
+  tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f0ede8;
+    font-size: 14px;
+  }
+
+  tbody td:first-child {
+    font-weight: 600;
+    color: #1a1a2e;
+    width: 50px;
+    text-align: center;
+  }
+
+  tbody td:last-child {
+    text-align: right;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  tbody td .desc {
+    display: block;
+    font-size: 12px;
+    color: #888;
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #faf9f6;
+  }
+
+  .total-row td {
+    background: #1a1a2e !important;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 16px;
+    border: none;
+  }
+
+  .total-row td:last-child {
+    color: #c9a84c;
+    font-size: 20px;
+  }
+
+  .total-row td:first-child { border-radius: 0 0 0 8px; }
+  .total-row td:last-child { border-radius: 0 0 8px 0; }
+
+  .grand-total {
+    background: linear-gradient(135deg, #c9a84c 0%, #b8963e 100%);
+    border-radius: 10px;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    color: #fff;
+  }
+
+  .grand-total .label {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .grand-total .amount {
+    font-size: 28px;
+    font-weight: 800;
+  }
+
+  .terms {
+    background: #faf9f6;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+  }
+
+  .terms h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 10px;
+  }
+
+  .terms ul {
+    list-style: none;
+    font-size: 13px;
+    color: #666;
+  }
+
+  .terms ul li {
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+  }
+
+  .terms ul li::before {
+    content: '•';
+    position: absolute;
+    left: 6px;
+    color: #c9a84c;
+    font-weight: bold;
+  }
+
+  .signature-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 48px;
+    padding-top: 24px;
+  }
+
+  .sig-box {
+    text-align: center;
+  }
+
+  .sig-box .line {
+    border-bottom: 1px solid #ccc;
+    height: 60px;
+    margin-bottom: 8px;
+  }
+
+  .sig-box .name {
+    font-size: 13px;
+    color: #666;
+  }
+
+  .sig-box .role {
+    font-size: 11px;
+    color: #999;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 11px;
+    color: #bbb;
+    border-top: 1px solid #f0ede8;
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .page { box-shadow: none; border-radius: 0; max-width: 100%; }
+    .header { padding: 30px; }
+    .content { padding: 30px; }
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .header { flex-direction: column; gap: 16px; padding: 24px; }
+    .header-right { text-align: left; }
+    .info-grid { grid-template-columns: 1fr; }
+    .content { padding: 20px; }
+    .signature-area { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="header">
+    <div class="header-left">
+      <h1>LottoBot</h1>
+      <p>ระบบส่งผลหวยต่างประเทศอัตโนมัติ</p>
+    </div>
+    <div class="header-right">
+      <div class="doc-title">ใบเสนอราคา</div>
+      <div class="doc-no">เลขที่ MF-2026012</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="info-grid">
+      <div class="info-box">
+        <h3>ลูกค้า</h3>
+        <p><strong>คุณตอง</strong></p>
+        <p>ช่องทาง: Fastwork</p>
+      </div>
+      <div class="info-box">
+        <h3>วันที่</h3>
+        <p>7 เมษายน 2569</p>
+        <p>มีผล 30 วัน</p>
+      </div>
+    </div>
+
+    <div class="ref-box">
+      อ้างอิง: ต่อเนื่องจากใบเสนอราคาเลขที่ <strong>MF-2026011</strong> (฿13,000) — ระบบ LINE Bot ส่งผลหวยอัตโนมัติ 43 รายการ
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>รายการ</th>
+          <th>ราคา (฿)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>8</td>
+          <td>
+            ระบบ Unofficial LINE API
+            <span class="desc">ส่งข้อความไม่จำกัด ไม่มี quota — พัฒนา Thrift Protocol Engine เชื่อม LINE Internal API ผ่าน Render</span>
+          </td>
+          <td>3,000</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>
+            ระบบ Smart Fallback + Heartbeat Monitor
+            <span class="desc">Unofficial ล้ม → สลับ Official อัตโนมัติ + แจ้ง Telegram ทุก 5 นาที + Token auto-refresh</span>
+          </td>
+          <td>1,500</td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td>
+            ระบบตรวจสอบสุขภาพ (System Check)
+            <span class="desc">ตรวจสอบทุกระบบ 1 คลิก — DB, Telegram, LINE, Endpoint, กลุ่ม, Scraping</span>
+          </td>
+          <td>1,000</td>
+        </tr>
+        <tr>
+          <td>11</td>
+          <td>
+            ตั้งค่าบัญชี LINE Bot อัตโนมัติ
+            <span class="desc">ลูกค้ากรอก email/password → ระบบ login + ดึง Token + ตั้งค่าให้ครบจบ</span>
+          </td>
+          <td>1,000</td>
+        </tr>
+        <tr>
+          <td>12</td>
+          <td>
+            ปรับปรุง UI/UX Dashboard
+            <span class="desc">ออกแบบใหม่หน้าตั้งค่า — สะอาด ใช้ง่าย ซ่อนส่วนเทคนิค + คู่มือใช้งาน v4.0</span>
+          </td>
+          <td>1,000</td>
+        </tr>
+        <tr>
+          <td>13</td>
+          <td>
+            ระบบป้องกันแบน (Anti-Ban)
+            <span class="desc">Random delay ระหว่างกลุ่ม + แจ้งเตือนเกิน 15 กลุ่ม + Keep-alive Render + Lock ป้องกันแก้ไข</span>
+          </td>
+          <td>1,000</td>
+        </tr>
+        <tr>
+          <td>14</td>
+          <td>
+            E2E Testing + Code Audit
+            <span class="desc">ทดสอบอัตโนมัติ 36 test cases + ตรวจสอบ code ทั้งระบบ ลบ code เก่าที่ไม่ใช้</span>
+          </td>
+          <td>500</td>
+        </tr>
+      </tbody>
+      <tr class="total-row">
+        <td colspan="2">รวมฉบับที่ 2</td>
+        <td>฿9,000</td>
+      </tr>
+    </table>
+
+    <div class="grand-total">
+      <div class="label">รวมทั้งสองฉบับ (MF-2026011 + MF-2026012)</div>
+      <div class="amount">฿22,000</div>
+    </div>
+
+    <div class="terms">
+      <h3>เงื่อนไข</h3>
+      <ul>
+        <li>รับประกันแก้ Bug ฟรี 30 วัน</li>
+        <li>Source code เป็นกรรมสิทธิ์ลูกค้าหลังชำระครบ</li>
+        <li>Hosting: Vercel (Free) + Supabase (Free) + Render (Free)</li>
+        <li>Token refresh อัตโนมัติ — ไม่ต้องดูแล</li>
+        <li>Unofficial LINE API ส่งข้อความไม่จำกัด ไม่มีค่าใช้จ่ายรายเดือน</li>
+        <li>ใบเสนอราคามีผล 30 วันนับจากวันที่ออก</li>
+      </ul>
+    </div>
+
+    <div class="signature-area">
+      <div class="sig-box">
+        <div class="line"></div>
+        <div class="name">ผู้เสนอราคา</div>
+        <div class="role">Developer</div>
+      </div>
+      <div class="sig-box">
+        <div class="line"></div>
+        <div class="name">ผู้อนุมัติ</div>
+        <div class="role">คุณตอง (ลูกค้า)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    LottoBot — ระบบส่งผลหวยต่างประเทศอัตโนมัติ | MF-2026012 | 7 เม.ย. 2569
+  </div>
+</div>
+
+</body>
+</html>
