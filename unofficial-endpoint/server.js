@@ -361,6 +361,140 @@ function checkAuth(req, res) {
   return true
 }
 
+// ─── Get Groups (ดึงรายการกลุ่มจาก LINE) ────────────────
+
+function buildGetGroupsThrift() {
+  // TalkService.getGroupIdsJoined() — method to get list of group MIDs
+  const parts = []
+  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol=compact, version=1, type=CALL
+  parts.push(writeString('getGroupIdsJoined'))
+  parts.push(writeUVarint(0)) // seqid
+  parts.push(Buffer.from([0x00])) // end args
+  return Buffer.concat(parts)
+}
+
+function buildGetGroupThrift(groupId) {
+  // TalkService.getGroup(2: string groupMid)
+  const parts = []
+  parts.push(Buffer.from([0x82, 0x21, 0x01]))
+  parts.push(writeString('getGroup'))
+  parts.push(writeUVarint(0))
+  // Field 2: groupMid (string) - field id 2, type 8
+  parts.push(Buffer.from([0x28])) // delta=2, type=8
+  parts.push(writeString(groupId))
+  parts.push(Buffer.from([0x00])) // end args
+  return Buffer.concat(parts)
+}
+
+// Extract strings from Thrift binary response
+function extractStringsFromThrift(buf) {
+  const strings = []
+  let i = 0
+  while (i < buf.length - 1) {
+    // Look for string-like patterns: length byte(s) followed by printable chars
+    // Group MIDs are 33 chars starting with 'c'
+    if (buf[i] === 0x21 || buf[i] === 33) { // length 33
+      const str = buf.toString('utf-8', i + 1, i + 1 + 33)
+      if (/^c[0-9a-f]{32}$/.test(str)) {
+        strings.push(str)
+        i += 34
+        continue
+      }
+    }
+    i++
+  }
+  // Also try varint-encoded lengths
+  i = 0
+  while (i < buf.length) {
+    // Check for 'c' followed by hex chars (group MID pattern)
+    if (buf[i] === 0x63) { // 'c'
+      const str = buf.toString('utf-8', i, i + 33)
+      if (/^c[0-9a-f]{32}$/.test(str) && !strings.includes(str)) {
+        strings.push(str)
+      }
+    }
+    i++
+  }
+  return strings
+}
+
+// Extract group name from getGroup response
+function extractGroupName(buf) {
+  // Group name is typically in field 2 (name) of Group struct
+  // Look for readable Thai/English text strings
+  const str = buf.toString('utf-8')
+  // Find strings between readable boundaries
+  const matches = str.match(/[\u0E00-\u0E7F\w\s]{2,50}/g) || []
+  // Filter out method names and common patterns
+  return matches.find(m =>
+    !m.includes('getGroup') &&
+    !m.includes('sendMessage') &&
+    m.length > 1
+  ) || null
+}
+
+app.get('/groups', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  if (!LINE_AUTH_TOKEN) {
+    return res.status(400).json({ success: false, error: 'No unofficial token' })
+  }
+
+  try {
+    // Step 1: Get list of group MIDs
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 15000)
+
+    const groupsRes = await fetch(LINE_THRIFT_API + '/S4', {
+      method: 'POST',
+      headers: {
+        ...LINE_APP_HEADER,
+        'X-Line-Access': LINE_AUTH_TOKEN,
+        'Content-Type': 'application/x-thrift',
+        'Accept': 'application/x-thrift',
+      },
+      body: buildGetGroupsThrift(),
+      signal: controller.signal,
+    })
+
+    const buf = Buffer.from(await groupsRes.arrayBuffer())
+    const groupIds = extractStringsFromThrift(buf)
+
+    console.log(`[groups] Found ${groupIds.length} groups:`, groupIds)
+
+    // Step 2: Get name for each group
+    const groups = []
+    for (const gid of groupIds) {
+      try {
+        const ctrl = new AbortController()
+        setTimeout(() => ctrl.abort(), 10000)
+
+        const gRes = await fetch(LINE_THRIFT_API + '/S4', {
+          method: 'POST',
+          headers: {
+            ...LINE_APP_HEADER,
+            'X-Line-Access': LINE_AUTH_TOKEN,
+            'Content-Type': 'application/x-thrift',
+            'Accept': 'application/x-thrift',
+          },
+          body: buildGetGroupThrift(gid),
+          signal: ctrl.signal,
+        })
+
+        const gBuf = Buffer.from(await gRes.arrayBuffer())
+        const name = extractGroupName(gBuf)
+        groups.push({ id: gid, name: name || '(unknown)' })
+      } catch {
+        groups.push({ id: gid, name: '(error fetching name)' })
+      }
+    }
+
+    res.json({ success: true, count: groups.length, groups })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // ─── Test Page (เปิดจาก browser มือถือ) ─────────────────
 
 app.get('/test', (_req, res) => {
@@ -399,8 +533,13 @@ button{width:100%;padding:12px;border:none;border-radius:8px;font-size:16px;font
 </div>
 
 <div class="card">
+  <button class="btn-send" style="background:#c9a84c" onclick="loadGroups()">📋 ดึงรายการกลุ่ม LINE</button>
+  <div id="groups" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
   <label>Group MID (to)</label>
-  <input id="to" placeholder="c... หรือ u..." />
+  <input id="to" placeholder="กดดึงรายการกลุ่มด้านบน แล้วกดเลือก" />
   <label>ข้อความ</label>
   <textarea id="text">🧪 ทดสอบ LottoBot unofficial</textarea>
   <button class="btn-send" onclick="testSend()">📤 ส่งทดสอบ</button>
@@ -408,10 +547,37 @@ button{width:100%;padding:12px;border:none;border-radius:8px;font-size:16px;font
 </div>
 
 <script>
+async function loadGroups() {
+  const btn = event.target
+  const div = document.getElementById('groups')
+  btn.disabled = true; btn.textContent = '⏳ กำลังดึง...'
+  div.innerHTML = '<p style="color:#e89b1c;font-size:13px">กำลังดึงกลุ่มจาก LINE... (อาจใช้เวลา 10-30 วินาที)</p>'
+  try {
+    const res = await fetch('/groups')
+    const data = await res.json()
+    if (data.groups && data.groups.length > 0) {
+      div.innerHTML = data.groups.map(g =>
+        '<div style="background:#0f3460;border-radius:8px;padding:10px;margin:6px 0;cursor:pointer" onclick="selectGroup(\\'' + g.id + '\\')">' +
+        '<div style="font-weight:600">' + (g.name || '?') + '</div>' +
+        '<div style="font-size:11px;color:#aaa;font-family:monospace;word-break:break-all">' + g.id + '</div></div>'
+      ).join('')
+    } else {
+      div.innerHTML = '<p style="color:#dc3545">ไม่พบกลุ่ม — บัญชีนี้อาจไม่ได้อยู่ในกลุ่มใดๆ</p>'
+    }
+  } catch (e) {
+    div.innerHTML = '<p style="color:#dc3545">❌ ' + e.message + '</p>'
+  }
+  btn.disabled = false; btn.textContent = '📋 ดึงรายการกลุ่ม LINE'
+}
+
+function selectGroup(id) {
+  document.getElementById('to').value = id
+}
+
 async function testSend() {
   const to = document.getElementById('to').value.trim()
   const text = document.getElementById('text').value.trim()
-  const btn = document.querySelector('.btn-send')
+  const btn = document.querySelector('.btn-send:last-of-type')
   const result = document.getElementById('result')
   if (!to || !text) { alert('กรอก MID + ข้อความ'); return }
   btn.disabled = true; btn.textContent = '⏳ กำลังส่ง...'
