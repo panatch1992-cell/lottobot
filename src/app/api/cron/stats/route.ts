@@ -5,6 +5,7 @@ import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { sleep } from '@/lib/utils'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { Lottery, Result, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -16,12 +17,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('stats')
+  if (!configCheck.ok) {
+    await alertConfigIssues('stats', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
+  }
+
   const db = getServiceClient()
   const now = nowBangkok()
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings
   const settings = await getSettings()
 
   // Default ปิดส่งสถิติทาง LINE (ประหยัด quota) — เปิดได้ที่ /settings
@@ -91,11 +98,14 @@ export async function GET(req: NextRequest) {
     if (lineToken && sendStatsLine && statsQuota?.canSend) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_group_id) continue
+        const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+        const officialId = group.line_group_id || ''
+        const primaryId = unofficialId || officialId
+        if (!primaryId) continue
         if (sentStatsGroupIds.has(group.id)) continue
         if (limitStatsGroupIds.has(group.id)) continue
 
-        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        const lineResult = await pushTextMessage(lineToken, primaryId, formatted.line, officialId)
         if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
         }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/messaging-service'
-import { nowBangkok, today } from '@/lib/utils'
+import { nowBangkok, today, sleep } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -14,13 +15,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('scheduled')
+  if (!configCheck.ok) {
+    await alertConfigIssues('scheduled', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
+  }
+
   const db = getServiceClient()
   const now = nowBangkok()
   const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   const todayStr = today()
-  const dayOfWeek = now.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const dayOfWeek = now.getDay()
 
-  // Get settings
   const settings = await getSettings()
 
   // Get active scheduled messages that should send now
@@ -121,8 +128,12 @@ export async function GET(req: NextRequest) {
     if ((target === 'line' || target === 'both') && settings.line_channel_access_token) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_group_id) continue
-        await pushTextMessage(settings.line_channel_access_token, group.line_group_id, msg.message)
+        const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+        const officialId = group.line_group_id || ''
+        const primaryId = unofficialId || officialId
+        if (!primaryId) continue
+        await pushTextMessage(settings.line_channel_access_token, primaryId, msg.message, officialId)
+        await sleep(500 + Math.floor(Math.random() * 1000))
       }
     }
 

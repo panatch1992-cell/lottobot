@@ -4,6 +4,7 @@ import { formatCountdown, formatStats, formatNextLottery, formatClosing } from '
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { Lottery, LineGroup, Result } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -173,6 +174,13 @@ export async function GET(req: NextRequest) {
   const now = nowBangkok()
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
+
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('countdown')
+  if (!configCheck.ok) {
+    await alertConfigIssues('countdown', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
+  }
 
   const settings = await getSettings()
 
