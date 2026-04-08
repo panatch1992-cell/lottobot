@@ -70,12 +70,13 @@ export function formatResult(lottery: Lottery, result: Result) {
   return { tg: tgLines.join('\n'), line: lineLines.join('\n') }
 }
 
-export function formatCountdown(lottery: Lottery, minutes: number) {
+export function formatCountdown(lottery: Lottery, minutes: number, addFriendLink?: string) {
   const tg = [
     `${lottery.flag} <b>${lottery.name}</b>`,
     `⏰ <b>${minutes} นาทีสุดท้าย</b> ❗❗`,
     `ส่งโพย ➕ สลิปโอน`,
     `🏠 ส่งหลังบ้านได้เลยนะครับ`,
+    ...(addFriendLink ? [`\n🔗 แอดไลน์: ${addFriendLink}`] : []),
   ].join('\n')
 
   const line = [
@@ -83,6 +84,39 @@ export function formatCountdown(lottery: Lottery, minutes: number) {
     `⏰ ${minutes} นาทีสุดท้าย ❗❗`,
     `ส่งโพย ➕ สลิปโอน`,
     `🏠 ส่งหลังบ้านได้เลยนะครับ`,
+    ...(addFriendLink ? [`\n🔗 แอดไลน์: ${addFriendLink}`] : []),
+  ].join('\n')
+
+  return { tg, line }
+}
+
+export function formatNextLottery(lottery: Lottery, closeTime: string) {
+  const tg = [
+    `📢 <b>รายการต่อไป</b>`,
+    `${lottery.flag} <b>${lottery.name}</b>`,
+    `🕐 ปิดรับ: ${closeTime} น.`,
+  ].join('\n')
+
+  const line = [
+    `\n📢 รายการต่อไป`,
+    `${lottery.flag}${lottery.flag} ${lottery.name} ${lottery.flag}${lottery.flag}`,
+    `🕐 ปิดรับ: ${closeTime} น.`,
+  ].join('\n')
+
+  return { tg, line }
+}
+
+export function formatClosing(lottery: Lottery) {
+  const tg = [
+    `${lottery.flag} <b>${lottery.name}</b>`,
+    `🔒 <b>ปิดรับแล้วครับ</b>`,
+    `รอลุ้นผลกันเลย 🎯`,
+  ].join('\n')
+
+  const line = [
+    `\n${lottery.flag}${lottery.flag} ${lottery.name} ${lottery.flag}${lottery.flag}`,
+    `🔒 ปิดรับแล้วครับ`,
+    `รอลุ้นผลกันเลย 🎯`,
   ].join('\n')
 
   return { tg, line }
