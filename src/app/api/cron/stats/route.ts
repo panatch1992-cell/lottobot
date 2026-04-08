@@ -91,11 +91,14 @@ export async function GET(req: NextRequest) {
     if (lineToken && sendStatsLine && statsQuota?.canSend) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_group_id) continue
+        const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+        const officialId = group.line_group_id || ''
+        const primaryId = unofficialId || officialId
+        if (!primaryId) continue
         if (sentStatsGroupIds.has(group.id)) continue
         if (limitStatsGroupIds.has(group.id)) continue
 
-        const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
+        const lineResult = await pushTextMessage(lineToken, primaryId, formatted.line, officialId)
         if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
         }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/messaging-service'
-import { nowBangkok, today } from '@/lib/utils'
+import { nowBangkok, today, sleep } from '@/lib/utils'
 import type { LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -121,8 +121,12 @@ export async function GET(req: NextRequest) {
     if ((target === 'line' || target === 'both') && settings.line_channel_access_token) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        if (!group.line_group_id) continue
-        await pushTextMessage(settings.line_channel_access_token, group.line_group_id, msg.message)
+        const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+        const officialId = group.line_group_id || ''
+        const primaryId = unofficialId || officialId
+        if (!primaryId) continue
+        await pushTextMessage(settings.line_channel_access_token, primaryId, msg.message, officialId)
+        await sleep(500 + Math.floor(Math.random() * 1000))
       }
     }
 
