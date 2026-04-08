@@ -361,6 +361,85 @@ function checkAuth(req, res) {
   return true
 }
 
+// ─── Test Page (เปิดจาก browser มือถือ) ─────────────────
+
+app.get('/test', (_req, res) => {
+  const tokenStatus = getTokenExpiry()
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LottoBot Test</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#eee;padding:16px;max-width:500px;margin:0 auto}
+h2{color:#c9a84c;margin-bottom:12px}
+.card{background:#16213e;border-radius:12px;padding:16px;margin-bottom:12px}
+.status{display:flex;align-items:center;gap:8px;margin:6px 0}
+.dot{width:10px;height:10px;border-radius:50%}
+.green{background:#22a867}.red{background:#dc3545}.yellow{background:#e89b1c}
+label{display:block;color:#aaa;font-size:13px;margin:8px 0 4px}
+input,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #333;background:#0f3460;color:#fff;font-size:15px}
+textarea{height:80px;resize:vertical}
+button{width:100%;padding:12px;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px}
+.btn-send{background:#22a867;color:#fff}
+.btn-send:disabled{background:#555;color:#999}
+#result{margin-top:12px;padding:12px;border-radius:8px;font-size:14px;display:none;word-break:break-all}
+.ok{background:#1b4332;border:1px solid #22a867}
+.fail{background:#3d0000;border:1px solid #dc3545}
+.loading{background:#1a1a2e;border:1px solid #e89b1c;color:#e89b1c}
+</style></head><body>
+<h2>🧪 LottoBot Unofficial Test</h2>
+
+<div class="card">
+  <div class="status"><div class="dot ${tokenStatus.expired ? 'red' : 'green'}"></div>
+    <span>Token: ${tokenStatus.expired ? '❌ หมดอายุ' : '✅ ใช้ได้ (' + Math.floor(tokenStatus.expiresIn / 3600) + 'h)'}</span></div>
+  <div class="status"><div class="dot ${LINE_AUTH_TOKEN ? 'green' : 'red'}"></div>
+    <span>Unofficial: ${LINE_AUTH_TOKEN ? '✅' : '❌'}</span></div>
+  <div class="status"><div class="dot ${LINE_CHANNEL_TOKEN ? 'green' : 'yellow'}"></div>
+    <span>Official fallback: ${LINE_CHANNEL_TOKEN ? '✅' : '⚠️ ไม่มี'}</span></div>
+</div>
+
+<div class="card">
+  <label>Group MID (to)</label>
+  <input id="to" placeholder="c... หรือ u..." />
+  <label>ข้อความ</label>
+  <textarea id="text">🧪 ทดสอบ LottoBot unofficial</textarea>
+  <button class="btn-send" onclick="testSend()">📤 ส่งทดสอบ</button>
+  <div id="result"></div>
+</div>
+
+<script>
+async function testSend() {
+  const to = document.getElementById('to').value.trim()
+  const text = document.getElementById('text').value.trim()
+  const btn = document.querySelector('.btn-send')
+  const result = document.getElementById('result')
+  if (!to || !text) { alert('กรอก MID + ข้อความ'); return }
+  btn.disabled = true; btn.textContent = '⏳ กำลังส่ง...'
+  result.style.display = 'block'; result.className = 'loading'; result.textContent = 'กำลังส่ง...'
+  try {
+    const res = await fetch('/debug-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, text })
+    })
+    const data = await res.json()
+    if (data.sendResult?.success) {
+      result.className = 'ok'
+      result.innerHTML = '✅ ส่งสำเร็จ!<br>via: ' + (data.sendResult.via || 'unofficial') +
+        '<br>toType: ' + data.diagnostics?.toTypeLabel
+    } else {
+      result.className = 'fail'
+      result.innerHTML = '❌ ส่งไม่สำเร็จ<br>error: ' + (data.sendResult?.error || JSON.stringify(data))
+    }
+  } catch (e) {
+    result.className = 'fail'; result.textContent = '❌ ' + e.message
+  }
+  btn.disabled = false; btn.textContent = '📤 ส่งทดสอบ'
+}
+</script>
+</body></html>`)
+})
+
 // ─── Health ──────────────────────────────────────────────
 
 app.get('/health', (_req, res) => {
