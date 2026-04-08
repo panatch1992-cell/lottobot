@@ -14,7 +14,8 @@
   .doc-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 32px 0 24px; border-bottom: 3px solid #1a3a6b; }
   .company-info { }
   .company-info .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-  .company-info .logo .icon { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .company-info .logo .icon { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; }
+  .company-info .logo .icon img { width: 100%; height: 100%; object-fit: cover; }
   .company-info .name { font-size: 18px; font-weight: 700; color: #1a3a6b; }
   .company-info .name-en { font-size: 11px; color: #888; font-weight: 400; }
   .company-info .address { font-size: 11px; color: #888; margin-top: 4px; }
@@ -115,13 +116,7 @@
   <div class="doc-header">
     <div class="company-info">
       <div class="logo">
-        <div class="icon">
-          <svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
-            <rect width="44" height="44" rx="6" fill="#1a3a6b"/>
-            <path d="M10 32V16l7 10 7-10v16" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M22 14c0 0-2.5-4-5.5-4S11 12.5 11 14.5c0 4 5.5 7 11 11 5.5-4 11-7 11-11 0-2-1.5-4.5-4.5-4.5S22 14 22 14z" fill="#e74c3c" opacity="0.9"/>
-          </svg>
-        </div>
+        <div class="icon"><img src="/logo.jpg" alt="Mind Fitness"></div>
         <div>
           <div class="name">บริษัท มายด์ ฟิตเนส จำกัด</div>
           <div class="name-en">MIND FITNESS COMPANY LIMITED</div>
