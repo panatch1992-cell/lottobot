@@ -578,20 +578,32 @@ function SettingsContent() {
             </div>
           </div>
 
-          {/* Countdown */}
+          {/* Countdown + Flow */}
           <div className="card space-y-3">
-            <h3 className="font-semibold text-sm">⏰ Countdown</h3>
+            <h3 className="font-semibold text-sm">⏰ Flow ข้อความก่อนหวยออก</h3>
+            <p className="text-[11px] text-text-secondary">ระบบจะส่งอัตโนมัติตามลำดับ: 📢 รายการต่อไป → 📊 สถิติ → 🖼️ รูปสุ่ม → ⏰ เตือน 20/10/5 นาที → 🔒 ปิดรับ → 🎯 ผล</p>
             <div>
-              <label className="label">แจ้งเตือนก่อนปิดรับ (นาที)</label>
+              <label className="label">🔗 ลิงก์แอดไลน์ (ท้ายข้อความ countdown)</label>
               <input
                 type="text"
-                value={settings.countdown_intervals || '20,10,5'}
-                onChange={e => setSettings(prev => ({ ...prev, countdown_intervals: e.target.value }))}
+                value={settings.line_add_friend_link || ''}
+                onChange={e => setSettings(prev => ({ ...prev, line_add_friend_link: e.target.value }))}
                 className="input font-mono text-sm"
-                placeholder="20,10,5"
+                placeholder="https://line.me/R/ti/p/@xxx"
               />
-              <p className="text-[10px] text-text-secondary mt-1">คั่นด้วยคอมมา เช่น 20,10,5 = แจ้ง 3 ครั้ง</p>
-              <button onClick={() => saveSetting('countdown_intervals', settings.countdown_intervals || '20,10,5')} className="btn-primary text-xs mt-2">💾 บันทึก</button>
+              <button onClick={() => saveSetting('line_add_friend_link', settings.line_add_friend_link || '')} className="btn-primary text-xs mt-2">💾 บันทึก</button>
+            </div>
+            <div>
+              <label className="label">🖼️ URL เว็บรูปสุ่ม</label>
+              <input
+                type="text"
+                value={settings.random_image_url || 'https://www.huaypnk.com/top'}
+                onChange={e => setSettings(prev => ({ ...prev, random_image_url: e.target.value }))}
+                className="input font-mono text-sm"
+                placeholder="https://www.huaypnk.com/top"
+              />
+              <p className="text-[10px] text-text-secondary mt-1">ระบบจะดึงรูปจากเว็บนี้ + ส่งลิงก์ custom_link ของแต่ละกลุ่ม</p>
+              <button onClick={() => saveSetting('random_image_url', settings.random_image_url || 'https://www.huaypnk.com/top')} className="btn-primary text-xs mt-2">💾 บันทึก</button>
             </div>
           </div>
         </div>

@@ -1,15 +1,166 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
-import { formatCountdown } from '@/lib/formatter'
+import { formatCountdown, formatStats, formatNextLottery, formatClosing } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { pushTextMessage, pushImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
-import type { Lottery, LineGroup } from '@/types'
+import type { Lottery, LineGroup, Result } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
-// แจ้งเตือนก่อนปิดรับ — ค่า default, ลูกค้าตั้งเองได้จาก settings
-const DEFAULT_COUNTDOWN = '5'
+// ─── Flow ข้อความก่อนหวยออก ─────────────────────────────
+// 1. 📢 บอกรายการหวยต่อไป (30 นาทีก่อนปิด)
+// 2. 📊 สถิติหวยนั้นๆ (29 นาทีก่อนปิด)
+// 3. 🖼️ รูปสุ่มจากเว็บ (28 นาทีก่อนปิด)
+// 4. ⏰ เตือน 20 นาที + ลิงก์แอดไลน์
+// 5. ⏰ เตือน 10 นาที + ลิงก์แอดไลน์
+// 6. ⏰ เตือน 5 นาที + ลิงก์แอดไลน์
+// 7. 🔒 ปิดรับ (0 นาที)
+// 8. 🎯 ผลหวย (handled by cron/scrape)
+
+const FLOW_STEPS = [
+  { type: 'next_lottery', minutesBefore: 30 },
+  { type: 'stats', minutesBefore: 29 },
+  { type: 'random_image', minutesBefore: 28 },
+  { type: 'countdown', minutesBefore: 20 },
+  { type: 'countdown', minutesBefore: 10 },
+  { type: 'countdown', minutesBefore: 5 },
+  { type: 'closing', minutesBefore: 0 },
+]
+
+// ─── Scrape random images from web ──────────────────────
+
+async function scrapeRandomImages(url: string, count: number): Promise<string[]> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return []
+    const html = await res.text()
+
+    // Extract image URLs from the page
+    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+    const images: string[] = []
+    let match
+    while ((match = imgRegex.exec(html)) !== null) {
+      let src = match[1]
+      // Filter: only lottery/prediction images, skip icons/logos
+      if (src.includes('logo') || src.includes('icon') || src.includes('favicon')) continue
+      if (src.length < 20) continue
+      // Make absolute URL
+      if (src.startsWith('//')) src = 'https:' + src
+      else if (src.startsWith('/')) {
+        try { src = new URL(src, url).href } catch { continue }
+      }
+      if (src.startsWith('http')) images.push(src)
+    }
+
+    // Shuffle and pick N unique images
+    const shuffled = images.sort(() => Math.random() - 0.5)
+    return shuffled.slice(0, count)
+  } catch (err) {
+    console.error(`[countdown] scrapeRandomImages error: ${err instanceof Error ? err.message : err}`)
+    return []
+  }
+}
+
+// ─── Check if already sent ──────────────────────────────
+
+async function alreadySent(
+  db: ReturnType<typeof getServiceClient>,
+  lotteryId: string,
+  msgType: string,
+  todayStr: string,
+  tag: string,
+  groupId?: string,
+): Promise<boolean> {
+  let query = db.from('send_logs')
+    .select('id')
+    .eq('lottery_id', lotteryId)
+    .eq('msg_type', msgType)
+    .eq('status', 'sent')
+    .gte('created_at', todayStr)
+    .like('error_message', `%${tag}%`)
+
+  if (groupId) {
+    query = query.eq('line_group_id', groupId)
+  } else {
+    query = query.eq('channel', 'telegram')
+  }
+
+  const { data } = await query
+  return (data || []).length > 0
+}
+
+// ─── Log send ───────────────────────────────────────────
+
+async function logSend(
+  db: ReturnType<typeof getServiceClient>,
+  lotteryId: string,
+  channel: string,
+  msgType: string,
+  success: boolean,
+  tag: string,
+  error?: string,
+  groupId?: string,
+) {
+  await db.from('send_logs').insert({
+    lottery_id: lotteryId,
+    line_group_id: groupId || null,
+    channel,
+    msg_type: msgType,
+    status: success ? 'sent' : 'failed',
+    sent_at: new Date().toISOString(),
+    error_message: success ? tag : `${tag}: ${error}`,
+  })
+}
+
+// ─── Send to all LINE groups ────────────────────────────
+
+async function sendToLineGroups(
+  db: ReturnType<typeof getServiceClient>,
+  lottery: Lottery,
+  groups: LineGroup[],
+  text: string,
+  msgType: string,
+  tag: string,
+  todayStr: string,
+  imageUrl?: string,
+) {
+  const lineToken = 'unused' // backward compat
+  let sentCount = 0
+
+  for (const group of groups) {
+    const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+    const officialId = group.line_group_id || ''
+    const primaryId = unofficialId || officialId
+    if (!primaryId) continue
+
+    // Skip if already sent to this group
+    if (await alreadySent(db, lottery.id, msgType, todayStr, tag, group.id)) continue
+
+    let result
+    if (imageUrl) {
+      result = await pushImageAndText(lineToken, primaryId, imageUrl, text, officialId)
+    } else {
+      result = await pushTextMessage(lineToken, primaryId, text, officialId)
+    }
+
+    if (!result.success && result.error?.includes('monthly limit')) {
+      await flagMonthlyLimitHit()
+    }
+
+    await logSend(db, lottery.id, 'line', msgType, result.success, tag, result.error, group.id)
+    if (result.success) sentCount++
+
+    await sleep(500 + Math.floor(Math.random() * 1000))
+  }
+
+  return sentCount
+}
+
+// ─── Main handler ───────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -23,21 +174,18 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings + countdown intervals
   const settings = await getSettings()
 
-  // Default ปิด countdown (ประหยัด quota) — เปิดได้ที่ /settings
   if (settings.send_countdown !== 'true') {
-    return NextResponse.json({ sent: 0, lotteries: [], skipped: 'countdown disabled', timestamp: new Date().toISOString() })
+    return NextResponse.json({ sent: 0, skipped: 'countdown disabled' })
   }
 
-  const COUNTDOWN_INTERVALS = (settings.countdown_intervals || DEFAULT_COUNTDOWN)
-    .split(',')
-    .map(Number)
-    .filter(n => n > 0)
+  const addFriendLink = settings.line_add_friend_link || ''
+  const randomImageUrl = settings.random_image_url || 'https://www.huaypnk.com/top'
 
-  // Get active lotteries with close_time
   const { data: lotteries } = await db.from('lotteries').select('*').eq('status', 'active')
+  const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
+  const activeGroups = (groups || []) as LineGroup[]
 
   const sent: string[] = []
 
@@ -46,80 +194,118 @@ export async function GET(req: NextRequest) {
     if (!closeTime) continue
     const closeMinutes = timeToMinutes(closeTime)
 
-    for (const mins of COUNTDOWN_INTERVALS) {
-      const countdownAt = closeMinutes - mins
+    for (const step of FLOW_STEPS) {
+      const triggerAt = closeMinutes - step.minutesBefore
 
       // ตรงเวลา? (ภายใน 1 นาที)
-      if (nowMinutes < countdownAt || nowMinutes > countdownAt + 1) continue
+      if (nowMinutes < triggerAt || nowMinutes > triggerAt + 1) continue
 
-      // เช็คว่าส่ง TG ไปแล้ว
-      const { data: existing } = await db.from('send_logs')
-        .select('id, channel, line_group_id, status, error_message')
-        .eq('lottery_id', lottery.id)
-        .eq('msg_type', 'countdown')
-        .gte('created_at', todayStr)
-        .like('error_message', `%${mins}min%`)
+      const tag = `${step.type}_${step.minutesBefore}min`
+      const tgSent = await alreadySent(db, lottery.id, step.type, todayStr, tag)
 
-      const alreadySentTG = existing?.some(e => e.channel === 'telegram' && e.status === 'sent')
+      // ─── Step 1: 📢 บอกรายการหวยต่อไป ──────
+      if (step.type === 'next_lottery') {
+        const closeTimeStr = closeTime.slice(0, 5) // "HH:MM"
+        const formatted = formatNextLottery(lottery, closeTimeStr)
 
-      // Per-group: track which LINE groups already sent or hit limit
-      const sentCountdownGroupIds = new Set(
-        (existing || [])
-          .filter(e => e.channel === 'line' && e.status === 'sent' && e.line_group_id)
-          .map(e => e.line_group_id)
-      )
-      const limitCountdownGroupIds = new Set(
-        (existing || [])
-          .filter(e => e.channel === 'line' && e.error_message?.includes('monthly limit') && e.line_group_id)
-          .map(e => e.line_group_id)
-      )
+        if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
+          const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
+          await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
+        }
 
-      const formatted = formatCountdown(lottery, mins)
-
-      // Send to Telegram (skip if already sent)
-      if (!alreadySentTG && settings.telegram_bot_token && settings.telegram_admin_channel) {
-        const result = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
-        await db.from('send_logs').insert({
-          lottery_id: lottery.id,
-          channel: 'telegram',
-          msg_type: 'countdown',
-          status: result.success ? 'sent' : 'failed',
-          sent_at: new Date().toISOString(),
-          error_message: result.success ? `${mins}min` : `${mins}min: ${result.error}`,
-        })
+        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+        sent.push(`${lottery.name} (📢 next)`)
       }
 
-      // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
-      const lineToken = settings.line_channel_access_token
-      const countdownQuota = lineToken ? await checkLineQuota() : null
-      if (lineToken && countdownQuota?.canSend) {
-        const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
-        for (const group of (groups || []) as LineGroup[]) {
-          if (!group.line_group_id) continue
-          if (sentCountdownGroupIds.has(group.id)) continue
-          if (limitCountdownGroupIds.has(group.id)) continue
+      // ─── Step 2: 📊 สถิติ ──────────────────
+      if (step.type === 'stats') {
+        const statsCount = Number(settings.stats_count) || 10
+        const { data: results } = await db.from('results')
+          .select('*')
+          .eq('lottery_id', lottery.id)
+          .order('draw_date', { ascending: false })
+          .limit(statsCount)
 
-          const lineResult = await pushTextMessage(lineToken, group.line_group_id, formatted.line)
-          if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
-            await flagMonthlyLimitHit()
+        if (results && results.length > 0) {
+          const formatted = formatStats(lottery, results as Result[])
+
+          if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
+            const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
+            await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
           }
-          await db.from('send_logs').insert({
-            lottery_id: lottery.id,
-            line_group_id: group.id,
-            channel: 'line',
-            msg_type: 'countdown',
-            status: lineResult.success ? 'sent' : 'failed',
-            sent_at: new Date().toISOString(),
-            error_message: lineResult.success ? `${mins}min` : `${mins}min: ${lineResult.error}`,
-          })
-          // Short delay between groups
-          await sleep(500 + Math.floor(Math.random() * 1000))
+
+          await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+          sent.push(`${lottery.name} (📊 stats)`)
         }
       }
 
-      sent.push(`${lottery.name} (${mins}นาที)`)
+      // ─── Step 3: 🖼️ รูปสุ่มจากเว็บ ────────
+      if (step.type === 'random_image') {
+        const images = await scrapeRandomImages(randomImageUrl, activeGroups.length + 5)
+
+        if (images.length > 0) {
+          const lineToken = 'unused'
+          let imgIdx = 0
+
+          for (const group of activeGroups) {
+            const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+            const officialId = group.line_group_id || ''
+            const primaryId = unofficialId || officialId
+            if (!primaryId) continue
+
+            if (await alreadySent(db, lottery.id, step.type, todayStr, tag, group.id)) continue
+
+            // แต่ละกลุ่มรูปไม่ซ้ำ
+            const imgUrl = images[imgIdx % images.length]
+            imgIdx++
+
+            // ใช้ custom_link ของกลุ่ม ถ้ามี ไม่งั้นใช้ URL หลัก
+            const groupLink = group.custom_link || randomImageUrl
+            const caption = `🎰 ${lottery.flag} ${lottery.name}\n🔗 ${groupLink}`
+
+            const result = await pushImageAndText(lineToken, primaryId, imgUrl, caption, officialId)
+            await logSend(db, lottery.id, 'line', step.type, result.success, tag, result.error, group.id)
+
+            await sleep(500 + Math.floor(Math.random() * 1000))
+          }
+
+          sent.push(`${lottery.name} (🖼️ image)`)
+        }
+      }
+
+      // ─── Steps 4-6: ⏰ Countdown ──────────
+      if (step.type === 'countdown') {
+        const formatted = formatCountdown(lottery, step.minutesBefore, addFriendLink)
+
+        if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
+          const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
+          await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
+        }
+
+        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+        sent.push(`${lottery.name} (⏰ ${step.minutesBefore}min)`)
+      }
+
+      // ─── Step 7: 🔒 ปิดรับ ────────────────
+      if (step.type === 'closing') {
+        const formatted = formatClosing(lottery)
+
+        if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
+          const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
+          await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
+        }
+
+        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+        sent.push(`${lottery.name} (🔒 closed)`)
+      }
+
+      // Step 8: 🎯 ผลหวย — handled by cron/scrape
     }
   }
 
-  return NextResponse.json({ sent: sent.length, lotteries: sent, timestamp: new Date().toISOString() })
+  return NextResponse.json({
+    sent: sent.length,
+    steps: sent,
+    timestamp: new Date().toISOString(),
+  })
 }
