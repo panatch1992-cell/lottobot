@@ -44,6 +44,9 @@ export interface LineGroup {
   unofficial_group_id: string | null
   member_count: number
   is_active: boolean
+  custom_link: string | null
+  custom_message: string | null
+  send_all_lotteries: boolean
   created_at: string
   updated_at: string
 }
