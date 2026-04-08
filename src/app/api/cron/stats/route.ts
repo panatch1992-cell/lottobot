@@ -5,6 +5,7 @@ import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { sleep } from '@/lib/utils'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { Lottery, Result, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -16,12 +17,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('stats')
+  if (!configCheck.ok) {
+    await alertConfigIssues('stats', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
+  }
+
   const db = getServiceClient()
   const now = nowBangkok()
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings
   const settings = await getSettings()
 
   // Default ปิดส่งสถิติทาง LINE (ประหยัด quota) — เปิดได้ที่ /settings

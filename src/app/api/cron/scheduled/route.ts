@@ -3,6 +3,7 @@ import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage } from '@/lib/messaging-service'
 import { nowBangkok, today, sleep } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -14,13 +15,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('scheduled')
+  if (!configCheck.ok) {
+    await alertConfigIssues('scheduled', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
+  }
+
   const db = getServiceClient()
   const now = nowBangkok()
   const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   const todayStr = today()
-  const dayOfWeek = now.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const dayOfWeek = now.getDay()
 
-  // Get settings
   const settings = await getSettings()
 
   // Get active scheduled messages that should send now

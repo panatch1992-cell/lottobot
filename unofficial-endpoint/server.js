@@ -313,8 +313,28 @@ async function sendViaUnofficial(to, text) {
       return { success: false, error: `HTTP ${res.status}` }
     }
 
-    console.log(`[unofficial] ✅ Sent to ${to.slice(-8)} (${resBuffer.length}b)`)
-    return { success: true, via: 'unofficial' }
+    // ─── Delivery Proof Validation ─────────────────────
+    // Success response should contain:
+    // 1. Thrift REPLY type (msgType=1) in header
+    // 2. Response body > 10 bytes (contains message struct back)
+    // 3. The 'to' MID echoed back in response
+    const isReply = resBuffer.length >= 3 && resBuffer[0] === 0x82 &&
+      (((resBuffer[1] >> 5) & 0x03) === 1)
+    const hasContent = resBuffer.length > 10
+    const echoedMid = bodyStr.includes(to.slice(-10))
+
+    if (!isReply) {
+      console.warn(`[unofficial] ⚠️ Response is not REPLY type (${resBuffer.length}b)`)
+      return { success: false, error: 'No REPLY in response — message may not be delivered' }
+    }
+
+    if (!hasContent) {
+      console.warn(`[unofficial] ⚠️ Response too short (${resBuffer.length}b)`)
+      return { success: false, error: 'Response too short — no delivery proof' }
+    }
+
+    console.log(`[unofficial] ✅ Sent to ${to.slice(-8)} (${resBuffer.length}b, reply=${isReply}, echo=${echoedMid})`)
+    return { success: true, via: 'unofficial', proof: { bytes: resBuffer.length, reply: isReply, echo: echoedMid } }
   } catch (err) {
     const errMsg = err.name === 'AbortError' ? 'Timeout (15s)' : err.message
     return { success: false, error: `Unofficial: ${errMsg}` }
@@ -338,10 +358,15 @@ async function sendViaOfficial(to, messages) {
       body: JSON.stringify({ to, messages }),
     })
 
+    const body = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      return { success: false, error: `Official HTTP ${res.status}: ${body.slice(0, 200)}` }
+      return { success: false, error: `Official HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}` }
     }
+    // LINE official API returns {} on success, error body on failure
+    if (body.message) {
+      return { success: false, error: `Official: ${body.message}` }
+    }
+    console.log(`[official] ✅ Sent to ${to.slice(-8)}`)
     return { success: true, via: 'official' }
   } catch (err) {
     return { success: false, error: `Official: ${err.message}` }

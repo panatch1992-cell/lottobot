@@ -7,6 +7,7 @@ import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText, broadcastImageAndText, broadcastText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
+import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
 import type { Lottery, ScrapeSource, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -210,6 +211,13 @@ export async function GET(req: NextRequest) {
   const testMode = req.nextUrl.searchParams.get('test') === '1'
   if (!testMode && secret !== process.env.CRON_SECRET && process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // ─── Config Guard ──────────────────────────────────────
+  const configCheck = await validateCronConfig('scrape')
+  if (!configCheck.ok) {
+    await alertConfigIssues('scrape', configCheck.issues)
+    return NextResponse.json({ error: 'Config issues', issues: configCheck.issues })
   }
 
   const db = getServiceClient()
