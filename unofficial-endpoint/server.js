@@ -57,15 +57,13 @@ async function refreshTokenIfNeeded() {
   const { expired, expiresIn } = getTokenExpiry()
   const ONE_DAY = 86400
 
-  // Refresh if expired or expiring within 1 day
   if (!expired && expiresIn > ONE_DAY) return { refreshed: false, reason: `token valid for ${Math.floor(expiresIn / 3600)}h` }
-
   if (!LINE_AUTH_TOKEN) return { refreshed: false, reason: 'no token' }
 
   console.log(`[refresh] Token ${expired ? 'EXPIRED' : `expiring in ${Math.floor(expiresIn / 3600)}h`} — refreshing...`)
 
+  // Method 1: LINE's Thrift refreshToken on AuthService
   try {
-    // LINE token refresh: call issueV3TokenForPrimary with current token
     const controller1 = new AbortController()
     setTimeout(() => controller1.abort(), 10000)
     const refreshRes = await fetch(LINE_THRIFT_API + '/RS4', {
@@ -81,74 +79,77 @@ async function refreshTokenIfNeeded() {
     })
 
     if (refreshRes.ok) {
-      const body = await refreshRes.text()
-      // Try to extract new token from response
-      const tokenMatch = body.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
+      const buf = Buffer.from(await refreshRes.arrayBuffer())
+      const bodyStr = buf.toString('utf-8')
+      const tokenMatch = bodyStr.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
       if (tokenMatch) {
         LINE_AUTH_TOKEN = tokenMatch[0]
-        console.log('[refresh] ✅ Token refreshed successfully!')
+        console.log('[refresh] ✅ Token refreshed via RS4!')
         return { refreshed: true, newExpiry: getTokenExpiry().expiresAt }
       }
     }
+  } catch (err) {
+    console.warn('[refresh] RS4 failed:', err.message)
+  }
 
-    // Alternative: try v4 auth refresh endpoint
+  // Method 2: LINE's v4 auth endpoint
+  try {
     const controller2 = new AbortController()
     setTimeout(() => controller2.abort(), 10000)
-    const refreshRes2 = await fetch(LINE_THRIFT_API + '/api/v4/auth/refreshToken', {
+    const refreshRes2 = await fetch(LINE_THRIFT_API + '/api/v4p/rs', {
       method: 'POST',
       headers: {
         ...LINE_APP_HEADER,
         'X-Line-Access': LINE_AUTH_TOKEN,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-thrift',
+        'Accept': 'application/x-thrift',
       },
-      body: JSON.stringify({ refreshToken: LINE_AUTH_TOKEN }),
+      body: buildRefreshTokenThrift(),
       signal: controller2.signal,
     })
 
     if (refreshRes2.ok) {
-      const data = await refreshRes2.json().catch(() => null)
-      if (data?.accessToken || data?.authToken || data?.token) {
-        LINE_AUTH_TOKEN = data.accessToken || data.authToken || data.token
-        console.log('[refresh] ✅ Token refreshed via v4 auth!')
+      const buf = Buffer.from(await refreshRes2.arrayBuffer())
+      const bodyStr = buf.toString('utf-8')
+      const tokenMatch = bodyStr.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
+      if (tokenMatch) {
+        LINE_AUTH_TOKEN = tokenMatch[0]
+        console.log('[refresh] ✅ Token refreshed via v4p!')
         return { refreshed: true, newExpiry: getTokenExpiry().expiresAt }
       }
     }
-
-    console.warn('[refresh] ❌ Could not refresh — will use official fallback when expired')
-    return { refreshed: false, reason: 'refresh endpoints did not return new token' }
   } catch (err) {
-    console.error('[refresh] Error:', err.message)
-    return { refreshed: false, reason: err.message }
+    console.warn('[refresh] v4p failed:', err.message)
   }
+
+  console.warn('[refresh] ❌ Could not refresh token')
+  return { refreshed: false, reason: 'all refresh methods failed' }
 }
 
 function buildRefreshTokenThrift() {
-  // Minimal Thrift request for token refresh
   const parts = []
   parts.push(Buffer.from([0x82, 0x21, 0x01]))
   parts.push(writeString('refresh'))
-  parts.push(writeVarint(0))
+  parts.push(writeUVarint(0))
   parts.push(Buffer.from([0x00]))
   return Buffer.concat(parts)
 }
 
-// Auto-refresh every 6 hours (non-blocking)
+// Auto-refresh every 6 hours
 setInterval(() => {
   refreshTokenIfNeeded()
     .then(r => console.log('[auto-refresh]', JSON.stringify(r)))
     .catch(e => console.error('[auto-refresh] error:', e.message))
 }, 6 * 60 * 60 * 1000)
 
-// Refresh on startup (delayed, non-blocking — don't block health check)
+// Refresh on startup (delayed)
 setTimeout(() => {
   refreshTokenIfNeeded()
     .then(r => console.log('[startup-refresh]', JSON.stringify(r)))
     .catch(e => console.error('[startup-refresh] error:', e.message))
-}, 30000) // wait 30s after startup to avoid blocking health check
+}, 30000)
 
 // ─── Thrift Compact Protocol Encoder ─────────────────────
-// LINE uses TCompactProtocol for internal API
-// We only need sendMessage which is method ID 0 on TalkService
 
 function writeVarint(value) {
   const bytes = []
@@ -176,47 +177,61 @@ function writeString(str) {
   return Buffer.concat([writeUVarint(buf.length), buf])
 }
 
-function writeByte(val) {
-  return Buffer.from([val & 0xff])
+// Detect MID type from prefix
+// c = GROUP(2), r = ROOM(1), u = USER(0)
+function getMidType(mid) {
+  if (!mid) return 0
+  const prefix = mid.charAt(0).toLowerCase()
+  if (prefix === 'c') return 2 // GROUP
+  if (prefix === 'r') return 1 // ROOM
+  return 0 // USER
 }
 
 // Build TCompact sendMessage payload
-// TalkService.sendMessage(seq: i32, message: Message)
-// Message struct: { to: string(2), text: string(10), contentType: i32(15) }
+// TalkService.sendMessage(1: i32 seq, 2: Message message)
+// Message struct fields:
+//   1: string _from
+//   2: string to
+//   3: MIDType toType (i32 enum: USER=0, ROOM=1, GROUP=2)
+//   10: string text
+//   15: ContentType contentType (i32)
 function buildSendMessageThrift(seq, to, text, contentType = 0) {
   const parts = []
+  const toType = getMidType(to)
 
-  // Method header: sendMessage, CALL, seqid
-  // Compact protocol method call: [protocol_id, version, type, method_name, seqid]
-  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol_id=0x82, version=1, type=CALL
-  parts.push(writeString('sendMessage')) // method name
-  parts.push(writeVarint(seq)) // sequence id
+  // Method header
+  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol=compact, version=1, type=CALL
+  parts.push(writeString('sendMessage'))
+  parts.push(writeUVarint(seq)) // seqid (unsigned varint)
 
-  // Field 1: seq (i32) - field delta 1, type 5 (i32)
-  parts.push(Buffer.from([0x15])) // delta=1, type=5(i32)
-  parts.push(writeVarint(0)) // seq = 0
+  // Args field 1: seq (i32) - delta=1, type=5(i32)
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(0))
 
-  // Field 2: message (struct) - field delta 1, type 12 (struct)
-  parts.push(Buffer.from([0x1c])) // delta=1, type=12(struct)
+  // Args field 2: message (struct) - delta=1, type=12(struct)
+  parts.push(Buffer.from([0x1c]))
 
-  // Message.to (field 2, string) - field id 2, type 8 (string)
-  parts.push(Buffer.from([0x28])) // delta=2, type=8(string)
+  // --- Inside Message struct ---
+
+  // Message.to (field 2, string) - delta=2 from 0, type=8(string)
+  parts.push(Buffer.from([0x28]))
   parts.push(writeString(to))
 
-  // Message.text (field 10, string) - field id 10
-  // delta from 2 to 10 = 8
-  parts.push(Buffer.from([0x88])) // delta=8, type=8(string)
+  // Message.toType (field 3, i32) - delta=1 from 2, type=5(i32)
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(toType))
+
+  // Message.text (field 10, string) - delta=7 from 3, type=8(string)
+  parts.push(Buffer.from([0x78])) // delta=7, type=8
   parts.push(writeString(text))
 
-  // Message.contentType (field 15, i32)
-  // delta from 10 to 15 = 5
-  parts.push(Buffer.from([0x55])) // delta=5, type=5(i32)
+  // Message.contentType (field 15, i32) - delta=5 from 10, type=5(i32)
+  parts.push(Buffer.from([0x55]))
   parts.push(writeVarint(contentType))
 
-  // End of Message struct
+  // End Message struct
   parts.push(Buffer.from([0x00]))
-
-  // End of args struct
+  // End args struct
   parts.push(Buffer.from([0x00]))
 
   return Buffer.concat(parts)
@@ -229,15 +244,25 @@ async function sendViaUnofficial(to, text) {
     return { success: false, error: 'LINE_AUTH_TOKEN not configured' }
   }
 
-  // Auto-refresh if expired
+  // Auto-refresh if token expired
   const { expired } = getTokenExpiry()
   if (expired) {
-    console.log('[send] Token expired — refreshing before send...')
+    console.log('[send] Token expired — refreshing...')
     await refreshTokenIfNeeded()
+    const after = getTokenExpiry()
+    if (after.expired) {
+      return { success: false, error: 'Token expired — refresh failed. ต้องใช้ token ใหม่' }
+    }
   }
 
   try {
     const payload = buildSendMessageThrift(0, to, text)
+    const toType = getMidType(to)
+
+    console.log(`[unofficial] Sending to ${to.slice(-8)} (type=${toType}) text=${text.slice(0, 50)}...`)
+
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 15000)
 
     const res = await fetch(LINE_THRIFT_API + '/S4', {
       method: 'POST',
@@ -248,16 +273,51 @@ async function sendViaUnofficial(to, text) {
         'Accept': 'application/x-thrift',
       },
       body: payload,
+      signal: controller.signal,
     })
 
-    if (res.ok) {
-      return { success: true, via: 'unofficial' }
+    const resBuffer = Buffer.from(await res.arrayBuffer())
+
+    if (resBuffer.length === 0) {
+      return { success: false, error: 'Empty response from LINE' }
     }
 
-    const body = await res.text().catch(() => '')
-    return { success: false, error: `Thrift HTTP ${res.status}: ${body.slice(0, 200)}` }
+    // Check for error strings in Thrift response body
+    const bodyStr = resBuffer.toString('utf-8', 0, Math.min(resBuffer.length, 500))
+    const errorPatterns = [
+      'AUTHENTICATION_DIVERTED_MIGRATION',
+      'AUTHENTICATION_FAILED',
+      'INVALID_SESSION',
+      'NOT_AUTHORIZED',
+      'ABUSE_BLOCK',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+      'E_ILLEGAL_ARGUMENT',
+    ]
+    const foundError = errorPatterns.find(p => bodyStr.includes(p))
+    if (foundError) {
+      console.error(`[unofficial] ❌ Thrift error: ${foundError}`)
+      return { success: false, error: `LINE error: ${foundError}` }
+    }
+
+    // Check TCompact header for EXCEPTION type
+    if (resBuffer.length >= 3 && resBuffer[0] === 0x82) {
+      const msgType = (resBuffer[1] >> 5) & 0x03
+      if (msgType === 2) { // EXCEPTION
+        console.error('[unofficial] ❌ Thrift EXCEPTION')
+        return { success: false, error: `Thrift EXCEPTION: ${bodyStr.slice(0, 200)}` }
+      }
+    }
+
+    if (!res.ok) {
+      return { success: false, error: `HTTP ${res.status}` }
+    }
+
+    console.log(`[unofficial] ✅ Sent to ${to.slice(-8)} (${resBuffer.length}b)`)
+    return { success: true, via: 'unofficial' }
   } catch (err) {
-    return { success: false, error: `Unofficial: ${err.message}` }
+    const errMsg = err.name === 'AbortError' ? 'Timeout (15s)' : err.message
+    return { success: false, error: `Unofficial: ${errMsg}` }
   }
 }
 
@@ -311,7 +371,7 @@ app.get('/health', (_req, res) => {
     hasAuthToken: !!AUTH_TOKEN,
     hasLineToken: !!LINE_CHANNEL_TOKEN,
     hasUnofficialToken: !!LINE_AUTH_TOKEN,
-    mode: LINE_AUTH_TOKEN ? 'unofficial (primary) + official (fallback)' : 'official only',
+    mode: LINE_AUTH_TOKEN ? 'unofficial (primary)' : 'official only',
     token: LINE_AUTH_TOKEN ? {
       expired: tokenStatus.expired,
       expiresIn: `${Math.floor(tokenStatus.expiresIn / 3600)}h`,
@@ -323,11 +383,53 @@ app.get('/health', (_req, res) => {
   })
 })
 
-// Manual refresh trigger
+// Manual refresh
 app.post('/refresh', async (req, res) => {
   if (!checkAuth(req, res)) return
   const result = await refreshTokenIfNeeded()
   res.json(result)
+})
+
+// ─── Update token (สำหรับกรณีต้องเปลี่ยน token ใหม่) ────
+
+app.post('/update-token', (req, res) => {
+  if (!checkAuth(req, res)) return
+  const { token } = req.body || {}
+  if (!token) return res.status(400).json({ success: false, error: 'token is required' })
+
+  LINE_AUTH_TOKEN = token
+  const expiry = getTokenExpiry()
+  console.log(`[update-token] Token updated! Expires: ${expiry.expiresAt}`)
+  res.json({ success: true, expiry })
+})
+
+// ─── Debug: test send + diagnostics ─────────────────────
+
+app.post('/debug-send', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  const { to, text } = req.body || {}
+  if (!to) return res.status(400).json({ error: 'to is required' })
+
+  const testText = text || `🧪 LottoBot test ${new Date().toLocaleString('th-TH')}`
+  const tokenStatus = getTokenExpiry()
+  const toType = getMidType(to)
+
+  console.log(`[debug-send] to=${to}, toType=${toType}, tokenExpired=${tokenStatus.expired}`)
+
+  const result = await sendViaUnofficial(to, testText)
+
+  res.json({
+    sendResult: result,
+    diagnostics: {
+      to: to.slice(-8),
+      toType,
+      toTypeLabel: ['USER', 'ROOM', 'GROUP'][toType] || 'UNKNOWN',
+      tokenExpired: tokenStatus.expired,
+      tokenExpiresAt: tokenStatus.expiresAt,
+      tokenExpiresIn: `${Math.floor(tokenStatus.expiresIn / 3600)}h`,
+    },
+  })
 })
 
 // ─── Send endpoint ───────────────────────────────────────
@@ -340,15 +442,14 @@ app.post('/send', async (req, res) => {
 
   const officialGroupId = officialTo || to
 
-  // For text messages: try unofficial first
   if (mode === 'push_text') {
     if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
 
-    // 1. Try unofficial (Thrift)
+    // 1. Try unofficial (Thrift) — primary
     if (LINE_AUTH_TOKEN) {
       const result = await sendViaUnofficial(to, text)
       if (result.success) return res.json(result)
-      console.warn('[unofficial failed]', result.error, '→ trying official')
+      console.warn('[send] unofficial failed:', result.error, '→ fallback official')
     }
 
     // 2. Fallback to official
@@ -360,16 +461,14 @@ app.post('/send', async (req, res) => {
     return res.status(502).json({ success: false, error: 'No working LINE credentials' })
   }
 
-  // For image+text: try unofficial text only, then official for full message
   if (mode === 'push_image_text') {
     if (!to || !imageUrl || !text) return res.status(400).json({ success: false, error: 'push_image_text requires: to, imageUrl, text' })
 
-    // 1. Try unofficial (text only — Thrift image is complex)
+    // 1. Try unofficial (text only)
     if (LINE_AUTH_TOKEN) {
-      const fullText = `${text}`
-      const result = await sendViaUnofficial(to, fullText)
+      const result = await sendViaUnofficial(to, text)
       if (result.success) return res.json(result)
-      console.warn('[unofficial failed]', result.error, '→ trying official')
+      console.warn('[send] unofficial failed:', result.error, '→ fallback official')
     }
 
     // 2. Fallback to official (image + text)
@@ -384,7 +483,6 @@ app.post('/send', async (req, res) => {
     return res.status(502).json({ success: false, error: 'No working LINE credentials' })
   }
 
-  // Broadcast modes (official only)
   if (mode === 'broadcast_text' || mode === 'broadcast_image_text') {
     if (!LINE_CHANNEL_TOKEN) return res.status(502).json({ success: false, error: 'Broadcast requires official token' })
 
@@ -413,7 +511,7 @@ app.post('/send', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[unofficial-endpoint] listening on :${PORT}`)
-  console.log(`  mode: ${LINE_AUTH_TOKEN ? 'UNOFFICIAL (Thrift) + Official (fallback)' : 'Official only'}`)
+  console.log(`  mode: ${LINE_AUTH_TOKEN ? 'UNOFFICIAL (primary)' : 'Official only'}`)
   console.log(`  unofficial token: ${LINE_AUTH_TOKEN ? 'YES' : 'NO'}`)
   console.log(`  official token: ${LINE_CHANNEL_TOKEN ? 'YES' : 'NO'}`)
 })
