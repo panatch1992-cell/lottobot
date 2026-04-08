@@ -234,10 +234,18 @@ async function sendViaUnofficial(to, text) {
   if (expired) {
     console.log('[send] Token expired — refreshing before send...')
     await refreshTokenIfNeeded()
+    // Re-check after refresh
+    const afterRefresh = getTokenExpiry()
+    if (afterRefresh.expired) {
+      return { success: false, error: 'Token expired and refresh failed' }
+    }
   }
 
   try {
     const payload = buildSendMessageThrift(0, to, text)
+
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 15000)
 
     const res = await fetch(LINE_THRIFT_API + '/S4', {
       method: 'POST',
@@ -248,16 +256,62 @@ async function sendViaUnofficial(to, text) {
         'Accept': 'application/x-thrift',
       },
       body: payload,
+      signal: controller.signal,
     })
 
-    if (res.ok) {
-      return { success: true, via: 'unofficial' }
+    // Read response body (binary Thrift)
+    const resBuffer = Buffer.from(await res.arrayBuffer())
+
+    // LINE Thrift returns HTTP 200 even on errors
+    // Check response body for error indicators:
+    // - Empty body = error
+    // - Body contains exception (TCompact type=12 at field 0 = exception)
+    // - Body text contains error keywords
+    if (resBuffer.length === 0) {
+      return { success: false, error: 'Empty Thrift response' }
     }
 
-    const body = await res.text().catch(() => '')
-    return { success: false, error: `Thrift HTTP ${res.status}: ${body.slice(0, 200)}` }
+    // Check for Thrift exception: if response contains error strings
+    const bodyStr = resBuffer.toString('utf-8', 0, Math.min(resBuffer.length, 500))
+    const errorPatterns = [
+      'AUTHENTICATION_DIVERTED_MIGRATION',
+      'AUTHENTICATION_FAILED',
+      'INVALID_SESSION',
+      'NOT_AUTHORIZED',
+      'ABUSE_BLOCK',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+      'expired',
+      'E_ILLEGAL_ARGUMENT',
+    ]
+    const foundError = errorPatterns.find(p => bodyStr.includes(p))
+    if (foundError) {
+      console.warn(`[unofficial] Thrift error detected: ${foundError}`)
+      return { success: false, error: `Thrift error: ${foundError}` }
+    }
+
+    // Additional check: Thrift TCompact protocol
+    // Success response starts with 0x82 (protocol) and should have method reply type
+    // Exception has type=3 (EXCEPTION) in the header
+    if (resBuffer.length >= 3 && resBuffer[0] === 0x82) {
+      const typeAndVersion = resBuffer[1]
+      const msgType = (typeAndVersion >> 5) & 0x03
+      // msgType: 0=CALL, 1=REPLY, 2=EXCEPTION, 3=ONEWAY
+      if (msgType === 2) {
+        console.warn('[unofficial] Thrift EXCEPTION response detected')
+        return { success: false, error: `Thrift EXCEPTION: ${bodyStr.slice(0, 200)}` }
+      }
+    }
+
+    if (!res.ok) {
+      return { success: false, error: `Thrift HTTP ${res.status}` }
+    }
+
+    console.log(`[unofficial] ✅ Sent to ${to.slice(-6)} (${resBuffer.length} bytes response)`)
+    return { success: true, via: 'unofficial' }
   } catch (err) {
-    return { success: false, error: `Unofficial: ${err.message}` }
+    const errMsg = err.name === 'AbortError' ? 'Timeout (15s)' : err.message
+    return { success: false, error: `Unofficial: ${errMsg}` }
   }
 }
 
