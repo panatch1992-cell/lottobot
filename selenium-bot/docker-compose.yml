@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  lottobot-selenium:
+    build: .
+    ports:
+      - "8080:8080"   # API
+      - "6080:6080"   # noVNC (สำหรับ login ครั้งแรก)
+    volumes:
+      - chrome-profile:/app/chrome-profile
+      - screenshots:/app/screenshots
+    environment:
+      - MODE=setup     # เปลี่ยนเป็น "run" หลัง login สำเร็จ
+      - HEADLESS=false # เปลี่ยนเป็น "true" หลัง login สำเร็จ
+      - PORT=8080
+    restart: unless-stopped
+
+volumes:
+  chrome-profile:    # เก็บ session LINE Web — ไม่หายเมื่อ restart
+  screenshots:
