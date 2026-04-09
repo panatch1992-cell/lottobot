@@ -22,7 +22,7 @@ function SettingsContent() {
   const [systemCheck, setSystemCheck] = useState<{ overall: string; checks: { name: string; status: string; detail: string }[] } | null>(null)
   const [checking, setChecking] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [setupResult, setSetupResult] = useState<{ success: boolean; steps: { step: string; status: string; detail: string }[]; summary?: string } | null>(null)
+  const [setupResult, setSetupResult] = useState<{ success: boolean; steps: { step: string; status: string; detail: string }[]; summary?: string; pinCode?: string; sessionId?: string } | null>(null)
   const [settingUp, setSettingUp] = useState(false)
 
   useEffect(() => { loadSettings() }, [searchParams])
@@ -207,16 +207,17 @@ function SettingsContent() {
           </button>
           <button
             onClick={async () => {
-              // Save first, then setup
+              // Save first
               await saveMultiple([
                 { key: 'line_bot_phone', value: settings.line_bot_phone || '' },
                 { key: 'line_bot_email', value: settings.line_bot_email || '' },
                 { key: 'line_bot_password', value: settings.line_bot_password || '' },
               ])
+              // Start PIN login
               setSettingUp(true)
               setSetupResult(null)
               try {
-                const res = await fetch('/api/setup-unofficial', {
+                const res = await fetch('/api/line/login', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -225,8 +226,68 @@ function SettingsContent() {
                   }),
                 })
                 const data = await res.json()
-                setSetupResult(data)
-                if (data.success) loadSettings() // reload groups
+
+                if (data.success && data.needPin) {
+                  // Show PIN and start polling
+                  setSetupResult({
+                    success: false,
+                    steps: [
+                      { step: 'Login', status: 'ok', detail: `ส่ง request แล้ว` },
+                      { step: 'PIN', status: 'ok', detail: data.pinCode ? `PIN: ${data.pinCode} — เปิด LINE app แล้วกด verify` : 'เปิด LINE app แล้วกด verify' },
+                    ],
+                    pinCode: data.pinCode,
+                    sessionId: data.sessionId,
+                  })
+
+                  // Poll for result
+                  const sessionId = data.sessionId
+                  for (let i = 0; i < 40; i++) {
+                    await new Promise(r => setTimeout(r, 3000))
+                    try {
+                      const checkRes = await fetch(`/api/line/login?session=${sessionId}`)
+                      const checkData = await checkRes.json()
+                      if (checkData.status === 'success') {
+                        setSetupResult({
+                          success: true,
+                          steps: [
+                            { step: 'Login', status: 'ok', detail: 'สำเร็จ' },
+                            { step: 'Token', status: 'ok', detail: `ได้รับแล้ว (หมดอายุ: ${checkData.expiry?.expiresAt?.slice(0, 10) || '?'})` },
+                            { step: 'Sync กลุ่ม', status: 'ok', detail: 'อัพเดทแล้ว' },
+                          ],
+                          summary: '✅ Login สำเร็จ! Token + กลุ่มอัพเดทเรียบร้อย',
+                        })
+                        loadSettings()
+                        break
+                      }
+                      if (checkData.status === 'timeout') {
+                        setSetupResult({
+                          success: false,
+                          steps: [
+                            { step: 'Login', status: 'ok', detail: 'ส่ง request แล้ว' },
+                            { step: 'PIN', status: 'fail', detail: 'หมดเวลา — ไม่ได้ verify ที่ LINE app' },
+                          ],
+                        })
+                        break
+                      }
+                    } catch { break }
+                  }
+                } else if (data.success && !data.needPin) {
+                  // Direct login (no PIN needed)
+                  setSetupResult({
+                    success: true,
+                    steps: [
+                      { step: 'Login', status: 'ok', detail: 'สำเร็จ (ไม่ต้อง PIN)' },
+                      { step: 'Token', status: 'ok', detail: 'ได้รับแล้ว' },
+                    ],
+                    summary: '✅ Login สำเร็จ!',
+                  })
+                  loadSettings()
+                } else {
+                  setSetupResult({
+                    success: false,
+                    steps: [{ step: 'Login', status: 'fail', detail: data.error || data.hint || 'ไม่สำเร็จ' }],
+                  })
+                }
               } catch {
                 setSetupResult({
                   success: false,
@@ -238,40 +299,63 @@ function SettingsContent() {
             disabled={settingUp || !settings.line_bot_email || !settings.line_bot_password}
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
           >
-            {settingUp ? '⏳ กำลังตั้งค่า...' : '🚀 ตั้งค่าอัตโนมัติ'}
+            {settingUp ? '⏳ กำลังตั้งค่า...' : '🔑 PIN Login'}
           </button>
           {status && <span className="text-xs">{status}</span>}
         </div>
 
-        {/* Setup Progress */}
-        {settingUp && (
+        {/* PIN Login Progress */}
+        {settingUp && !setupResult?.pinCode && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            <p className="font-medium mb-1">⏳ กำลังตั้งค่า...</p>
-            <p>1. Login เข้าบัญชี LINE</p>
-            <p>2. ดึง Group ID ทุกกลุ่ม</p>
-            <p>3. อัพเดทฐานข้อมูล</p>
-            <p>4. ล้าง password (ความปลอดภัย)</p>
-            <p className="mt-1 text-blue-500">อาจใช้เวลา 30 วินาที...</p>
+            <p className="font-medium mb-1">⏳ กำลัง login...</p>
+            <p>กำลังส่ง request ไป LINE server...</p>
+          </div>
+        )}
+
+        {/* PIN Display */}
+        {setupResult?.pinCode && !setupResult?.success && (
+          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-center">
+            <p className="text-sm font-medium text-amber-700 mb-2">📱 เปิด LINE app บนมือถือ</p>
+            <div className="bg-white rounded-xl py-4 px-6 inline-block shadow-sm border border-amber-200">
+              <p className="text-xs text-gray-500 mb-1">PIN</p>
+              <p className="text-4xl font-bold tracking-[0.3em] text-amber-600">{setupResult.pinCode}</p>
+            </div>
+            <p className="text-xs text-amber-600 mt-3 animate-pulse">⏳ รอ verify ที่ LINE app... (120 วินาที)</p>
           </div>
         )}
 
         {/* Setup Result */}
-        {setupResult && (
+        {setupResult && !setupResult.pinCode && (
           <div className={`rounded-lg p-3 space-y-2 ${setupResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className={`font-medium text-sm ${setupResult.success ? 'text-green-700' : 'text-red-700'}`}>
-              {setupResult.success ? '✅ ตั้งค่าเสร็จสมบูรณ์!' : '❌ ตั้งค่ายังไม่เสร็จ'}
+              {setupResult.success ? '✅ Login สำเร็จ!' : '❌ Login ยังไม่สำเร็จ'}
             </p>
             {setupResult.summary && (
               <p className="text-xs text-text-secondary">{setupResult.summary}</p>
             )}
             <div className="space-y-1">
-              {setupResult.steps.map((s, i) => (
+              {setupResult.steps.map((s: { step: string; status: string; detail: string }, i: number) => (
                 <div key={i} className="flex items-start gap-2 text-xs">
                   <span className="shrink-0">{s.status === 'ok' ? '✅' : s.status === 'skip' ? '⏭' : '❌'}</span>
                   <div>
                     <span className="font-medium">{s.step}</span>
                     <span className="text-text-secondary"> — {s.detail}</span>
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Login success replaces PIN display */}
+        {setupResult?.success && setupResult?.pinCode && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+            <p className="font-medium text-sm text-green-700">✅ Login สำเร็จ!</p>
+            {setupResult.summary && <p className="text-xs text-green-600">{setupResult.summary}</p>}
+            <div className="space-y-1">
+              {setupResult.steps.map((s: { step: string; status: string; detail: string }, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="shrink-0">✅</span>
+                  <div><span className="font-medium">{s.step}</span> — <span className="text-green-600">{s.detail}</span></div>
                 </div>
               ))}
             </div>
