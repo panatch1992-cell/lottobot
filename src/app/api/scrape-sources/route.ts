@@ -5,7 +5,7 @@ import { isStockLottery, getStockInfo, fetchStockLotteryResult } from '@/lib/sto
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape, browserFetchHTML } from '@/lib/browser-scraper'
 import { formatResult, formatTgAdminLog } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText } from '@/lib/line-messaging'
+import { pushTextMessage, pushImageAndText } from '@/lib/messaging-service'
 import { today } from '@/lib/utils'
 import type { ScrapeSource, Lottery, LineGroup } from '@/types'
 
