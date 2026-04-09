@@ -660,6 +660,235 @@ app.post('/refresh', async (req, res) => {
   res.json(result)
 })
 
+// ─── PIN Login (email/password → PIN → token) ──────────
+
+// In-memory login sessions (sessionId → { verifier, pinCode, status, token })
+const loginSessions = new Map()
+
+// Build loginZ Thrift payload
+function buildLoginZRequest(email, password) {
+  const parts = []
+  parts.push(Buffer.from([0x82, 0x21, 0x01]))
+  parts.push(writeString('loginZ'))
+  parts.push(writeUVarint(0))
+
+  // Args field 2: loginRequest (struct) - delta=2, type=12
+  parts.push(Buffer.from([0x2c]))
+
+  // LoginRequest.e2eeVersion (field 1, i32) = 0
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(0))
+  // LoginRequest.type (field 2, i32) = 1 (ID_CREDENTIAL)
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(1))
+  // LoginRequest.identityProvider (field 3, i32) = 1 (LINE)
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(1))
+  // LoginRequest.identifier (field 4, string) = email
+  parts.push(Buffer.from([0x18]))
+  parts.push(writeString(email))
+  // LoginRequest.password (field 5, string)
+  parts.push(Buffer.from([0x18]))
+  parts.push(writeString(password))
+  // LoginRequest.keepLoggedIn (field 6, bool=true) → delta=1, type=1
+  parts.push(Buffer.from([0x11]))
+  // LoginRequest.accessLocation (field 7, string)
+  parts.push(Buffer.from([0x18]))
+  parts.push(writeString('127.0.0.1'))
+  // LoginRequest.systemName (field 8, string)
+  parts.push(Buffer.from([0x18]))
+  parts.push(writeString('LottoBot'))
+  // LoginRequest.certificate (field 9, string) = empty
+  parts.push(Buffer.from([0x18]))
+  parts.push(writeString(''))
+
+  parts.push(Buffer.from([0x00])) // end LoginRequest
+  parts.push(Buffer.from([0x00])) // end args
+  return Buffer.concat(parts)
+}
+
+// Build loginZ with verifier only
+function buildLoginZVerifier(verifier) {
+  const parts = []
+  parts.push(Buffer.from([0x82, 0x21, 0x01]))
+  parts.push(writeString('loginZ'))
+  parts.push(writeUVarint(0))
+
+  // Args field 2: loginRequest (struct)
+  parts.push(Buffer.from([0x2c]))
+
+  // LoginRequest.e2eeVersion (field 1, i32) = 0
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(0))
+  // LoginRequest.type (field 2, i32) = 1
+  parts.push(Buffer.from([0x15]))
+  parts.push(writeVarint(1))
+  // Skip to field 10 (verifier): from field 2, delta=8 → 0x88 won't work (max delta=15 in high nibble)
+  // delta=8, type=8(string) → (8 << 4) | 8 = 0x88
+  parts.push(Buffer.from([0x88]))
+  parts.push(writeString(verifier))
+
+  parts.push(Buffer.from([0x00])) // end LoginRequest
+  parts.push(Buffer.from([0x00])) // end args
+  return Buffer.concat(parts)
+}
+
+function extractTokenFromResponse(buf) {
+  const str = buf.toString('utf-8')
+  const m = str.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
+  return m ? m[0] : null
+}
+
+function extractPinAndVerifier(buf) {
+  const strings = []
+  // Extract readable strings from Thrift binary
+  for (let i = 0; i < buf.length - 1; i++) {
+    const len = buf[i]
+    if (len >= 4 && len <= 200 && i + 1 + len <= buf.length) {
+      const s = buf.toString('utf-8', i + 1, i + 1 + len)
+      if (/^[\x20-\x7e]+$/.test(s)) strings.push(s)
+    }
+  }
+
+  let pinCode = null
+  let verifier = null
+
+  for (const s of strings) {
+    if (/^\d{6}$/.test(s)) pinCode = s
+    if (s.length > 40 && s.length < 300 && /^[A-Za-z0-9+/=_-]+$/.test(s) && !s.startsWith('eyJ')) {
+      verifier = s
+    }
+  }
+
+  return { pinCode, verifier, strings }
+}
+
+function findLoginError(buf) {
+  const str = buf.toString('utf-8', 0, Math.min(buf.length, 500))
+  const errors = ['AUTHENTICATION_FAILED', 'INVALID_IDENTITY_CREDENTIAL', 'ABUSE_BLOCK', 'NOT_FOUND', 'INTERNAL_ERROR']
+  return errors.find(e => str.includes(e)) || null
+}
+
+// Step 1: POST /login — start login, get PIN
+app.post('/login', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  const { email, password } = req.body || {}
+  if (!email || !password) return res.status(400).json({ success: false, error: 'email and password required' })
+
+  console.log(`[login] Starting login for ${email.slice(0, 3)}***`)
+
+  try {
+    const payload = buildLoginZRequest(email, password)
+    const loginRes = await fetch(LINE_THRIFT_API + '/RS4', {
+      method: 'POST',
+      headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
+      body: payload,
+      signal: AbortSignal.timeout(15000),
+    })
+
+    const resBuf = Buffer.from(await loginRes.arrayBuffer())
+
+    // Check for errors
+    const error = findLoginError(resBuf)
+    if (error) {
+      console.log(`[login] ❌ ${error}`)
+      return res.json({ success: false, error, hint: 'ตรวจสอบ email/password ว่าถูกต้อง' })
+    }
+
+    // Check if direct token (no PIN needed)
+    const directToken = extractTokenFromResponse(resBuf)
+    if (directToken) {
+      LINE_AUTH_TOKEN = directToken
+      console.log('[login] ✅ Direct login (no PIN)')
+      return res.json({ success: true, token: directToken, expiry: getTokenExpiry(), needPin: false })
+    }
+
+    // Need PIN
+    const { pinCode, verifier } = extractPinAndVerifier(resBuf)
+
+    if (!verifier) {
+      console.log('[login] ❌ No verifier in response')
+      return res.json({ success: false, error: 'ไม่พบ verifier — อาจต้อง verify ผ่าน LINE app ก่อน' })
+    }
+
+    // Store session
+    const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    loginSessions.set(sessionId, { verifier, pinCode, status: 'waiting', token: null, createdAt: Date.now() })
+
+    // Auto-cleanup after 3 minutes
+    setTimeout(() => loginSessions.delete(sessionId), 180000)
+
+    // Start background polling for token
+    ;(async () => {
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        const session = loginSessions.get(sessionId)
+        if (!session || session.status !== 'waiting') break
+
+        try {
+          const verifyPayload = buildLoginZVerifier(session.verifier)
+          const verifyRes = await fetch(LINE_THRIFT_API + '/RS4', {
+            method: 'POST',
+            headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
+            body: verifyPayload,
+            signal: AbortSignal.timeout(10000),
+          })
+          const verifyBuf = Buffer.from(await verifyRes.arrayBuffer())
+          const token = extractTokenFromResponse(verifyBuf)
+
+          if (token) {
+            LINE_AUTH_TOKEN = token
+            session.token = token
+            session.status = 'success'
+            console.log(`[login] ✅ PIN verified! Token obtained.`)
+            break
+          }
+        } catch { /* keep polling */ }
+      }
+
+      const session = loginSessions.get(sessionId)
+      if (session && session.status === 'waiting') {
+        session.status = 'timeout'
+      }
+    })()
+
+    console.log(`[login] PIN: ${pinCode || '?'}, session: ${sessionId}`)
+    return res.json({
+      success: true,
+      needPin: true,
+      pinCode: pinCode || null,
+      sessionId,
+      message: pinCode ? `กรุณาเปิด LINE app แล้วกด verify PIN: ${pinCode}` : 'กรุณา verify ที่ LINE app',
+    })
+
+  } catch (err) {
+    console.error('[login] Error:', err.message)
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Step 2: GET /login/check?session=xxx — poll for result
+app.get('/login/check', (req, res) => {
+  const sessionId = req.query.session
+  if (!sessionId) return res.status(400).json({ error: 'session required' })
+
+  const session = loginSessions.get(sessionId)
+  if (!session) return res.json({ status: 'expired', error: 'Session not found or expired' })
+
+  if (session.status === 'success' && session.token) {
+    const expiry = getTokenExpiry()
+    return res.json({ status: 'success', token: session.token, expiry })
+  }
+
+  if (session.status === 'timeout') {
+    return res.json({ status: 'timeout', error: 'ไม่ได้ verify ภายในเวลาที่กำหนด' })
+  }
+
+  const elapsed = Math.floor((Date.now() - session.createdAt) / 1000)
+  return res.json({ status: 'waiting', elapsed, message: 'รอ verify ที่ LINE app...' })
+})
+
 // ─── Update token (สำหรับกรณีต้องเปลี่ยน token ใหม่) ────
 
 app.post('/update-token', (req, res) => {
