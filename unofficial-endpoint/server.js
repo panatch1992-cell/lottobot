@@ -829,12 +829,55 @@ app.post('/login', async (req, res) => {
 
   try {
     const payload = buildLoginZRequest(email, password)
-    const loginRes = await fetch(LINE_THRIFT_API + '/RS4', {
-      method: 'POST',
-      headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
-      body: payload,
-      signal: AbortSignal.timeout(15000),
-    })
+
+    // Try multiple auth endpoints (LINE uses different ones depending on version)
+    const AUTH_ENDPOINTS = [
+      '/api/v4p/rs',   // v4 primary auth (no token needed)
+      '/RS4',          // relay/auth service
+      '/api/v4/TalkService.do', // older auth
+    ]
+
+    let loginRes = null
+    let resBuf = null
+
+    for (const authPath of AUTH_ENDPOINTS) {
+      try {
+        console.log(`[login] Trying ${authPath}...`)
+        const r = await fetch(LINE_THRIFT_API + authPath, {
+          method: 'POST',
+          headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
+          body: payload,
+          signal: AbortSignal.timeout(15000),
+        })
+        const buf = Buffer.from(await r.arrayBuffer())
+        console.log(`[login] ${authPath} → ${r.status}, ${buf.length} bytes`)
+
+        // If response > 100 bytes, likely a real response (not just an error)
+        if (buf.length > 100 || extractTokenFromResponse(buf)) {
+          loginRes = r
+          resBuf = buf
+          break
+        }
+
+        // Check if it has a PIN or verifier
+        const { pinCode: p, verifier: v } = extractPinAndVerifier(buf)
+        if (p || v) {
+          loginRes = r
+          resBuf = buf
+          break
+        }
+
+        // Keep last response as fallback
+        loginRes = r
+        resBuf = buf
+      } catch (err) {
+        console.log(`[login] ${authPath} failed: ${err.message}`)
+      }
+    }
+
+    if (!resBuf) {
+      return res.json({ success: false, error: 'ไม่สามารถเชื่อมต่อ LINE server ได้' })
+    }
 
     const resBuf = Buffer.from(await loginRes.arrayBuffer())
 
@@ -884,7 +927,7 @@ app.post('/login', async (req, res) => {
 
         try {
           const verifyPayload = buildLoginZVerifier(session.verifier)
-          const verifyRes = await fetch(LINE_THRIFT_API + '/RS4', {
+          const verifyRes = await fetch(LINE_THRIFT_API + '/api/v4p/rs', {
             method: 'POST',
             headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
             body: verifyPayload,
