@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, verifyChannelToken, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { getProviderConfig } from '@/lib/providers/provider-factory'
 import { formatResult, formatCountdown, formatStats } from '@/lib/formatter'
 import { today } from '@/lib/utils'
 import type { Lottery, LineGroup, Result } from '@/types'
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
 
   const db = getServiceClient()
   const settings = await getSettings()
+  const providerCfg = await getProviderConfig()
   const todayStr = today()
   const results: TestResult[] = []
 
@@ -194,6 +196,13 @@ export async function GET(req: NextRequest) {
   // ═══════════════════════════════════════════
   // 5. LINE MESSAGING API
   // ═══════════════════════════════════════════
+
+  results.push(await runTest('5.p', 'LINE Provider: effective routing', async () => {
+    return {
+      pass: true,
+      detail: `primary=${providerCfg.primary}, fallback=${providerCfg.fallback}, autoFailover=${providerCfg.autoFailover}${providerCfg.effectiveReason ? ` | ${providerCfg.effectiveReason}` : ''}`,
+    }
+  }))
 
   results.push(await runTest('5.0', 'LINE: Quota + Daily Budget', async () => {
     const quota = await checkLineQuota()
