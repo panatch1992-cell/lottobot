@@ -1,11 +1,46 @@
 'use client'
 
-export default function FlowDiagram() {
+type FlowState = 'active' | 'inactive'
+
+type FlowDiagramProps = {
+  stepsState?: {
+    autoFetch: FlowState
+    countdownAndSchedule: FlowState
+    telegram: FlowState
+    line: FlowState
+  }
+}
+
+export default function FlowDiagram({ stepsState }: FlowDiagramProps) {
   const steps = [
-    { icon: '🤖', label: 'ดึงผลอัตโนมัติ', sub: 'หุ้น / เว็บ', color: 'bg-blue-500' },
-    { icon: '⏰', label: 'Countdown + ตั้งเวลา', sub: '20/10/5 นาที', color: 'bg-[#e89b1c]' },
-    { icon: '✈️', label: 'Telegram', sub: 'Admin Log', color: 'bg-[#1a222c]' },
-    { icon: '💬', label: 'LINE กลุ่ม', sub: 'ส่งพร้อมรูป', color: 'bg-[#06c755]' },
+    {
+      icon: '🤖',
+      label: 'ดึงผลอัตโนมัติ',
+      sub: stepsState?.autoFetch === 'active' ? 'หุ้น / เว็บ (auto)' : 'ยังไม่ตั้งค่า',
+      color: 'bg-blue-500',
+      state: stepsState?.autoFetch || 'active',
+    },
+    {
+      icon: '⏰',
+      label: 'Countdown + ตั้งเวลา',
+      sub: stepsState?.countdownAndSchedule === 'active' ? '20/10/5 นาที' : 'ยังไม่เปิดใช้งาน',
+      color: 'bg-[#e89b1c]',
+      state: stepsState?.countdownAndSchedule || 'active',
+    },
+    {
+      icon: '✈️',
+      label: 'Telegram',
+      sub: stepsState?.telegram === 'active' ? 'Admin Log' : 'ยังไม่เชื่อมต่อ',
+      color: 'bg-[#1a222c]',
+      state: stepsState?.telegram || 'active',
+    },
+    {
+      icon: '💬',
+      label: 'LINE กลุ่ม',
+      sub: stepsState?.line === 'active' ? 'ส่งพร้อมรูป' : 'ยังไม่เชื่อมต่อ',
+      color: 'bg-[#06c755]',
+      state: stepsState?.line || 'active',
+    },
   ]
 
   return (
@@ -19,7 +54,7 @@ export default function FlowDiagram() {
                 {step.icon}
               </div>
               <span className="text-xs font-medium mt-1 text-center">{step.label}</span>
-              <span className="text-[10px] text-text-secondary text-center">{step.sub}</span>
+              <span className={`text-[10px] text-center ${step.state === 'active' ? 'text-text-secondary' : 'text-red-500'}`}>{step.sub}</span>
             </div>
             {i < steps.length - 1 && (
               <span className="text-gray-400 mx-1 text-lg">→</span>
