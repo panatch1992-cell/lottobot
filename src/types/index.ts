@@ -4,7 +4,7 @@ export type LotteryStatus = 'active' | 'inactive'
 export type ResultFormat = '3d_2d' | '3d_only' | '6d' | 'custom'
 export type SendStatus = 'pending' | 'sending' | 'sent' | 'failed'
 export type SendChannel = 'telegram' | 'line'
-export type MessageType = 'result' | 'countdown' | 'stats'
+export type MessageType = 'result' | 'countdown' | 'stats' | 'trigger_send' | 'trigger_reply'
 
 export interface Lottery {
   id: string

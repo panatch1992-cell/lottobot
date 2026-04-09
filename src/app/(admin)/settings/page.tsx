@@ -343,7 +343,78 @@ function SettingsContent() {
         )}
       </div>
 
-      {/* ═══ 4. สไตล์รูปตัวเลข ═══ */}
+      {/* ═══ 4. วิธีส่ง LINE ═══ */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold">📤 วิธีส่งข้อความ LINE</h3>
+        <p className="text-xs text-text-secondary">เลือกวิธีส่งผลหวยเข้ากลุ่ม LINE</p>
+
+        <div className="space-y-2">
+          {[
+            {
+              id: 'trigger',
+              label: '🎯 Trigger (แนะนำ)',
+              desc: 'ส่ง "." ผ่านบัญชี LINE → OA ตอบกลับผลหวย (Reply API ฟรี 100%! ไม่จำกัด)',
+              badge: 'ฟรี!',
+              badgeColor: 'bg-green-100 text-green-700',
+            },
+            {
+              id: 'push',
+              label: '📨 Push (ส่งตรง)',
+              desc: 'ส่งข้อความตรงไปกลุ่มผ่าน Unofficial API (ไม่จำกัด แต่เสี่ยงโดนแบน)',
+              badge: 'เดิม',
+              badgeColor: 'bg-gray-100 text-gray-600',
+            },
+            {
+              id: 'broadcast',
+              label: '📢 Broadcast',
+              desc: 'ส่งถึงเพื่อนทุกคนผ่าน Official API (จำกัด quota)',
+              badge: 'quota',
+              badgeColor: 'bg-amber-100 text-amber-700',
+            },
+          ].map(mode => (
+            <button
+              key={mode.id}
+              onClick={() => saveSetting('line_send_mode', mode.id)}
+              className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                (settings.line_send_mode || 'push') === mode.id
+                  ? 'border-gold bg-gold/5 shadow-sm' : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{mode.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${mode.badgeColor}`}>{mode.badge}</span>
+              </div>
+              <p className="text-xs text-text-secondary mt-1">{mode.desc}</p>
+            </button>
+          ))}
+        </div>
+
+        {(settings.line_send_mode || 'push') === 'trigger' && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700 space-y-1">
+            <p className="font-medium">✅ โหมด Trigger เปิดใช้งาน</p>
+            <p>Flow: ผลหวยมา → ส่ง &quot;.&quot; เข้ากลุ่ม → LINE OA ตอบกลับผลหวย</p>
+            <p>⚡ Reply API ฟรี 100% ไม่จำกัดจำนวน!</p>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/line/trigger?test=1')
+                  const data = await res.json()
+                  alert(data.success
+                    ? `✅ Trigger สำเร็จ! ส่ง ${data.sent}/${data.groups} กลุ่ม`
+                    : `❌ ${data.error || 'trigger failed'}`)
+                } catch {
+                  alert('❌ ไม่สามารถเชื่อมต่อได้')
+                }
+              }}
+              className="mt-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700 transition-colors"
+            >
+              🧪 ทดสอบ Trigger
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ 5. สไตล์รูปตัวเลข ═══ */}
       <div className="card space-y-3">
         <h3 className="font-semibold">🎨 สไตล์รูปตัวเลข</h3>
 
