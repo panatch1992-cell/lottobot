@@ -666,7 +666,151 @@ app.post('/refresh', async (req, res) => {
 const loginSessions = new Map()
 
 // Build loginZ Thrift payload
-function buildLoginZRequest(email, password) {
+// ─── RSA Key + Encryption for Login ─────────────────
+
+// Build getAuthRSAKeyInfo Thrift request
+// TalkService.getAuthRSAKeyInfo(2: i32 identityProvider)
+function buildGetRSAKeyThrift() {
+  const parts = []
+  parts.push(Buffer.from([0x82, 0x21, 0x01]))
+  parts.push(writeString('getAuthRSAKeyInfo'))
+  parts.push(writeUVarint(0))
+
+  // field 2: identityProvider (i32) = 1 (LINE), delta=2, type=5
+  parts.push(Buffer.from([0x25]))
+  parts.push(writeVarint(1))
+
+  parts.push(Buffer.from([0x00])) // end args
+  return Buffer.concat(parts)
+}
+
+// Extract RSA key info from Thrift response
+function extractRSAKeyInfo(buf) {
+  const strings = []
+  // Extract all strings using varint length decoding
+  for (let i = 0; i < buf.length - 2; i++) {
+    const { value: len, bytesRead } = readUVarintAt(buf, i)
+    if (len >= 3 && len <= 500 && i + bytesRead + len <= buf.length) {
+      const s = buf.toString('utf-8', i + bytesRead, i + bytesRead + len)
+      if (/^[\x20-\x7e]+$/.test(s) && s.length === len) {
+        strings.push(s)
+        i += bytesRead + len - 1
+      }
+    }
+  }
+
+  let keynm = null   // key name/session key
+  let nvalue = null   // RSA n (modulus) hex
+  let evalue = null   // RSA e (exponent) hex
+
+  for (const s of strings) {
+    if (s === 'getAuthRSAKeyInfo') continue
+    // Key name is short identifier
+    if (!keynm && s.length >= 8 && s.length <= 40 && /^[a-zA-Z0-9._-]+$/.test(s)) keynm = s
+    // RSA n is a long hex string (256+ chars)
+    if (!nvalue && s.length >= 200 && /^[0-9a-f]+$/.test(s)) nvalue = s
+    // RSA e is short hex (typically "10001")
+    if (!evalue && s.length >= 3 && s.length <= 10 && /^[0-9a-f]+$/.test(s) && s !== keynm) evalue = s
+  }
+
+  return { keynm, nvalue, evalue, strings }
+}
+
+// RSA encrypt: message -> hex cipher using n, e
+function rsaEncrypt(message, nHex, eHex) {
+  const crypto = require('crypto')
+  // Convert hex to BigInt
+  const n = BigInt('0x' + nHex)
+  const e = BigInt('0x' + eHex)
+
+  // PKCS1 v1.5 padding
+  const msgBuf = Buffer.from(message, 'utf-8')
+  const keySize = Math.ceil(nHex.length / 2)
+  const paddedLen = keySize
+
+  if (msgBuf.length > paddedLen - 11) {
+    throw new Error('Message too long for RSA key')
+  }
+
+  // Build padded block: 0x00 0x02 [random non-zero bytes] 0x00 [message]
+  const padded = Buffer.alloc(paddedLen)
+  padded[0] = 0x00
+  padded[1] = 0x02
+  const psLen = paddedLen - msgBuf.length - 3
+  const ps = crypto.randomBytes(psLen)
+  for (let i = 0; i < psLen; i++) {
+    if (ps[i] === 0) ps[i] = 1 // non-zero padding
+  }
+  ps.copy(padded, 2)
+  padded[2 + psLen] = 0x00
+  msgBuf.copy(padded, 3 + psLen)
+
+  // RSA: cipher = padded^e mod n
+  let m = BigInt('0x' + padded.toString('hex'))
+  let result = 1n
+  m = m % n
+  let exp = e
+  while (exp > 0n) {
+    if (exp % 2n === 1n) {
+      result = (result * m) % n
+    }
+    exp = exp / 2n
+    m = (m * m) % n
+  }
+
+  return result.toString(16).padStart(keySize * 2, '0')
+}
+
+async function getRSAKeyAndEncrypt(email, password) {
+  console.log('[login] Fetching RSA key...')
+  const rsaPayload = buildGetRSAKeyThrift()
+
+  // Try auth endpoints for RSA key
+  const endpoints = ['/api/v4p/rs', '/RS4', '/api/v4/TalkService.do']
+  let rsaInfo = null
+
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(LINE_THRIFT_API + ep, {
+        method: 'POST',
+        headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
+        body: rsaPayload,
+        signal: AbortSignal.timeout(10000),
+      })
+      const buf = Buffer.from(await r.arrayBuffer())
+      console.log(`[login] RSA ${ep} → ${buf.length} bytes`)
+      const info = extractRSAKeyInfo(buf)
+      if (info.nvalue && info.evalue) {
+        rsaInfo = info
+        console.log(`[login] RSA key found via ${ep}: keynm=${info.keynm}, n=${info.nvalue.slice(0, 20)}..., e=${info.evalue}`)
+        break
+      }
+    } catch (err) {
+      console.log(`[login] RSA ${ep} error: ${err.message}`)
+    }
+  }
+
+  if (!rsaInfo) {
+    return { success: false, error: 'ไม่สามารถดึง RSA key จาก LINE ได้' }
+  }
+
+  // Format: chr(len(sessionKey)) + sessionKey + chr(len(email)) + email + chr(len(password)) + password
+  const message = String.fromCharCode(rsaInfo.keynm.length) + rsaInfo.keynm +
+    String.fromCharCode(email.length) + email +
+    String.fromCharCode(password.length) + password
+
+  try {
+    const encrypted = rsaEncrypt(message, rsaInfo.nvalue, rsaInfo.evalue)
+    console.log(`[login] Password encrypted (${encrypted.length} hex chars)`)
+    return { success: true, keynm: rsaInfo.keynm, encrypted }
+  } catch (err) {
+    return { success: false, error: `RSA encryption failed: ${err.message}` }
+  }
+}
+
+// Build loginZ with RSA-encrypted credentials
+// identifier = RSA keynm, password = RSA encrypted hex string
+function buildLoginZRequestEncrypted(keynm, encryptedHex) {
   const parts = []
   parts.push(Buffer.from([0x82, 0x21, 0x01]))
   parts.push(writeString('loginZ'))
@@ -684,13 +828,13 @@ function buildLoginZRequest(email, password) {
   // LoginRequest.identityProvider (field 3, i32) = 1 (LINE)
   parts.push(Buffer.from([0x15]))
   parts.push(writeVarint(1))
-  // LoginRequest.identifier (field 4, string) = email
+  // LoginRequest.identifier (field 4, string) = RSA key name
   parts.push(Buffer.from([0x18]))
-  parts.push(writeString(email))
-  // LoginRequest.password (field 5, string)
+  parts.push(writeString(keynm))
+  // LoginRequest.password (field 5, string) = RSA encrypted hex
   parts.push(Buffer.from([0x18]))
-  parts.push(writeString(password))
-  // LoginRequest.keepLoggedIn (field 6, bool=true) → delta=1, type=1
+  parts.push(writeString(encryptedHex))
+  // LoginRequest.keepLoggedIn (field 6, bool=true)
   parts.push(Buffer.from([0x11]))
   // LoginRequest.accessLocation (field 7, string)
   parts.push(Buffer.from([0x18]))
@@ -828,17 +972,48 @@ app.post('/login', async (req, res) => {
   console.log(`[login] Starting login for ${email.slice(0, 3)}***`)
 
   try {
-    const payload = buildLoginZRequest(email, password)
-    const loginRes = await fetch(LINE_THRIFT_API + '/RS4', {
-      method: 'POST',
-      headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
-      body: payload,
-      signal: AbortSignal.timeout(15000),
-    })
+    // Step 1: Get RSA key and encrypt credentials
+    const rsaResult = await getRSAKeyAndEncrypt(email, password)
+    if (!rsaResult.success) {
+      return res.json({ success: false, error: rsaResult.error })
+    }
 
-    const resBuf = Buffer.from(await loginRes.arrayBuffer())
+    // Step 2: Login with RSA-encrypted credentials
+    const payload = buildLoginZRequestEncrypted(rsaResult.keynm, rsaResult.encrypted)
+    console.log(`[login] Sending loginZ with RSA encrypted credentials...`)
 
-    console.log(`[login] Response: ${resBuf.length} bytes, HTTP ${loginRes.status}`)
+    let resBuf = null
+    const authEndpoints = ['/api/v4p/rs', '/RS4']
+
+    for (const ep of authEndpoints) {
+      try {
+        console.log(`[login] Trying loginZ on ${ep}...`)
+        const r = await fetch(LINE_THRIFT_API + ep, {
+          method: 'POST',
+          headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
+          body: payload,
+          signal: AbortSignal.timeout(15000),
+        })
+        const buf = Buffer.from(await r.arrayBuffer())
+        console.log(`[login] ${ep} → ${r.status}, ${buf.length} bytes`)
+
+        if (buf.length > 80 || extractTokenFromResponse(buf)) {
+          resBuf = buf
+          break
+        }
+        const { pinCode: p, verifier: v } = extractPinAndVerifier(buf)
+        if (p || v) { resBuf = buf; break }
+        resBuf = buf // keep last as fallback
+      } catch (err) {
+        console.log(`[login] ${ep} failed: ${err.message}`)
+      }
+    }
+
+    if (!resBuf) {
+      return res.json({ success: false, error: 'ไม่สามารถเชื่อมต่อ LINE server ได้' })
+    }
+
+    console.log(`[login] Response: ${resBuf.length} bytes`)
     console.log(`[login] Response hex (first 60): ${resBuf.toString('hex').slice(0, 120)}`)
 
     // Check for errors
@@ -884,7 +1059,7 @@ app.post('/login', async (req, res) => {
 
         try {
           const verifyPayload = buildLoginZVerifier(session.verifier)
-          const verifyRes = await fetch(LINE_THRIFT_API + '/RS4', {
+          const verifyRes = await fetch(LINE_THRIFT_API + '/api/v4p/rs', {
             method: 'POST',
             headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
             body: verifyPayload,
