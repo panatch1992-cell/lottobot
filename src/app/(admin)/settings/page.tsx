@@ -285,7 +285,10 @@ function SettingsContent() {
                 } else {
                   setSetupResult({
                     success: false,
-                    steps: [{ step: 'Login', status: 'fail', detail: data.error || data.hint || 'ไม่สำเร็จ' }],
+                    steps: [
+                      { step: 'Login', status: 'fail', detail: data.error || data.hint || 'ไม่สำเร็จ' },
+                      ...(data.debug ? [{ step: 'Debug', status: 'fail' as const, detail: `${data.debug.responseSize}B, ${data.debug.stringsFound} strings: ${(data.debug.strings || []).join(', ')}` }] : []),
+                    ],
                   })
                 }
               } catch {

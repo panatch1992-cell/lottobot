@@ -739,24 +739,65 @@ function extractTokenFromResponse(buf) {
   return m ? m[0] : null
 }
 
-function extractPinAndVerifier(buf) {
+// Read varint from buffer at offset, return { value, bytesRead }
+function readUVarintAt(buf, offset) {
+  let value = 0, shift = 0, bytesRead = 0
+  while (offset + bytesRead < buf.length) {
+    const b = buf[offset + bytesRead]
+    bytesRead++
+    value |= (b & 0x7f) << shift
+    if ((b & 0x80) === 0) break
+    shift += 7
+  }
+  return { value, bytesRead }
+}
+
+// Extract all Thrift compact protocol strings from response
+function extractThriftStrings(buf) {
   const strings = []
-  // Extract readable strings from Thrift binary
-  for (let i = 0; i < buf.length - 1; i++) {
-    const len = buf[i]
-    if (len >= 4 && len <= 200 && i + 1 + len <= buf.length) {
-      const s = buf.toString('utf-8', i + 1, i + 1 + len)
-      if (/^[\x20-\x7e]+$/.test(s)) strings.push(s)
+  // Skip Thrift message header (method name etc) — scan from start
+  for (let i = 0; i < buf.length - 2; i++) {
+    // Method 1: Read varint-length strings at every position
+    const { value: len, bytesRead } = readUVarintAt(buf, i)
+    if (len >= 3 && len <= 500 && i + bytesRead + len <= buf.length) {
+      const s = buf.toString('utf-8', i + bytesRead, i + bytesRead + len)
+      // Check if it looks like a real string (printable ASCII + some unicode)
+      if (/^[\x20-\x7e\u0E00-\u0E7F]+$/.test(s) && s.length === len) {
+        strings.push({ offset: i, value: s })
+        // Skip past this string to avoid duplicates
+        i += bytesRead + len - 1
+      }
     }
   }
+  return strings
+}
+
+function extractPinAndVerifier(buf) {
+  const extracted = extractThriftStrings(buf)
+  const strings = extracted.map(e => e.value)
 
   let pinCode = null
   let verifier = null
 
+  console.log(`[login-parse] Found ${strings.length} strings, lengths: ${strings.map(s => s.length).join(',')}`)
+  console.log(`[login-parse] Strings: ${strings.map(s => s.length > 50 ? s.slice(0, 30) + '...' + s.slice(-10) : s).join(' | ')}`)
+
   for (const s of strings) {
+    // PIN is exactly 6 digits
     if (/^\d{6}$/.test(s)) pinCode = s
-    if (s.length > 40 && s.length < 300 && /^[A-Za-z0-9+/=_-]+$/.test(s) && !s.startsWith('eyJ')) {
-      verifier = s
+    // Verifier is a long alphanumeric/base64 string (not a JWT token)
+    if (s.length > 20 && /^[A-Za-z0-9+/=_.-]+$/.test(s) && !s.startsWith('eyJ') && !s.includes('loginZ') && !s.includes('Line/')) {
+      if (!verifier || s.length > verifier.length) verifier = s  // take longest match
+    }
+  }
+
+  // Fallback: scan raw bytes for verifier pattern (base64-like string)
+  if (!verifier) {
+    const rawStr = buf.toString('utf-8')
+    const verifierMatch = rawStr.match(/[A-Za-z0-9+/=_-]{40,300}/)
+    if (verifierMatch && !verifierMatch[0].startsWith('eyJ')) {
+      verifier = verifierMatch[0]
+      console.log(`[login-parse] Fallback verifier: ${verifier.slice(0, 30)}...`)
     }
   }
 
@@ -764,9 +805,17 @@ function extractPinAndVerifier(buf) {
 }
 
 function findLoginError(buf) {
-  const str = buf.toString('utf-8', 0, Math.min(buf.length, 500))
+  const str = buf.toString('utf-8', 0, Math.min(buf.length, 1000))
   const errors = ['AUTHENTICATION_FAILED', 'INVALID_IDENTITY_CREDENTIAL', 'ABUSE_BLOCK', 'NOT_FOUND', 'INTERNAL_ERROR']
-  return errors.find(e => str.includes(e)) || null
+  const found = errors.find(e => str.includes(e))
+  if (!found) {
+    // Check for Thrift EXCEPTION type in header
+    if (buf.length >= 3 && buf[0] === 0x82 && ((buf[1] >> 5) & 0x03) === 2) {
+      console.log(`[login-parse] Thrift EXCEPTION detected`)
+      return 'THRIFT_EXCEPTION: ' + str.slice(0, 200)
+    }
+  }
+  return found || null
 }
 
 // Step 1: POST /login — start login, get PIN
@@ -789,6 +838,9 @@ app.post('/login', async (req, res) => {
 
     const resBuf = Buffer.from(await loginRes.arrayBuffer())
 
+    console.log(`[login] Response: ${resBuf.length} bytes, HTTP ${loginRes.status}`)
+    console.log(`[login] Response hex (first 60): ${resBuf.toString('hex').slice(0, 120)}`)
+
     // Check for errors
     const error = findLoginError(resBuf)
     if (error) {
@@ -805,11 +857,15 @@ app.post('/login', async (req, res) => {
     }
 
     // Need PIN
-    const { pinCode, verifier } = extractPinAndVerifier(resBuf)
+    const { pinCode, verifier, strings } = extractPinAndVerifier(resBuf)
 
     if (!verifier) {
-      console.log('[login] ❌ No verifier in response')
-      return res.json({ success: false, error: 'ไม่พบ verifier — อาจต้อง verify ผ่าน LINE app ก่อน' })
+      console.log(`[login] ❌ No verifier found. Response size: ${resBuf.length}, strings found: ${strings.length}`)
+      return res.json({
+        success: false,
+        error: 'ไม่พบ verifier — อาจต้อง verify ผ่าน LINE app ก่อน',
+        debug: { responseSize: resBuf.length, stringsFound: strings.length, strings: strings.map(s => s.length > 50 ? s.slice(0, 30) + '...' : s).slice(0, 10) },
+      })
     }
 
     // Store session
