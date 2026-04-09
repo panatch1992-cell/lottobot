@@ -676,7 +676,7 @@ app.post('/update-token', (req, res) => {
 // ─── Debug: test send + diagnostics ─────────────────────
 
 app.post('/debug-send', async (req, res) => {
-  if (!checkAuth(req, res)) return
+  // No auth required — diagnostic endpoint for /test page
 
   const { to, text } = req.body || {}
   if (!to) return res.status(400).json({ error: 'to is required' })
