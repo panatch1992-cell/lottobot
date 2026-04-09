@@ -140,6 +140,91 @@ function SettingsContent() {
       <div className="card space-y-3">
         <h3 className="font-semibold">📱 ตั้งค่าบัญชี LINE Bot</h3>
 
+        {/* ─── วาง Token จาก PC ─── */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+          <p className="text-sm font-medium text-amber-700">🔑 วาง Token จาก PC</p>
+          <p className="text-xs text-amber-600">รัน PIN Login บน PC → copy token → วางที่นี่ → ระบบอัพเดทให้อัตโนมัติ</p>
+          <textarea
+            value={settings._pasteToken || ''}
+            onChange={e => setSettings(prev => ({ ...prev, _pasteToken: e.target.value }))}
+            placeholder="วาง token ที่ได้จาก PIN Login (eyJ...)"
+            className="input text-xs font-mono h-16 resize-none"
+          />
+          <button
+            onClick={async () => {
+              const token = (settings._pasteToken || '').trim()
+              if (!token || !token.startsWith('eyJ')) {
+                alert('❌ Token ไม่ถูกต้อง — ต้องเริ่มด้วย eyJ...')
+                return
+              }
+              setSaving(true)
+              setStatus('⏳ กำลังอัพเดท...')
+              try {
+                // 1. Update token on Render via /update-token
+                const endpoint = settings.unofficial_line_endpoint || ''
+                const authToken = settings.unofficial_line_token || ''
+                if (endpoint) {
+                  const updateRes = await fetch(`${endpoint}/update-token`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                    },
+                    body: JSON.stringify({ token }),
+                  })
+                  const updateData = await updateRes.json()
+                  if (!updateData.success) {
+                    alert(`❌ อัพเดท Render ไม่สำเร็จ: ${updateData.error || 'unknown error'}`)
+                    setSaving(false)
+                    setStatus('')
+                    return
+                  }
+                }
+
+                // 2. Save token to DB
+                await fetch('/api/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ key: 'line_unofficial_auth_token', value: token }),
+                })
+
+                // 3. Sync groups
+                if (endpoint) {
+                  try {
+                    const groupRes = await fetch(`${endpoint}/groups`, {
+                      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                    })
+                    const groupData = await groupRes.json()
+                    if (groupData.groups?.length > 0) {
+                      setStatus(`✅ Token อัพเดทแล้ว! พบ ${groupData.groups.length} กลุ่ม — กำลัง sync...`)
+                      // Sync via API
+                      await fetch('/api/sync-groups', { method: 'POST' })
+                    }
+                  } catch { /* group sync optional */ }
+                }
+
+                setSettings(prev => ({ ...prev, _pasteToken: '', line_unofficial_auth_token: token.slice(0, 20) + '...' }))
+                setStatus('✅ Token อัพเดทสำเร็จ! Render + DB อัพเดทแล้ว')
+                loadSettings()
+              } catch {
+                alert('❌ เกิดข้อผิดพลาด')
+              }
+              setSaving(false)
+            }}
+            disabled={saving || !(settings._pasteToken || '').trim().startsWith('eyJ')}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition-colors w-full"
+          >
+            {saving ? '⏳ กำลังอัพเดท...' : '📋 อัพเดท Token'}
+          </button>
+          {status && <p className="text-xs text-center">{status}</p>}
+        </div>
+
+        <div className="relative flex items-center gap-2 my-1">
+          <div className="flex-1 border-t border-gray-200"></div>
+          <span className="text-xs text-text-secondary">หรือ กรอก email/password</span>
+          <div className="flex-1 border-t border-gray-200"></div>
+        </div>
+
         {settings.line_bot_password === '***USED***' || settings.line_unofficial_auth_token ? (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700">
             <p className="font-medium">✅ ตั้งค่าเรียบร้อยแล้ว</p>
