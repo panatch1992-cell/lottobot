@@ -80,7 +80,7 @@ async function saveAndSend(
 
   // Send to LINE
   const lineToken = settings.line_channel_access_token
-  const sendMode = settings.line_send_mode || 'push' // 'push' (ส่งทีละกลุ่ม) หรือ 'broadcast' (ส่งถึงเพื่อนทุกคน)
+  const sendMode = settings.line_send_mode || 'push' // 'push' | 'broadcast' | 'trigger'
 
   // Global quota check
   const lineQuota = lineToken ? await checkLineQuota() : null
@@ -197,6 +197,45 @@ async function saveAndSend(
       await sleep(500 + Math.floor(Math.random() * 1000))
     }
     } // end push mode
+
+    // ═══ TRIGGER MODE: ส่ง "." ให้ LINE OA Reply ฟรี 100%! ═══
+    if (sendMode === 'trigger') {
+      // Trigger mode: ส่ง "." ผ่าน unofficial API → LINE OA webhook จับ → Reply ผลหวย (ฟรี)
+      // ผลหวยอยู่ใน DB แล้ว (savedResult) → webhook จะดึงเอง
+      const alreadyTriggered = existingLogs?.some(l =>
+        l.channel === 'line' && l.status === 'sent' &&
+        (l.error_message === 'trigger' || (l as unknown as { msg_type?: string }).msg_type === 'trigger_send')
+      )
+
+      if (!alreadyTriggered) {
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+          if (baseUrl) {
+            const startTrigger = Date.now()
+            const triggerRes = await fetch(`${baseUrl}/api/line/trigger`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            })
+            const triggerData = await triggerRes.json().catch(() => ({}))
+
+            await db.from('send_logs').insert({
+              lottery_id: lottery.id,
+              result_id: savedResult.id,
+              channel: 'line',
+              msg_type: 'trigger_send',
+              status: triggerData.sent > 0 ? 'sent' : 'failed',
+              sent_at: new Date().toISOString(),
+              duration_ms: Date.now() - startTrigger,
+              error_message: triggerData.sent > 0 ? null : (triggerData.error || 'trigger failed'),
+            })
+
+            console.log(`[trigger] Triggered ${triggerData.sent || 0}/${triggerData.groups || 0} groups`)
+          }
+        } catch (err) {
+          console.error('[trigger] Error:', err)
+        }
+      }
+    } // end trigger mode
   }
 
   return { success: true }
