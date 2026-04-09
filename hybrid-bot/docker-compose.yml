@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  lottobot-hybrid:
+    build: .
+    ports:
+      - "8081:8081"   # Trigger Bot API
+      - "8082:8082"   # LINE OA Responder
+      - "8083:8083"   # Scraper Bridge
+      - "6080:6080"   # noVNC (setup mode only)
+    volumes:
+      - browser-profile:/app/browser-profile  # Session persist
+      - data:/app/data                        # result.json
+      - screenshots:/app/screenshots
+    environment:
+      - MODE=setup                    # เปลี่ยนเป็น "run" หลัง login
+      - HEADLESS=false                # เปลี่ยนเป็น "true" หลัง login
+      - CHECK_INTERVAL=30
+      - GROUPS=["บ้าน"]               # ชื่อกลุ่ม LINE ที่จะ trigger
+      - LINE_CHANNEL_SECRET=xxx       # LINE OA Channel Secret
+      - LINE_CHANNEL_ACCESS_TOKEN=xxx # LINE OA Channel Access Token
+      - RESULT_FILE=/app/data/result.json
+    restart: unless-stopped
+
+volumes:
+  browser-profile:
+  data:
+  screenshots:
