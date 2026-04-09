@@ -189,7 +189,126 @@ C:\Users\ASUS\deno\deno.exe run -A --node-modules-dir=auto deno-server.ts
 
 ---
 
-## 9. ข้อควรระวัง
+## 9. LINEJS API Reference (จาก Official Docs)
+
+### Installation
+```bash
+npx jsr add @evex/linejs      # npm
+deno add @evex/linejs          # deno
+```
+
+### Login Methods (3 วิธี)
+
+**1. Email/Password:**
+```typescript
+import { loginWithPassword } from "@evex/linejs";
+const client = await loginWithPassword({
+  email: "...",
+  password: "...",
+  onPincodeRequest(pin) { console.log("PIN:", pin); },
+}, { device: "DESKTOPWIN", storage: new FileStorage("./storage.json") });
+```
+
+**2. QR Code:**
+```typescript
+import { loginWithQR } from "@evex/linejs";
+const client = await loginWithQR({
+  onReceiveQRUrl(url) { console.log("QR:", url); },
+  onPincodeRequest(pin) { console.log("PIN:", pin); },
+}, { device: "DESKTOPWIN", storage: new FileStorage("./storage.json") });
+```
+
+**3. AuthToken (หลัง login ครั้งแรก — แนะนำ):**
+```typescript
+import { loginWithAuthToken } from "@evex/linejs";
+const client = await loginWithAuthToken(authtoken, {
+  device: "DESKTOPWIN",
+  storage: new FileStorage("./storage.json"),
+});
+```
+
+### Save Token (สำคัญ — ป้องกัน ABUSE_BLOCK)
+```typescript
+client.base.on("update:authtoken", (authtoken) => {
+  console.log("AuthToken", authtoken);
+  // Save to file/DB
+});
+```
+
+### Send Message
+```typescript
+await client.base.talk.sendMessage({
+  to: "c...",          // group MID
+  text: "Hello!",
+  e2ee: false,         // true ถ้าต้องการ E2EE
+  contentType: "NONE",
+});
+```
+
+### Get Groups
+```typescript
+const chats = await client.fetchJoinedChats();
+```
+
+### Keep Session Alive (Polling — สำคัญมาก!)
+```typescript
+client.listen();  // Simple way
+
+// Or detailed:
+const polling = client.createPolling();
+for await (const op of polling.listenTalkEvents()) {
+  // handle events
+}
+```
+
+### Receive & Reply Messages
+```typescript
+client.on("message", async (message) => {
+  if (message.text === "!ping") {
+    await message.reply("pong!");
+  }
+});
+client.listen();
+```
+
+### Client Options
+```typescript
+{
+  device: "DESKTOPWIN",           // หรือ "IOSIPAD"
+  storage: new FileStorage("./storage.json"),  // บังคับ — เก็บ token + E2EE keys
+  fetch: customFetch,              // optional — สำหรับ proxy
+  endpoint: "custom.server.com",   // optional — สำหรับ proxy
+  version: "14.0.1",               // optional
+}
+```
+
+### BaseClient (Low-level)
+```typescript
+import { BaseClient } from "@evex/linejs/base";
+const client = new BaseClient({ device: "DESKTOPWIN", storage });
+client.on("pincall", (pin) => {});
+client.on("qrcall", (qrUrl) => {});
+client.on("update:authtoken", (authToken) => {});
+await client.loginProcess.login({ qr: true });
+// or: await client.loginProcess.login({ authToken: "..." });
+// or: await client.loginProcess.login({ email: "...", password: "..." });
+```
+
+### Official Examples
+- https://github.com/evex-dev/linejs/blob/main/example/base-client/ping.ts
+- https://github.com/evex-dev/linejs/blob/main/example/talk/ping.ts
+- https://github.com/evex-dev/linejs/blob/main/example/talk/all_methods.ts
+
+### Key Rules
+1. **Login ครั้งเดียว** → save token → ใช้ loginWithAuthToken ครั้งต่อไป
+2. **ห้าม login ซ้ำ** → ABUSE_BLOCK
+3. **ต้อง storage** → FileStorage เก็บ E2EE keys + authToken
+4. **ต้อง listen/polling** → รักษา session ไม่ให้ถูก logout
+5. **device: "DESKTOPWIN"** → เสถียรที่สุด ไม่ใช้ iOS
+
+---
+
+## 10. ข้อควรระวัง
 
 1. **ห้าม push ตรงไป `main`** — ใช้ `claude/*` branch → PR → merge
 2. **ห้าม hardcode API keys** — ใช้ .env.local / Render env / Supabase settings
