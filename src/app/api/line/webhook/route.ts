@@ -10,6 +10,22 @@ export const dynamic = 'force-dynamic'
 
 const TRIGGER_CHAR = '.'
 
+// Simple in-memory webhook event deduplication (prevents LINE retry duplicates)
+// Each serverless instance has its own Set, expires after 5 min
+const processedEvents = new Map<string, number>()
+const EVENT_TTL_MS = 5 * 60 * 1000
+
+function isDuplicateEvent(eventId: string): boolean {
+  // Cleanup old entries
+  const now = Date.now()
+  processedEvents.forEach((ts, id) => {
+    if (now - ts > EVENT_TTL_MS) processedEvents.delete(id)
+  })
+  if (processedEvents.has(eventId)) return true
+  processedEvents.set(eventId, now)
+  return false
+}
+
 /**
  * ดึงผลหวยที่ยังไม่ได้ส่งผ่าน Reply API ให้กลุ่มนี้
  * → query results วันนี้ที่ยังไม่มี send_log channel='line_reply' สำหรับกลุ่มนี้
@@ -33,6 +49,7 @@ async function getPendingResults(db: ReturnType<typeof getServiceClient>, offici
   if (!results || results.length === 0) return []
 
   // ดึง send_logs ที่ส่งผ่าน reply แล้ว สำหรับกลุ่มนี้
+  // Note: ตรวจเฉพาะ trigger_reply (ไม่รวม trigger_send เพราะ trigger_send คือการยิง "." ไม่ใช่การ reply ผล)
   let query = db.from('send_logs')
     .select('result_id')
     .eq('channel', 'line')
@@ -65,11 +82,22 @@ export async function POST(req: NextRequest) {
     const channelSecret = settings.line_channel_secret
     const channelToken = settings.line_channel_access_token
 
-    // Verify signature
+    // Verify signature — REQUIRED in production
     const body = await req.text()
     const signature = req.headers.get('x-line-signature')
 
-    if (channelSecret && signature) {
+    if (!channelSecret) {
+      // In production, signature verification is mandatory
+      // Allow only in dev (no channel_secret configured)
+      if (process.env.NODE_ENV === 'production') {
+        console.error('LINE webhook: No channel secret configured — BLOCKING request in production')
+        return NextResponse.json({ error: 'Webhook signature verification not configured' }, { status: 500 })
+      }
+      console.warn('LINE webhook: No channel secret, skipping signature verification (dev mode only)')
+    } else if (!signature) {
+      console.error('LINE webhook: Missing x-line-signature header')
+      return NextResponse.json({ error: 'Missing signature header' }, { status: 403 })
+    } else {
       const hash = crypto
         .createHmac('SHA256', channelSecret)
         .update(body)
@@ -84,6 +112,13 @@ export async function POST(req: NextRequest) {
     const events = parsed.events || []
 
     for (const event of events) {
+      // Dedup LINE webhook retries (replyToken is unique per event)
+      const eventId = event.webhookEventId || event.replyToken || `${event.timestamp}-${event.source?.userId || event.source?.groupId || 'x'}`
+      if (isDuplicateEvent(eventId)) {
+        console.log(`[webhook] Skipping duplicate event ${eventId.slice(0, 20)}`)
+        continue
+      }
+
       console.log('LINE webhook event:', event.type, event.source?.type, event.source?.groupId)
 
       // ═══ TRIGGER: ตรวจจับ "." → Reply ด้วยผลหวย (ฟรี!) ═══
@@ -98,38 +133,55 @@ export async function POST(req: NextRequest) {
         const groupId = event.source.groupId
         console.log(`[trigger] "." detected in group ${groupId.slice(-8)}`)
 
-        const pending = await getPendingResults(db, groupId)
+        try {
+          const pending = await getPendingResults(db, groupId)
 
-        if (pending.length > 0) {
-          // สร้างข้อความรวมทุกผลที่ยังไม่ส่ง (รวมไม่เกิน 5 messages)
-          const messages: { type: 'text'; text: string }[] = []
+          if (pending.length > 0) {
+            // สร้างข้อความรวมทุกผลที่ยังไม่ส่ง (รวมไม่เกิน 5 messages)
+            // ตัด text ถ้ายาวเกิน 4900 chars (LINE limit 5000)
+            const messages: { type: 'text'; text: string }[] = []
 
-          for (const { result, lottery } of pending.slice(0, 5)) {
-            const formatted = formatResult(lottery, result)
-            messages.push({ type: 'text', text: formatted.line })
+            for (const { result, lottery } of pending.slice(0, 5)) {
+              const formatted = formatResult(lottery, result)
+              const text = formatted.line.length > 4900 ? formatted.line.slice(0, 4895) + '...' : formatted.line
+              messages.push({ type: 'text', text })
+            }
+
+            const startMs = Date.now()
+            const replyRes = await replyMessage(channelToken, event.replyToken, messages)
+            const duration = Date.now() - startMs
+
+            console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${duration}ms)`)
+
+            // Check for replyToken expiry (LINE error 110 / 400)
+            if (!replyRes.success && replyRes.error?.includes('Invalid reply token')) {
+              console.error(`[trigger] ⚠️ Reply token expired for group ${groupId.slice(-8)} — webhook was too slow`)
+            }
+
+            // บันทึก send_logs (ใช้ Promise.allSettled เพื่อไม่ให้ fail หนึ่งอัน block อื่น)
+            const logPromises = pending.slice(0, 5).map(({ result, lottery, groupDbId }) =>
+              db.from('send_logs').insert({
+                lottery_id: lottery.id,
+                result_id: result.id,
+                line_group_id: groupDbId,
+                channel: 'line',
+                msg_type: 'trigger_reply',
+                status: replyRes.success ? 'sent' : 'failed',
+                sent_at: new Date().toISOString(),
+                duration_ms: duration,
+                error_message: replyRes.error || null,
+              })
+            )
+            const logResults = await Promise.allSettled(logPromises)
+            const logFailures = logResults.filter(r => r.status === 'rejected').length
+            if (logFailures > 0) {
+              console.warn(`[trigger] ${logFailures} send_log insert(s) failed`)
+            }
+          } else {
+            console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
           }
-
-          const startMs = Date.now()
-          const replyRes = await replyMessage(channelToken, event.replyToken, messages)
-
-          console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${Date.now() - startMs}ms)`)
-
-          // บันทึก send_logs
-          for (const { result, lottery, groupDbId } of pending.slice(0, 5)) {
-            await db.from('send_logs').insert({
-              lottery_id: lottery.id,
-              result_id: result.id,
-              line_group_id: groupDbId,
-              channel: 'line',
-              msg_type: 'trigger_reply',
-              status: replyRes.success ? 'sent' : 'failed',
-              sent_at: new Date().toISOString(),
-              duration_ms: Date.now() - startMs,
-              error_message: replyRes.error || null,
-            })
-          }
-        } else {
-          console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
+        } catch (triggerErr) {
+          console.error(`[trigger] Error handling trigger:`, triggerErr)
         }
       }
 

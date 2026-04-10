@@ -91,9 +91,9 @@ async function saveAndSend(
   if (lineToken && lineQuota?.canSend) {
     const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'https://lottobot-chi.vercel.app'
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+      || 'https://lottobot-chi.vercel.app'
     const imageParams = new URLSearchParams({
       lottery_name: lottery.name, flag: lottery.flag, date: thaiDate,
       ...(resultData.top_number ? { top_number: resultData.top_number } : {}),
@@ -202,38 +202,63 @@ async function saveAndSend(
     if (sendMode === 'trigger') {
       // Trigger mode: ส่ง "." ผ่าน unofficial API → LINE OA webhook จับ → Reply ผลหวย (ฟรี)
       // ผลหวยอยู่ใน DB แล้ว (savedResult) → webhook จะดึงเอง
-      const alreadyTriggered = existingLogs?.some(l =>
-        l.channel === 'line' && l.status === 'sent' &&
-        (l.error_message === 'trigger' || (l as unknown as { msg_type?: string }).msg_type === 'trigger_send')
-      )
+      // Dedup check: only skip if we already have a SUCCESSFUL trigger_send for this result
+      const alreadyTriggered = (existingLogs || []).some(l => {
+        const msgType = (l as unknown as { msg_type?: string }).msg_type
+        return l.channel === 'line' && l.status === 'sent' && msgType === 'trigger_send'
+      })
 
       if (!alreadyTriggered) {
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+          || 'https://lottobot-chi.vercel.app'
+        const startTrigger = Date.now()
+        let triggerData: { sent?: number; groups?: number; error?: string } = {}
+        let triggerError: string | null = null
+
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
-          if (baseUrl) {
-            const startTrigger = Date.now()
-            const triggerRes = await fetch(`${baseUrl}/api/line/trigger`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            })
-            const triggerData = await triggerRes.json().catch(() => ({}))
+          // Add timeout to prevent hanging cron job
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), 30000) // 30s max
 
-            await db.from('send_logs').insert({
-              lottery_id: lottery.id,
-              result_id: savedResult.id,
-              channel: 'line',
-              msg_type: 'trigger_send',
-              status: triggerData.sent > 0 ? 'sent' : 'failed',
-              sent_at: new Date().toISOString(),
-              duration_ms: Date.now() - startTrigger,
-              error_message: triggerData.sent > 0 ? null : (triggerData.error || 'trigger failed'),
-            })
+          const triggerRes = await fetch(`${baseUrl}/api/line/trigger`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+          })
+          clearTimeout(timer)
 
-            console.log(`[trigger] Triggered ${triggerData.sent || 0}/${triggerData.groups || 0} groups`)
+          triggerData = await triggerRes.json().catch(() => ({}))
+          if (!triggerRes.ok) {
+            triggerError = `HTTP ${triggerRes.status}: ${JSON.stringify(triggerData).slice(0, 200)}`
           }
         } catch (err) {
-          console.error('[trigger] Error:', err)
+          triggerError = err instanceof Error
+            ? (err.name === 'AbortError' ? 'Timeout (30s)' : err.message)
+            : String(err)
+          console.error('[trigger] Fetch error:', triggerError)
         }
+
+        const sentCount = triggerData.sent || 0
+        const totalGroups = triggerData.groups || 0
+        const success = sentCount > 0
+
+        try {
+          await db.from('send_logs').insert({
+            lottery_id: lottery.id,
+            result_id: savedResult.id,
+            channel: 'line',
+            msg_type: 'trigger_send',
+            status: success ? 'sent' : 'failed',
+            sent_at: new Date().toISOString(),
+            duration_ms: Date.now() - startTrigger,
+            error_message: success ? null : (triggerError || triggerData.error || `${sentCount}/${totalGroups} groups sent`),
+          })
+        } catch (logErr) {
+          console.error('[trigger] Failed to insert send_log:', logErr)
+        }
+
+        console.log(`[trigger] Result: ${sentCount}/${totalGroups} groups (${success ? 'OK' : 'FAILED'})`)
       }
     } // end trigger mode
   }

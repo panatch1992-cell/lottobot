@@ -150,9 +150,9 @@ export async function POST(req: NextRequest) {
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
 
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : 'https://lottobot-chi.vercel.app'
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+        || 'https://lottobot-chi.vercel.app'
       const imageParams = new URLSearchParams({
         lottery_name: (lottery as Lottery).name, flag: (lottery as Lottery).flag, date: thaiDate,
         ...(top_number ? { top_number } : {}),
