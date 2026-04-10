@@ -225,22 +225,24 @@ function SettingsContent() {
           <div className="flex-1 border-t border-gray-200"></div>
         </div>
 
-        {settings.line_bot_password === '***USED***' || settings.line_unofficial_auth_token ? (
+        {(settings.line_bot_password === '***USED***' || settings.line_unofficial_auth_token) && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700">
             <p className="font-medium">✅ ตั้งค่าเรียบร้อยแล้ว</p>
             <p>บัญชี: {settings.line_bot_email || '-'} | เบอร์: {settings.line_bot_phone || '-'}</p>
             <p>Token: ได้รับแล้ว | ระบบ refresh อัตโนมัติ</p>
+            <p className="text-amber-600 mt-1">💡 ถ้า token หมดอายุ/session หลุด → login ใหม่ด้านล่าง</p>
           </div>
-        ) : (
-          <>
-        <p className="text-xs text-text-secondary">สมัคร LINE ด้วยเบอร์ใหม่ แล้วกรอกข้อมูลด้านล่าง</p>
+        )}
+
+        <div className="pt-2">
+          <p className="text-xs text-text-secondary font-medium mb-2">🔑 Login ใหม่ (PIN Login)</p>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
           <p className="font-medium">📋 ขั้นตอน:</p>
-          <p>1. สมัคร LINE ด้วย <b>เบอร์ใหม่</b> (อย่าใช้เบอร์ส่วนตัว)</p>
-          <p>2. ตั้ง Email + Password ในบัญชี LINE</p>
-          <p>3. กรอกข้อมูลด้านล่าง แล้วกด <b>บันทึก</b></p>
-          <p>4. <b>เชิญบัญชีนี้เข้ากลุ่ม LINE</b> ที่ต้องการส่งผลหวย</p>
+          <p>1. กรอก Email + Password ของบัญชี LINE ด้านล่าง</p>
+          <p>2. กด <b>🔑 PIN Login</b></p>
+          <p>3. จะขึ้น <b>PIN 6 หลัก</b> → เปิด LINE app บนมือถือ → verify PIN</p>
+          <p>4. ระบบจะเก็บ session ให้อัตโนมัติ</p>
         </div>
 
         <div>
@@ -449,8 +451,7 @@ function SettingsContent() {
             </div>
           </div>
         )}
-          </>
-        )}
+        </div>
       </div>
 
       {/* ═══ 3. กลุ่ม LINE ═══ */}
