@@ -1,4 +1,22 @@
-const express = require('express')
+/**
+ * LottoBot Unofficial Endpoint (Node.js + @evex/linejs)
+ *
+ * Uses @evex/linejs for both login and sending to ensure consistent
+ * session handling (no V3_TOKEN_CLIENT_LOGGED_OUT).
+ *
+ * Endpoints:
+ *   GET  /health        — status + token info
+ *   POST /login         — email/password → PIN → token
+ *   GET  /login/check   — poll login status
+ *   POST /update-token  — set LINE_AUTH_TOKEN manually
+ *   GET  /groups        — list joined groups
+ *   POST /send          — send message (push_text / push_image_text / broadcast)
+ *   POST /debug-send    — test send (no auth)
+ *   GET  /test          — HTML test page
+ */
+
+import express from 'express'
+import { loginWithPassword, loginWithAuthToken } from '@evex/linejs'
 
 const app = express()
 
@@ -18,26 +36,49 @@ const AUTH_TOKEN = (process.env.UNOFFICIAL_AUTH_TOKEN || '').trim()
 let LINE_AUTH_TOKEN = (process.env.LINE_AUTH_TOKEN || '').replace(/\s+/g, '').trim()
 const LINE_CHANNEL_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 
-const LINE_THRIFT_API = 'https://gd2.line.naver.jp'
-const LINE_THRIFT_API_ALT = 'https://ga2.line.naver.jp'
 const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
 
-// Try to detect correct host from token
-function getThriftHost() {
-  // ga2 = global api (used by most libraries), gd2 = global data
-  // Try ga2 first as it's more commonly used by unofficial clients
-  return LINE_THRIFT_API_ALT
+// ─── Global linejs client ───────────────────────────
+
+let client = null
+let clientReady = false
+let clientInitPromise = null
+
+async function initClient() {
+  if (!LINE_AUTH_TOKEN) {
+    console.warn('[init] No LINE_AUTH_TOKEN, client not initialized')
+    return
+  }
+  try {
+    console.log('[init] Initializing linejs client with auth token...')
+    client = await loginWithAuthToken(LINE_AUTH_TOKEN, {
+      device: 'DESKTOPWIN',
+    })
+    clientReady = true
+    console.log('[init] ✅ Client ready')
+  } catch (err) {
+    console.error('[init] ❌ Client init failed:', err.message)
+    clientReady = false
+    client = null
+  }
 }
 
-const LINE_APP_HEADER = {
-  'User-Agent': 'Line/14.2.0',
-  'X-Line-Application': 'DESKTOPWIN\t14.2.0\tWindows\t10.0;SECONDARY',
-  'X-Line-Carrier': 'wifi',
+async function ensureClient() {
+  if (clientReady && client) return client
+  if (clientInitPromise) {
+    await clientInitPromise
+    return clientReady ? client : null
+  }
+  clientInitPromise = initClient()
+  await clientInitPromise
+  clientInitPromise = null
+  return clientReady ? client : null
 }
 
-// ─── Auto Token Refresh ──────────────────────────────────
-// JWT token มี exp ~7 วัน แต่ rexp ~1 ปี
-// ระบบจะ refresh อัตโนมัติก่อนหมดอายุ 1 วัน
+// Init on startup (delayed to let server start listening first)
+setTimeout(() => ensureClient().catch(e => console.error('[init] error:', e.message)), 2000)
+
+// ─── JWT helpers ────────────────────────────────────
 
 function decodeJwtPayload(token) {
   try {
@@ -45,317 +86,56 @@ function decodeJwtPayload(token) {
     if (parts.length !== 3) return null
     const payload = Buffer.from(parts[1], 'base64').toString('utf-8')
     return JSON.parse(payload)
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function getTokenExpiry() {
   if (!LINE_AUTH_TOKEN) return { expired: true, expiresIn: 0 }
   const payload = decodeJwtPayload(LINE_AUTH_TOKEN)
-  if (!payload || !payload.exp) return { expired: false, expiresIn: Infinity }
+  if (!payload || typeof payload.exp !== 'number') {
+    return { expired: false, expiresIn: Infinity }
+  }
   const now = Math.floor(Date.now() / 1000)
   return {
     expired: now >= payload.exp,
     expiresIn: payload.exp - now,
     expiresAt: new Date(payload.exp * 1000).toISOString(),
-    refreshExpiry: payload.rexp ? new Date(payload.rexp * 1000).toISOString() : null,
+    refreshExpiry: typeof payload.rexp === 'number' ? new Date(payload.rexp * 1000).toISOString() : null,
   }
 }
 
-async function refreshTokenIfNeeded() {
-  const { expired, expiresIn } = getTokenExpiry()
-  const ONE_DAY = 86400
+// ─── Send helpers ───────────────────────────────────
 
-  if (!expired && expiresIn > ONE_DAY) return { refreshed: false, reason: `token valid for ${Math.floor(expiresIn / 3600)}h` }
-  if (!LINE_AUTH_TOKEN) return { refreshed: false, reason: 'no token' }
-
-  console.log(`[refresh] Token ${expired ? 'EXPIRED' : `expiring in ${Math.floor(expiresIn / 3600)}h`} — refreshing...`)
-
-  // Method 1: LINE's Thrift refreshToken on AuthService
-  try {
-    const controller1 = new AbortController()
-    setTimeout(() => controller1.abort(), 10000)
-    const refreshRes = await fetch(getThriftHost() + '/RS4', {
-      method: 'POST',
-      headers: {
-        ...LINE_APP_HEADER,
-        'X-Line-Access': LINE_AUTH_TOKEN,
-        'Content-Type': 'application/x-thrift',
-        'Accept': 'application/x-thrift',
-      },
-      body: buildRefreshTokenThrift(),
-      signal: controller1.signal,
-    })
-
-    if (refreshRes.ok) {
-      const buf = Buffer.from(await refreshRes.arrayBuffer())
-      const bodyStr = buf.toString('utf-8')
-      const tokenMatch = bodyStr.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
-      if (tokenMatch) {
-        LINE_AUTH_TOKEN = tokenMatch[0]
-        console.log('[refresh] ✅ Token refreshed via RS4!')
-        return { refreshed: true, newExpiry: getTokenExpiry().expiresAt }
-      }
-    }
-  } catch (err) {
-    console.warn('[refresh] RS4 failed:', err.message)
-  }
-
-  // Method 2: LINE's v4 auth endpoint
-  try {
-    const controller2 = new AbortController()
-    setTimeout(() => controller2.abort(), 10000)
-    const refreshRes2 = await fetch(getThriftHost() + '/api/v4p/rs', {
-      method: 'POST',
-      headers: {
-        ...LINE_APP_HEADER,
-        'X-Line-Access': LINE_AUTH_TOKEN,
-        'Content-Type': 'application/x-thrift',
-        'Accept': 'application/x-thrift',
-      },
-      body: buildRefreshTokenThrift(),
-      signal: controller2.signal,
-    })
-
-    if (refreshRes2.ok) {
-      const buf = Buffer.from(await refreshRes2.arrayBuffer())
-      const bodyStr = buf.toString('utf-8')
-      const tokenMatch = bodyStr.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
-      if (tokenMatch) {
-        LINE_AUTH_TOKEN = tokenMatch[0]
-        console.log('[refresh] ✅ Token refreshed via v4p!')
-        return { refreshed: true, newExpiry: getTokenExpiry().expiresAt }
-      }
-    }
-  } catch (err) {
-    console.warn('[refresh] v4p failed:', err.message)
-  }
-
-  console.warn('[refresh] ❌ Could not refresh token')
-  return { refreshed: false, reason: 'all refresh methods failed' }
-}
-
-function buildRefreshTokenThrift() {
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01]))
-  parts.push(writeString('refresh'))
-  parts.push(writeUVarint(0))
-  parts.push(Buffer.from([0x00]))
-  return Buffer.concat(parts)
-}
-
-// Auto-refresh every 6 hours
-setInterval(() => {
-  refreshTokenIfNeeded()
-    .then(r => console.log('[auto-refresh]', JSON.stringify(r)))
-    .catch(e => console.error('[auto-refresh] error:', e.message))
-}, 6 * 60 * 60 * 1000)
-
-// Refresh on startup (delayed)
-setTimeout(() => {
-  refreshTokenIfNeeded()
-    .then(r => console.log('[startup-refresh]', JSON.stringify(r)))
-    .catch(e => console.error('[startup-refresh] error:', e.message))
-}, 30000)
-
-// ─── Thrift Compact Protocol Encoder ─────────────────────
-
-function writeVarint(value) {
-  const bytes = []
-  value = (value << 1) ^ (value >> 31) // zigzag encode for signed
-  while ((value & ~0x7f) !== 0) {
-    bytes.push((value & 0x7f) | 0x80)
-    value >>>= 7
-  }
-  bytes.push(value & 0x7f)
-  return Buffer.from(bytes)
-}
-
-function writeUVarint(value) {
-  const bytes = []
-  while ((value & ~0x7f) !== 0) {
-    bytes.push((value & 0x7f) | 0x80)
-    value >>>= 7
-  }
-  bytes.push(value & 0x7f)
-  return Buffer.from(bytes)
-}
-
-function writeString(str) {
-  const buf = Buffer.from(str, 'utf-8')
-  return Buffer.concat([writeUVarint(buf.length), buf])
-}
-
-// Detect MID type from prefix
-// c = GROUP(2), r = ROOM(1), u = USER(0)
 function getMidType(mid) {
   if (!mid) return 0
   const prefix = mid.charAt(0).toLowerCase()
-  if (prefix === 'c') return 2 // GROUP
-  if (prefix === 'r') return 1 // ROOM
-  return 0 // USER
+  if (prefix === 'c') return 2
+  if (prefix === 'r') return 1
+  return 0
 }
-
-// Build TCompact sendMessage payload
-// TalkService.sendMessage(1: i32 seq, 2: Message message)
-// Message struct fields:
-//   1: string _from
-//   2: string to
-//   3: MIDType toType (i32 enum: USER=0, ROOM=1, GROUP=2)
-//   10: string text
-//   15: ContentType contentType (i32)
-function buildSendMessageThrift(seq, to, text, contentType = 0) {
-  const parts = []
-  const toType = getMidType(to)
-
-  // Method header
-  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol=compact, version=1, type=CALL
-  parts.push(writeString('sendMessage'))
-  parts.push(writeUVarint(seq)) // seqid (unsigned varint)
-
-  // Args field 1: seq (i32) - delta=1, type=5(i32)
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(0))
-
-  // Args field 2: message (struct) - delta=1, type=12(struct)
-  parts.push(Buffer.from([0x1c]))
-
-  // --- Inside Message struct ---
-
-  // Message.to (field 2, string) - delta=2 from 0, type=8(string)
-  parts.push(Buffer.from([0x28]))
-  parts.push(writeString(to))
-
-  // Message.toType (field 3, i32) - delta=1 from 2, type=5(i32)
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(toType))
-
-  // Message.text (field 10, string) - delta=7 from 3, type=8(string)
-  parts.push(Buffer.from([0x78])) // delta=7, type=8
-  parts.push(writeString(text))
-
-  // Message.contentType (field 15, i32) - delta=5 from 10, type=5(i32)
-  parts.push(Buffer.from([0x55]))
-  parts.push(writeVarint(contentType))
-
-  // End Message struct
-  parts.push(Buffer.from([0x00]))
-  // End args struct
-  parts.push(Buffer.from([0x00]))
-
-  return Buffer.concat(parts)
-}
-
-// ─── Send via Unofficial (Thrift) ────────────────────────
 
 async function sendViaUnofficial(to, text) {
-  if (!LINE_AUTH_TOKEN) {
-    return { success: false, error: 'LINE_AUTH_TOKEN not configured' }
-  }
-
-  // Auto-refresh if token expired
-  const { expired } = getTokenExpiry()
-  if (expired) {
-    console.log('[send] Token expired — refreshing...')
-    await refreshTokenIfNeeded()
-    const after = getTokenExpiry()
-    if (after.expired) {
-      return { success: false, error: 'Token expired — refresh failed. ต้องใช้ token ใหม่' }
-    }
-  }
+  const c = await ensureClient()
+  if (!c) return { success: false, error: 'Client not initialized' }
 
   try {
-    const payload = buildSendMessageThrift(0, to, text)
-    const toType = getMidType(to)
-
-    console.log(`[unofficial] Sending to ${to.slice(-8)} (type=${toType}) text=${text.slice(0, 50)}...`)
-
-    const controller = new AbortController()
-    setTimeout(() => controller.abort(), 15000)
-
-    const res = await fetch(getThriftHost() + '/S4', {
-      method: 'POST',
-      headers: {
-        ...LINE_APP_HEADER,
-        'X-Line-Access': LINE_AUTH_TOKEN,
-        'Content-Type': 'application/x-thrift',
-        'Accept': 'application/x-thrift',
-      },
-      body: payload,
-      signal: controller.signal,
-    })
-
-    const resBuffer = Buffer.from(await res.arrayBuffer())
-
-    if (resBuffer.length === 0) {
-      return { success: false, error: 'Empty response from LINE' }
-    }
-
-    // Check for error strings in Thrift response body
-    const bodyStr = resBuffer.toString('utf-8', 0, Math.min(resBuffer.length, 500))
-    const errorPatterns = [
-      'AUTHENTICATION_DIVERTED_MIGRATION',
-      'AUTHENTICATION_FAILED',
-      'INVALID_SESSION',
-      'NOT_AUTHORIZED',
-      'ABUSE_BLOCK',
-      'NOT_FOUND',
-      'INTERNAL_ERROR',
-      'E_ILLEGAL_ARGUMENT',
-    ]
-    const foundError = errorPatterns.find(p => bodyStr.includes(p))
-    if (foundError) {
-      console.error(`[unofficial] ❌ Thrift error: ${foundError}`)
-      return { success: false, error: `LINE error: ${foundError}` }
-    }
-
-    // Check TCompact header for EXCEPTION type
-    if (resBuffer.length >= 3 && resBuffer[0] === 0x82) {
-      const msgType = (resBuffer[1] >> 5) & 0x03
-      if (msgType === 2) { // EXCEPTION
-        console.error('[unofficial] ❌ Thrift EXCEPTION')
-        return { success: false, error: `Thrift EXCEPTION: ${bodyStr.slice(0, 200)}` }
-      }
-    }
-
-    if (!res.ok) {
-      return { success: false, error: `HTTP ${res.status}` }
-    }
-
-    // ─── Delivery Proof Validation ─────────────────────
-    // Success response should contain:
-    // 1. Thrift REPLY type (msgType=1) in header
-    // 2. Response body > 10 bytes (contains message struct back)
-    // 3. The 'to' MID echoed back in response
-    const isReply = resBuffer.length >= 3 && resBuffer[0] === 0x82 &&
-      (((resBuffer[1] >> 5) & 0x03) === 1)
-    const hasContent = resBuffer.length > 10
-    const echoedMid = bodyStr.includes(to.slice(-10))
-
-    if (!isReply) {
-      console.warn(`[unofficial] ⚠️ Response is not REPLY type (${resBuffer.length}b)`)
-      return { success: false, error: 'No REPLY in response — message may not be delivered' }
-    }
-
-    if (!hasContent) {
-      console.warn(`[unofficial] ⚠️ Response too short (${resBuffer.length}b)`)
-      return { success: false, error: 'Response too short — no delivery proof' }
-    }
-
-    console.log(`[unofficial] ✅ Sent to ${to.slice(-8)} (${resBuffer.length}b, reply=${isReply}, echo=${echoedMid})`)
-    return { success: true, via: 'unofficial', proof: { bytes: resBuffer.length, reply: isReply, echo: echoedMid } }
+    console.log(`[unofficial] Sending to ${to.slice(-8)} (type=${getMidType(to)}) text=${text.slice(0, 50)}`)
+    const res = await c.base.talk.sendMessage({ to, text })
+    console.log(`[unofficial] ✅ Sent, messageId=${res?.id || '?'}`)
+    return { success: true, via: 'unofficial', messageId: res?.id }
   } catch (err) {
-    const errMsg = err.name === 'AbortError' ? 'Timeout (15s)' : err.message
-    return { success: false, error: `Unofficial: ${errMsg}` }
+    const msg = err?.message || String(err)
+    console.error(`[unofficial] ❌ Send failed: ${msg}`)
+    return { success: false, error: msg }
   }
 }
-
-// ─── Send via Official (Fallback) ────────────────────────
 
 async function sendViaOfficial(to, messages) {
   if (!LINE_CHANNEL_TOKEN) {
     return { success: false, error: 'LINE_CHANNEL_ACCESS_TOKEN not configured' }
   }
-
   try {
     const res = await fetch(`${LINE_OFFICIAL_API}/message/push`, {
       method: 'POST',
@@ -365,15 +145,11 @@ async function sendViaOfficial(to, messages) {
       },
       body: JSON.stringify({ to, messages }),
     })
-
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
       return { success: false, error: `Official HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}` }
     }
-    // LINE official API returns {} on success, error body on failure
-    if (body.message) {
-      return { success: false, error: `Official: ${body.message}` }
-    }
+    if (body.message) return { success: false, error: `Official: ${body.message}` }
     console.log(`[official] ✅ Sent to ${to.slice(-8)}`)
     return { success: true, via: 'official' }
   } catch (err) {
@@ -381,7 +157,7 @@ async function sendViaOfficial(to, messages) {
   }
 }
 
-// ─── Auth guard ──────────────────────────────────────────
+// ─── Auth guard ─────────────────────────────────────
 
 function checkAuth(req, res) {
   if (!AUTH_TOKEN) return true
@@ -394,141 +170,291 @@ function checkAuth(req, res) {
   return true
 }
 
-// ─── Get Groups (ดึงรายการกลุ่มจาก LINE) ────────────────
+// ─── Login sessions ─────────────────────────────────
 
-function buildGetGroupsThrift() {
-  // TalkService.getGroupIdsJoined() — method to get list of group MIDs
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01])) // protocol=compact, version=1, type=CALL
-  parts.push(writeString('getGroupIdsJoined'))
-  parts.push(writeUVarint(0)) // seqid
-  parts.push(Buffer.from([0x00])) // end args
-  return Buffer.concat(parts)
-}
+const loginSessions = new Map()
 
-function buildGetGroupThrift(groupId) {
-  // TalkService.getGroup(2: string groupMid)
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01]))
-  parts.push(writeString('getGroup'))
-  parts.push(writeUVarint(0))
-  // Field 2: groupMid (string) - field id 2, type 8
-  parts.push(Buffer.from([0x28])) // delta=2, type=8
-  parts.push(writeString(groupId))
-  parts.push(Buffer.from([0x00])) // end args
-  return Buffer.concat(parts)
-}
+// ─── Routes ─────────────────────────────────────────
 
-// Extract strings from Thrift binary response
-function extractStringsFromThrift(buf) {
-  const strings = []
-  let i = 0
-  while (i < buf.length - 1) {
-    // Look for string-like patterns: length byte(s) followed by printable chars
-    // Group MIDs are 33 chars starting with 'c'
-    if (buf[i] === 0x21 || buf[i] === 33) { // length 33
-      const str = buf.toString('utf-8', i + 1, i + 1 + 33)
-      if (/^c[0-9a-f]{32}$/.test(str)) {
-        strings.push(str)
-        i += 34
-        continue
-      }
-    }
-    i++
+app.get('/health', (_req, res) => {
+  const tokenStatus = getTokenExpiry()
+  const payload = decodeJwtPayload(LINE_AUTH_TOKEN)
+  res.json({
+    ok: true,
+    service: 'lottobot-unofficial-endpoint',
+    runtime: 'node + @evex/linejs',
+    hasAuthToken: !!AUTH_TOKEN,
+    hasLineToken: !!LINE_CHANNEL_TOKEN,
+    hasUnofficialToken: !!LINE_AUTH_TOKEN,
+    clientReady,
+    mode: clientReady ? 'unofficial (primary)' : (LINE_CHANNEL_TOKEN ? 'official only' : 'none'),
+    tokenDebug: LINE_AUTH_TOKEN ? {
+      length: LINE_AUTH_TOKEN.length,
+      parts: LINE_AUTH_TOKEN.split('.').length,
+      decoded: payload ? { aid: payload.aid, exp: payload.exp, cmode: payload.cmode, ctype: payload.ctype } : 'FAILED_TO_DECODE',
+    } : null,
+    token: LINE_AUTH_TOKEN ? {
+      expired: tokenStatus.expired,
+      expiresIn: isFinite(tokenStatus.expiresIn) ? `${Math.floor(tokenStatus.expiresIn / 3600)}h` : 'unknown',
+      expiresAt: tokenStatus.expiresAt,
+      refreshExpiry: tokenStatus.refreshExpiry,
+    } : null,
+    now: new Date().toISOString(),
+  })
+})
+
+app.post('/login', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  const { email, password } = req.body || {}
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: 'email and password required' })
   }
-  // Also try varint-encoded lengths
-  i = 0
-  while (i < buf.length) {
-    // Check for 'c' followed by hex chars (group MID pattern)
-    if (buf[i] === 0x63) { // 'c'
-      const str = buf.toString('utf-8', i, i + 33)
-      if (/^c[0-9a-f]{32}$/.test(str) && !strings.includes(str)) {
-        strings.push(str)
-      }
-    }
-    i++
-  }
-  return strings
-}
 
-// Extract group name from getGroup response
-function extractGroupName(buf) {
-  // Group name is typically in field 2 (name) of Group struct
-  // Look for readable Thai/English text strings
-  const str = buf.toString('utf-8')
-  // Find strings between readable boundaries
-  const matches = str.match(/[\u0E00-\u0E7F\w\s]{2,50}/g) || []
-  // Filter out method names and common patterns
-  return matches.find(m =>
-    !m.includes('getGroup') &&
-    !m.includes('sendMessage') &&
-    m.length > 1
-  ) || null
-}
+  console.log(`[login] Starting login for ${email.slice(0, 3)}***`)
+
+  const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+  const session = { status: 'waiting', createdAt: Date.now() }
+  loginSessions.set(sessionId, session)
+  setTimeout(() => loginSessions.delete(sessionId), 300000)
+
+  let pinResolver = null
+  const pinPromise = new Promise(resolve => { pinResolver = resolve })
+
+  // Start login in background
+  ;(async () => {
+    try {
+      const newClient = await loginWithPassword(
+        {
+          email,
+          password,
+          onPincodeRequest(pin) {
+            console.log(`[login] PIN received: ${pin}`)
+            if (pinResolver) pinResolver(pin)
+          },
+        },
+        { device: 'DESKTOPWIN' }
+      )
+
+      const token = newClient.base.authToken
+      if (token) {
+        LINE_AUTH_TOKEN = token
+        client = newClient
+        clientReady = true
+        session.status = 'success'
+        session.token = token
+        console.log(`[login] ✅ Login success, token obtained`)
+      } else {
+        session.status = 'error'
+        session.error = 'No token received'
+      }
+    } catch (err) {
+      session.status = 'error'
+      session.error = err?.message || String(err)
+      console.error(`[login] ❌ Failed: ${session.error}`)
+    }
+  })()
+
+  // Wait for PIN (max 15 seconds)
+  const pinResult = await Promise.race([
+    pinPromise,
+    new Promise(resolve => setTimeout(() => resolve(null), 15000)),
+  ])
+
+  if (pinResult) {
+    return res.json({
+      success: true,
+      needPin: true,
+      pinCode: pinResult,
+      sessionId,
+      message: `กรุณาเปิด LINE app แล้วกด verify PIN: ${pinResult}`,
+    })
+  }
+
+  // No PIN — check status
+  if (session.status === 'success') {
+    return res.json({
+      success: true,
+      needPin: false,
+      token: session.token,
+      expiry: getTokenExpiry(),
+    })
+  }
+
+  if (session.status === 'error') {
+    return res.json({ success: false, error: session.error })
+  }
+
+  return res.json({
+    success: true,
+    needPin: true,
+    pinCode: null,
+    sessionId,
+    message: 'รอ PIN จาก LINE...',
+  })
+})
+
+app.get('/login/check', (req, res) => {
+  const sessionId = req.query.session
+  if (!sessionId) return res.status(400).json({ status: 'error', error: 'session required' })
+
+  const session = loginSessions.get(sessionId)
+  if (!session) return res.json({ status: 'expired', error: 'Session not found' })
+
+  if (session.status === 'success' && session.token) {
+    return res.json({ status: 'success', token: session.token, expiry: getTokenExpiry() })
+  }
+  if (session.status === 'error') {
+    return res.json({ status: 'error', error: session.error })
+  }
+
+  const elapsed = Math.floor((Date.now() - session.createdAt) / 1000)
+  if (elapsed > 240) {
+    session.status = 'timeout'
+    return res.json({ status: 'timeout', error: 'ไม่ได้ verify ภายในเวลาที่กำหนด' })
+  }
+
+  return res.json({ status: 'waiting', elapsed, message: 'รอ verify ที่ LINE app...' })
+})
+
+app.post('/update-token', async (req, res) => {
+  if (!checkAuth(req, res)) return
+  const { token } = req.body || {}
+  if (!token) return res.status(400).json({ success: false, error: 'token is required' })
+
+  LINE_AUTH_TOKEN = token
+  clientReady = false
+  client = null
+
+  try {
+    await initClient()
+    return res.json({ success: clientReady, expiry: getTokenExpiry(), clientReady })
+  } catch (err) {
+    return res.json({ success: false, error: err.message })
+  }
+})
 
 app.get('/groups', async (req, res) => {
   if (!checkAuth(req, res)) return
 
-  if (!LINE_AUTH_TOKEN) {
-    return res.status(400).json({ success: false, error: 'No unofficial token' })
-  }
+  const c = await ensureClient()
+  if (!c) return res.status(500).json({ success: false, error: 'Client not ready' })
 
   try {
-    // Step 1: Get list of group MIDs
-    const controller = new AbortController()
-    setTimeout(() => controller.abort(), 15000)
-
-    const groupsRes = await fetch(getThriftHost() + '/S4', {
-      method: 'POST',
-      headers: {
-        ...LINE_APP_HEADER,
-        'X-Line-Access': LINE_AUTH_TOKEN,
-        'Content-Type': 'application/x-thrift',
-        'Accept': 'application/x-thrift',
-      },
-      body: buildGetGroupsThrift(),
-      signal: controller.signal,
+    const mids = await c.base.talk.getAllChatMids({
+      request: { withMemberChats: true, withInvitedChats: false },
+      syncReason: 'INTERNAL',
     })
+    console.log('[groups] mids:', JSON.stringify(mids).slice(0, 300))
 
-    const buf = Buffer.from(await groupsRes.arrayBuffer())
-    const groupIds = extractStringsFromThrift(buf)
-
-    console.log(`[groups] Found ${groupIds.length} groups:`, groupIds)
-
-    // Step 2: Get name for each group
+    const groupIds = Array.isArray(mids?.memberChatMids) ? mids.memberChatMids : []
     const groups = []
-    for (const gid of groupIds) {
+
+    if (groupIds.length > 0) {
       try {
-        const ctrl = new AbortController()
-        setTimeout(() => ctrl.abort(), 10000)
-
-        const gRes = await fetch(getThriftHost() + '/S4', {
-          method: 'POST',
-          headers: {
-            ...LINE_APP_HEADER,
-            'X-Line-Access': LINE_AUTH_TOKEN,
-            'Content-Type': 'application/x-thrift',
-            'Accept': 'application/x-thrift',
-          },
-          body: buildGetGroupThrift(gid),
-          signal: ctrl.signal,
+        const chatsRes = await c.base.talk.getChats({
+          chatMids: groupIds,
+          withMembers: false,
+          withInvitees: false,
         })
-
-        const gBuf = Buffer.from(await gRes.arrayBuffer())
-        const name = extractGroupName(gBuf)
-        groups.push({ id: gid, name: name || '(unknown)' })
-      } catch {
-        groups.push({ id: gid, name: '(error fetching name)' })
+        const chats = chatsRes?.chats || []
+        for (const chat of chats) {
+          groups.push({ id: chat.chatMid, name: chat.chatName || '(unnamed)' })
+        }
+      } catch (err) {
+        console.error('[groups] getChats failed:', err.message)
+        for (const gid of groupIds) groups.push({ id: gid, name: '(name unavailable)' })
       }
     }
 
     res.json({ success: true, count: groups.length, groups })
   } catch (err) {
+    console.error('[groups] Error:', err.message)
     res.status(500).json({ success: false, error: err.message })
   }
 })
 
-// ─── Test Page (เปิดจาก browser มือถือ) ─────────────────
+app.post('/send', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  const { mode, to, officialTo, text, imageUrl } = req.body || {}
+  if (!mode) return res.status(400).json({ success: false, error: 'mode is required' })
+
+  const officialGroupId = officialTo || to
+
+  if (mode === 'push_text') {
+    if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
+
+    const result = await sendViaUnofficial(to, text)
+    if (result.success) return res.json(result)
+    console.warn(`[send] unofficial failed: ${result.error} → fallback official`)
+
+    if (LINE_CHANNEL_TOKEN && officialGroupId) {
+      const off = await sendViaOfficial(officialGroupId, [{ type: 'text', text }])
+      return off.success ? res.json(off) : res.status(502).json(off)
+    }
+    return res.status(502).json({ success: false, error: result.error })
+  }
+
+  if (mode === 'push_image_text') {
+    if (!to || !imageUrl || !text) return res.status(400).json({ success: false, error: 'push_image_text requires: to, imageUrl, text' })
+
+    const result = await sendViaUnofficial(to, text)
+    if (result.success) return res.json(result)
+
+    if (LINE_CHANNEL_TOKEN && officialGroupId) {
+      const off = await sendViaOfficial(officialGroupId, [
+        { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+        { type: 'text', text },
+      ])
+      return off.success ? res.json(off) : res.status(502).json(off)
+    }
+    return res.status(502).json({ success: false, error: result.error })
+  }
+
+  if (mode === 'broadcast_text' || mode === 'broadcast_image_text') {
+    if (!LINE_CHANNEL_TOKEN) return res.status(502).json({ success: false, error: 'Broadcast requires official token' })
+
+    const messages = mode === 'broadcast_text'
+      ? [{ type: 'text', text }]
+      : [
+          { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+          { type: 'text', text },
+        ]
+
+    try {
+      const broadcastRes = await fetch(`${LINE_OFFICIAL_API}/message/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LINE_CHANNEL_TOKEN}` },
+        body: JSON.stringify({ messages }),
+      })
+      return broadcastRes.ok
+        ? res.json({ success: true, via: 'official_broadcast' })
+        : res.status(502).json({ success: false, error: `HTTP ${broadcastRes.status}` })
+    } catch (err) {
+      return res.status(502).json({ success: false, error: err.message })
+    }
+  }
+
+  return res.status(400).json({ success: false, error: `unsupported mode: ${mode}` })
+})
+
+app.post('/debug-send', async (req, res) => {
+  const { to, text } = req.body || {}
+  if (!to) return res.status(400).json({ error: 'to is required' })
+  const testText = text || `🧪 LottoBot test ${new Date().toLocaleString('th-TH')}`
+  const result = await sendViaUnofficial(to, testText)
+  res.json({
+    sendResult: result,
+    diagnostics: {
+      to: to.slice(-8),
+      toType: getMidType(to),
+      toTypeLabel: ['USER', 'ROOM', 'GROUP'][getMidType(to)] || 'UNKNOWN',
+      clientReady,
+      tokenStatus: getTokenExpiry(),
+    },
+  })
+})
 
 app.get('/test', (_req, res) => {
   const tokenStatus = getTokenExpiry()
@@ -548,713 +474,76 @@ input,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #333;b
 textarea{height:80px;resize:vertical}
 button{width:100%;padding:12px;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px}
 .btn-send{background:#22a867;color:#fff}
-.btn-send:disabled{background:#555;color:#999}
-#result{margin-top:12px;padding:12px;border-radius:8px;font-size:14px;display:none;word-break:break-all}
+.btn-load{background:#c9a84c;color:#000}
+#result,#groups{margin-top:12px;padding:12px;border-radius:8px;font-size:14px}
 .ok{background:#1b4332;border:1px solid #22a867}
 .fail{background:#3d0000;border:1px solid #dc3545}
-.loading{background:#1a1a2e;border:1px solid #e89b1c;color:#e89b1c}
 </style></head><body>
-<h2>🧪 LottoBot Unofficial Test</h2>
-
+<h2>🧪 LottoBot Unofficial Test (Node + linejs)</h2>
 <div class="card">
-  <div class="status"><div class="dot ${tokenStatus.expired ? 'red' : 'green'}"></div>
-    <span>Token: ${tokenStatus.expired ? '❌ หมดอายุ' : '✅ ใช้ได้ (' + Math.floor(tokenStatus.expiresIn / 3600) + 'h)'}</span></div>
-  <div class="status"><div class="dot ${LINE_AUTH_TOKEN ? 'green' : 'red'}"></div>
-    <span>Unofficial: ${LINE_AUTH_TOKEN ? '✅' : '❌'}</span></div>
-  <div class="status"><div class="dot ${LINE_CHANNEL_TOKEN ? 'green' : 'yellow'}"></div>
-    <span>Official fallback: ${LINE_CHANNEL_TOKEN ? '✅' : '⚠️ ไม่มี'}</span></div>
+  <div class="status"><div class="dot ${clientReady ? 'green' : 'red'}"></div>
+    <span>Client: ${clientReady ? '✅ พร้อมใช้' : '❌ ยังไม่พร้อม'}</span></div>
+  <div class="status"><div class="dot ${!tokenStatus.expired && LINE_AUTH_TOKEN ? 'green' : 'red'}"></div>
+    <span>Token: ${!LINE_AUTH_TOKEN ? '❌ ไม่มี' : tokenStatus.expired ? '❌ หมดอายุ' : '✅ ใช้ได้'}</span></div>
 </div>
-
 <div class="card">
-  <button class="btn-send" style="background:#c9a84c" onclick="loadGroups()">📋 ดึงรายการกลุ่ม LINE</button>
-  <div id="groups" style="margin-top:8px"></div>
+  <button class="btn-load" onclick="loadGroups()">📋 ดึงรายการกลุ่ม LINE</button>
+  <div id="groups"></div>
 </div>
-
 <div class="card">
   <label>Group MID (to)</label>
-  <input id="to" placeholder="กดดึงรายการกลุ่มด้านบน แล้วกดเลือก" />
+  <input id="to" placeholder="c..." />
   <label>ข้อความ</label>
   <textarea id="text">🧪 ทดสอบ LottoBot unofficial</textarea>
   <button class="btn-send" onclick="testSend()">📤 ส่งทดสอบ</button>
-  <div id="result"></div>
+  <div id="result" style="display:none"></div>
 </div>
-
 <script>
 async function loadGroups() {
-  const btn = event.target
   const div = document.getElementById('groups')
-  btn.disabled = true; btn.textContent = '⏳ กำลังดึง...'
-  div.innerHTML = '<p style="color:#e89b1c;font-size:13px">กำลังดึงกลุ่มจาก LINE... (อาจใช้เวลา 10-30 วินาที)</p>'
+  div.innerHTML = '⏳ กำลังดึง...'
   try {
     const res = await fetch('/groups')
     const data = await res.json()
-    if (data.groups && data.groups.length > 0) {
+    if (data.success && data.groups?.length > 0) {
       div.innerHTML = data.groups.map(g =>
-        '<div style="background:#0f3460;border-radius:8px;padding:10px;margin:6px 0;cursor:pointer" onclick="selectGroup(\\'' + g.id + '\\')">' +
-        '<div style="font-weight:600">' + (g.name || '?') + '</div>' +
-        '<div style="font-size:11px;color:#aaa;font-family:monospace;word-break:break-all">' + g.id + '</div></div>'
+        '<div style="background:#0f3460;padding:8px;margin:4px 0;border-radius:6px;cursor:pointer" onclick="document.getElementById(\\'to\\').value=\\'' + g.id + '\\'">' +
+        '<div>' + g.name + '</div><div style="font-size:10px;color:#aaa;font-family:monospace">' + g.id + '</div></div>'
       ).join('')
     } else {
-      div.innerHTML = '<p style="color:#dc3545">ไม่พบกลุ่ม — บัญชีนี้อาจไม่ได้อยู่ในกลุ่มใดๆ</p>'
+      div.innerHTML = '<div class="fail">❌ ' + (data.error || 'ไม่พบกลุ่ม') + '</div>'
     }
   } catch (e) {
-    div.innerHTML = '<p style="color:#dc3545">❌ ' + e.message + '</p>'
+    div.innerHTML = '<div class="fail">❌ ' + e.message + '</div>'
   }
-  btn.disabled = false; btn.textContent = '📋 ดึงรายการกลุ่ม LINE'
 }
-
-function selectGroup(id) {
-  document.getElementById('to').value = id
-}
-
 async function testSend() {
   const to = document.getElementById('to').value.trim()
   const text = document.getElementById('text').value.trim()
-  const btn = document.querySelector('.btn-send:last-of-type')
   const result = document.getElementById('result')
-  if (!to || !text) { alert('กรอก MID + ข้อความ'); return }
-  btn.disabled = true; btn.textContent = '⏳ กำลังส่ง...'
-  result.style.display = 'block'; result.className = 'loading'; result.textContent = 'กำลังส่ง...'
+  result.style.display = 'block'
+  result.className = ''
+  result.textContent = '⏳ กำลังส่ง...'
   try {
     const res = await fetch('/debug-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, text })
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({to, text})
     })
     const data = await res.json()
     if (data.sendResult?.success) {
       result.className = 'ok'
-      result.innerHTML = '✅ ส่งสำเร็จ!<br>via: ' + (data.sendResult.via || 'unofficial') +
-        '<br>toType: ' + data.diagnostics?.toTypeLabel
+      result.innerHTML = '✅ ส่งสำเร็จ via ' + (data.sendResult.via || 'unofficial')
     } else {
       result.className = 'fail'
-      result.innerHTML = '❌ ส่งไม่สำเร็จ<br>error: ' + (data.sendResult?.error || JSON.stringify(data))
+      result.innerHTML = '❌ ' + (data.sendResult?.error || 'failed')
     }
   } catch (e) {
-    result.className = 'fail'; result.textContent = '❌ ' + e.message
+    result.className = 'fail'
+    result.textContent = '❌ ' + e.message
   }
-  btn.disabled = false; btn.textContent = '📤 ส่งทดสอบ'
 }
 </script>
 </body></html>`)
-})
-
-// ─── Health ──────────────────────────────────────────────
-
-app.get('/health', (_req, res) => {
-  const tokenStatus = getTokenExpiry()
-  const payload = decodeJwtPayload(LINE_AUTH_TOKEN)
-  res.json({
-    ok: true,
-    service: 'lottobot-unofficial-endpoint',
-    hasAuthToken: !!AUTH_TOKEN,
-    hasLineToken: !!LINE_CHANNEL_TOKEN,
-    hasUnofficialToken: !!LINE_AUTH_TOKEN,
-    mode: LINE_AUTH_TOKEN ? 'unofficial (primary)' : 'official only',
-    thriftHost: getThriftHost(),
-    appHeader: LINE_APP_HEADER['X-Line-Application'],
-    tokenDebug: LINE_AUTH_TOKEN ? {
-      length: LINE_AUTH_TOKEN.length,
-      parts: LINE_AUTH_TOKEN.split('.').length,
-      firstChars: LINE_AUTH_TOKEN.slice(0, 20),
-      lastChars: LINE_AUTH_TOKEN.slice(-20),
-      decoded: payload ? { aid: payload.aid, exp: payload.exp, cmode: payload.cmode, ctype: payload.ctype } : 'FAILED_TO_DECODE',
-    } : null,
-    token: LINE_AUTH_TOKEN ? {
-      expired: tokenStatus.expired,
-      expiresIn: isFinite(tokenStatus.expiresIn) ? `${Math.floor(tokenStatus.expiresIn / 3600)}h` : 'unknown',
-      expiresAt: tokenStatus.expiresAt,
-      refreshExpiry: tokenStatus.refreshExpiry,
-      autoRefresh: 'every 6h',
-    } : null,
-    now: new Date().toISOString(),
-  })
-})
-
-// Manual refresh
-app.post('/refresh', async (req, res) => {
-  if (!checkAuth(req, res)) return
-  const result = await refreshTokenIfNeeded()
-  res.json(result)
-})
-
-// ─── PIN Login (email/password → PIN → token) ──────────
-
-// In-memory login sessions (sessionId → { verifier, pinCode, status, token })
-const loginSessions = new Map()
-
-// Build loginZ Thrift payload
-// ─── RSA Key + Encryption for Login ─────────────────
-
-// Build getAuthRSAKeyInfo Thrift request
-// TalkService.getAuthRSAKeyInfo(2: i32 identityProvider)
-function buildGetRSAKeyThrift() {
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01]))
-  parts.push(writeString('getAuthRSAKeyInfo'))
-  parts.push(writeUVarint(0))
-
-  // field 2: identityProvider (i32) = 1 (LINE), delta=2, type=5
-  parts.push(Buffer.from([0x25]))
-  parts.push(writeVarint(1))
-
-  parts.push(Buffer.from([0x00])) // end args
-  return Buffer.concat(parts)
-}
-
-// Extract RSA key info from Thrift response
-function extractRSAKeyInfo(buf) {
-  const strings = []
-  // Extract all strings using varint length decoding
-  for (let i = 0; i < buf.length - 2; i++) {
-    const { value: len, bytesRead } = readUVarintAt(buf, i)
-    if (len >= 3 && len <= 500 && i + bytesRead + len <= buf.length) {
-      const s = buf.toString('utf-8', i + bytesRead, i + bytesRead + len)
-      if (/^[\x20-\x7e]+$/.test(s) && s.length === len) {
-        strings.push(s)
-        i += bytesRead + len - 1
-      }
-    }
-  }
-
-  let keynm = null   // key name/session key
-  let nvalue = null   // RSA n (modulus) hex
-  let evalue = null   // RSA e (exponent) hex
-
-  for (const s of strings) {
-    if (s === 'getAuthRSAKeyInfo') continue
-    // Key name is short identifier
-    if (!keynm && s.length >= 8 && s.length <= 40 && /^[a-zA-Z0-9._-]+$/.test(s)) keynm = s
-    // RSA n is a long hex string (256+ chars)
-    if (!nvalue && s.length >= 200 && /^[0-9a-f]+$/.test(s)) nvalue = s
-    // RSA e is short hex (typically "10001")
-    if (!evalue && s.length >= 3 && s.length <= 10 && /^[0-9a-f]+$/.test(s) && s !== keynm) evalue = s
-  }
-
-  return { keynm, nvalue, evalue, strings }
-}
-
-// RSA encrypt: message -> hex cipher using n, e
-function rsaEncrypt(message, nHex, eHex) {
-  const crypto = require('crypto')
-  // Convert hex to BigInt
-  const n = BigInt('0x' + nHex)
-  const e = BigInt('0x' + eHex)
-
-  // PKCS1 v1.5 padding
-  const msgBuf = Buffer.from(message, 'utf-8')
-  const keySize = Math.ceil(nHex.length / 2)
-  const paddedLen = keySize
-
-  if (msgBuf.length > paddedLen - 11) {
-    throw new Error('Message too long for RSA key')
-  }
-
-  // Build padded block: 0x00 0x02 [random non-zero bytes] 0x00 [message]
-  const padded = Buffer.alloc(paddedLen)
-  padded[0] = 0x00
-  padded[1] = 0x02
-  const psLen = paddedLen - msgBuf.length - 3
-  const ps = crypto.randomBytes(psLen)
-  for (let i = 0; i < psLen; i++) {
-    if (ps[i] === 0) ps[i] = 1 // non-zero padding
-  }
-  ps.copy(padded, 2)
-  padded[2 + psLen] = 0x00
-  msgBuf.copy(padded, 3 + psLen)
-
-  // RSA: cipher = padded^e mod n
-  let m = BigInt('0x' + padded.toString('hex'))
-  let result = 1n
-  m = m % n
-  let exp = e
-  while (exp > 0n) {
-    if (exp % 2n === 1n) {
-      result = (result * m) % n
-    }
-    exp = exp / 2n
-    m = (m * m) % n
-  }
-
-  return result.toString(16).padStart(keySize * 2, '0')
-}
-
-async function getRSAKeyAndEncrypt(email, password) {
-  console.log('[login] Fetching RSA key...')
-  const rsaPayload = buildGetRSAKeyThrift()
-
-  // Try auth endpoints for RSA key
-  const endpoints = ['/api/v4p/rs', '/RS4', '/api/v4/TalkService.do']
-  let rsaInfo = null
-
-  for (const ep of endpoints) {
-    try {
-      const r = await fetch(getThriftHost() + ep, {
-        method: 'POST',
-        headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
-        body: rsaPayload,
-        signal: AbortSignal.timeout(10000),
-      })
-      const buf = Buffer.from(await r.arrayBuffer())
-      console.log(`[login] RSA ${ep} → ${buf.length} bytes`)
-      const info = extractRSAKeyInfo(buf)
-      if (info.nvalue && info.evalue) {
-        rsaInfo = info
-        console.log(`[login] RSA key found via ${ep}: keynm=${info.keynm}, n=${info.nvalue.slice(0, 20)}..., e=${info.evalue}`)
-        break
-      }
-    } catch (err) {
-      console.log(`[login] RSA ${ep} error: ${err.message}`)
-    }
-  }
-
-  if (!rsaInfo) {
-    return { success: false, error: 'ไม่สามารถดึง RSA key จาก LINE ได้' }
-  }
-
-  // Format: chr(len(sessionKey)) + sessionKey + chr(len(email)) + email + chr(len(password)) + password
-  const message = String.fromCharCode(rsaInfo.keynm.length) + rsaInfo.keynm +
-    String.fromCharCode(email.length) + email +
-    String.fromCharCode(password.length) + password
-
-  try {
-    const encrypted = rsaEncrypt(message, rsaInfo.nvalue, rsaInfo.evalue)
-    console.log(`[login] Password encrypted (${encrypted.length} hex chars)`)
-    return { success: true, keynm: rsaInfo.keynm, encrypted }
-  } catch (err) {
-    return { success: false, error: `RSA encryption failed: ${err.message}` }
-  }
-}
-
-// Build loginZ with RSA-encrypted credentials
-// identifier = RSA keynm, password = RSA encrypted hex string
-function buildLoginZRequestEncrypted(keynm, encryptedHex) {
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01]))
-  parts.push(writeString('loginZ'))
-  parts.push(writeUVarint(0))
-
-  // Args field 2: loginRequest (struct) - delta=2, type=12
-  parts.push(Buffer.from([0x2c]))
-
-  // LoginRequest.e2eeVersion (field 1, i32) = 0
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(0))
-  // LoginRequest.type (field 2, i32) = 1 (ID_CREDENTIAL)
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(1))
-  // LoginRequest.identityProvider (field 3, i32) = 1 (LINE)
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(1))
-  // LoginRequest.identifier (field 4, string) = RSA key name
-  parts.push(Buffer.from([0x18]))
-  parts.push(writeString(keynm))
-  // LoginRequest.password (field 5, string) = RSA encrypted hex
-  parts.push(Buffer.from([0x18]))
-  parts.push(writeString(encryptedHex))
-  // LoginRequest.keepLoggedIn (field 6, bool=true)
-  parts.push(Buffer.from([0x11]))
-  // LoginRequest.accessLocation (field 7, string)
-  parts.push(Buffer.from([0x18]))
-  parts.push(writeString('127.0.0.1'))
-  // LoginRequest.systemName (field 8, string)
-  parts.push(Buffer.from([0x18]))
-  parts.push(writeString('LottoBot'))
-  // LoginRequest.certificate (field 9, string) = empty
-  parts.push(Buffer.from([0x18]))
-  parts.push(writeString(''))
-
-  parts.push(Buffer.from([0x00])) // end LoginRequest
-  parts.push(Buffer.from([0x00])) // end args
-  return Buffer.concat(parts)
-}
-
-// Build loginZ with verifier only
-function buildLoginZVerifier(verifier) {
-  const parts = []
-  parts.push(Buffer.from([0x82, 0x21, 0x01]))
-  parts.push(writeString('loginZ'))
-  parts.push(writeUVarint(0))
-
-  // Args field 2: loginRequest (struct)
-  parts.push(Buffer.from([0x2c]))
-
-  // LoginRequest.e2eeVersion (field 1, i32) = 0
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(0))
-  // LoginRequest.type (field 2, i32) = 1
-  parts.push(Buffer.from([0x15]))
-  parts.push(writeVarint(1))
-  // Skip to field 10 (verifier): from field 2, delta=8 → 0x88 won't work (max delta=15 in high nibble)
-  // delta=8, type=8(string) → (8 << 4) | 8 = 0x88
-  parts.push(Buffer.from([0x88]))
-  parts.push(writeString(verifier))
-
-  parts.push(Buffer.from([0x00])) // end LoginRequest
-  parts.push(Buffer.from([0x00])) // end args
-  return Buffer.concat(parts)
-}
-
-function extractTokenFromResponse(buf) {
-  const str = buf.toString('utf-8')
-  const m = str.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/)
-  return m ? m[0] : null
-}
-
-// Read varint from buffer at offset, return { value, bytesRead }
-function readUVarintAt(buf, offset) {
-  let value = 0, shift = 0, bytesRead = 0
-  while (offset + bytesRead < buf.length) {
-    const b = buf[offset + bytesRead]
-    bytesRead++
-    value |= (b & 0x7f) << shift
-    if ((b & 0x80) === 0) break
-    shift += 7
-  }
-  return { value, bytesRead }
-}
-
-// Extract all Thrift compact protocol strings from response
-function extractThriftStrings(buf) {
-  const strings = []
-  // Skip Thrift message header (method name etc) — scan from start
-  for (let i = 0; i < buf.length - 2; i++) {
-    // Method 1: Read varint-length strings at every position
-    const { value: len, bytesRead } = readUVarintAt(buf, i)
-    if (len >= 3 && len <= 500 && i + bytesRead + len <= buf.length) {
-      const s = buf.toString('utf-8', i + bytesRead, i + bytesRead + len)
-      // Check if it looks like a real string (printable ASCII + some unicode)
-      if (/^[\x20-\x7e\u0E00-\u0E7F]+$/.test(s) && s.length === len) {
-        strings.push({ offset: i, value: s })
-        // Skip past this string to avoid duplicates
-        i += bytesRead + len - 1
-      }
-    }
-  }
-  return strings
-}
-
-function extractPinAndVerifier(buf) {
-  const extracted = extractThriftStrings(buf)
-  const strings = extracted.map(e => e.value)
-
-  let pinCode = null
-  let verifier = null
-
-  console.log(`[login-parse] Found ${strings.length} strings, lengths: ${strings.map(s => s.length).join(',')}`)
-  console.log(`[login-parse] Strings: ${strings.map(s => s.length > 50 ? s.slice(0, 30) + '...' + s.slice(-10) : s).join(' | ')}`)
-
-  for (const s of strings) {
-    // PIN is exactly 6 digits
-    if (/^\d{6}$/.test(s)) pinCode = s
-    // Verifier is a long alphanumeric/base64 string (not a JWT token)
-    if (s.length > 20 && /^[A-Za-z0-9+/=_.-]+$/.test(s) && !s.startsWith('eyJ') && !s.includes('loginZ') && !s.includes('Line/')) {
-      if (!verifier || s.length > verifier.length) verifier = s  // take longest match
-    }
-  }
-
-  // Fallback: scan raw bytes for verifier pattern (base64-like string)
-  if (!verifier) {
-    const rawStr = buf.toString('utf-8')
-    const verifierMatch = rawStr.match(/[A-Za-z0-9+/=_-]{40,300}/)
-    if (verifierMatch && !verifierMatch[0].startsWith('eyJ')) {
-      verifier = verifierMatch[0]
-      console.log(`[login-parse] Fallback verifier: ${verifier.slice(0, 30)}...`)
-    }
-  }
-
-  return { pinCode, verifier, strings }
-}
-
-function findLoginError(buf) {
-  const str = buf.toString('utf-8', 0, Math.min(buf.length, 1000))
-  const errors = ['AUTHENTICATION_FAILED', 'INVALID_IDENTITY_CREDENTIAL', 'ABUSE_BLOCK', 'NOT_FOUND', 'INTERNAL_ERROR']
-  const found = errors.find(e => str.includes(e))
-  if (!found) {
-    // Check for Thrift EXCEPTION type in header
-    if (buf.length >= 3 && buf[0] === 0x82 && ((buf[1] >> 5) & 0x03) === 2) {
-      console.log(`[login-parse] Thrift EXCEPTION detected`)
-      return 'THRIFT_EXCEPTION: ' + str.slice(0, 200)
-    }
-  }
-  return found || null
-}
-
-// Step 1: POST /login — start login, get PIN
-app.post('/login', async (req, res) => {
-  if (!checkAuth(req, res)) return
-
-  const { email, password } = req.body || {}
-  if (!email || !password) return res.status(400).json({ success: false, error: 'email and password required' })
-
-  console.log(`[login] Starting login for ${email.slice(0, 3)}***`)
-
-  try {
-    // Step 1: Get RSA key and encrypt credentials
-    const rsaResult = await getRSAKeyAndEncrypt(email, password)
-    if (!rsaResult.success) {
-      return res.json({ success: false, error: rsaResult.error })
-    }
-
-    // Step 2: Login with RSA-encrypted credentials
-    const payload = buildLoginZRequestEncrypted(rsaResult.keynm, rsaResult.encrypted)
-    console.log(`[login] Sending loginZ with RSA encrypted credentials...`)
-
-    let resBuf = null
-    const authEndpoints = ['/api/v4p/rs', '/RS4']
-
-    for (const ep of authEndpoints) {
-      try {
-        console.log(`[login] Trying loginZ on ${ep}...`)
-        const r = await fetch(getThriftHost() + ep, {
-          method: 'POST',
-          headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
-          body: payload,
-          signal: AbortSignal.timeout(15000),
-        })
-        const buf = Buffer.from(await r.arrayBuffer())
-        console.log(`[login] ${ep} → ${r.status}, ${buf.length} bytes`)
-
-        if (buf.length > 80 || extractTokenFromResponse(buf)) {
-          resBuf = buf
-          break
-        }
-        const { pinCode: p, verifier: v } = extractPinAndVerifier(buf)
-        if (p || v) { resBuf = buf; break }
-        resBuf = buf // keep last as fallback
-      } catch (err) {
-        console.log(`[login] ${ep} failed: ${err.message}`)
-      }
-    }
-
-    if (!resBuf) {
-      return res.json({ success: false, error: 'ไม่สามารถเชื่อมต่อ LINE server ได้' })
-    }
-
-    console.log(`[login] Response: ${resBuf.length} bytes`)
-    console.log(`[login] Response hex (first 60): ${resBuf.toString('hex').slice(0, 120)}`)
-
-    // Check for errors
-    const error = findLoginError(resBuf)
-    if (error) {
-      console.log(`[login] ❌ ${error}`)
-      return res.json({ success: false, error, hint: 'ตรวจสอบ email/password ว่าถูกต้อง' })
-    }
-
-    // Check if direct token (no PIN needed)
-    const directToken = extractTokenFromResponse(resBuf)
-    if (directToken) {
-      LINE_AUTH_TOKEN = directToken
-      console.log('[login] ✅ Direct login (no PIN)')
-      return res.json({ success: true, token: directToken, expiry: getTokenExpiry(), needPin: false })
-    }
-
-    // Need PIN
-    const { pinCode, verifier, strings } = extractPinAndVerifier(resBuf)
-
-    if (!verifier) {
-      console.log(`[login] ❌ No verifier found. Response size: ${resBuf.length}, strings found: ${strings.length}`)
-      return res.json({
-        success: false,
-        error: 'ไม่พบ verifier — อาจต้อง verify ผ่าน LINE app ก่อน',
-        debug: { responseSize: resBuf.length, stringsFound: strings.length, strings: strings.map(s => s.length > 50 ? s.slice(0, 30) + '...' : s).slice(0, 10) },
-      })
-    }
-
-    // Store session
-    const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-    loginSessions.set(sessionId, { verifier, pinCode, status: 'waiting', token: null, createdAt: Date.now() })
-
-    // Auto-cleanup after 3 minutes
-    setTimeout(() => loginSessions.delete(sessionId), 180000)
-
-    // Start background polling for token
-    ;(async () => {
-      for (let i = 0; i < 40; i++) {
-        await new Promise(r => setTimeout(r, 3000))
-        const session = loginSessions.get(sessionId)
-        if (!session || session.status !== 'waiting') break
-
-        try {
-          const verifyPayload = buildLoginZVerifier(session.verifier)
-          const verifyRes = await fetch(getThriftHost() + '/api/v4p/rs', {
-            method: 'POST',
-            headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
-            body: verifyPayload,
-            signal: AbortSignal.timeout(10000),
-          })
-          const verifyBuf = Buffer.from(await verifyRes.arrayBuffer())
-          const token = extractTokenFromResponse(verifyBuf)
-
-          if (token) {
-            LINE_AUTH_TOKEN = token
-            session.token = token
-            session.status = 'success'
-            console.log(`[login] ✅ PIN verified! Token obtained.`)
-            break
-          }
-        } catch { /* keep polling */ }
-      }
-
-      const session = loginSessions.get(sessionId)
-      if (session && session.status === 'waiting') {
-        session.status = 'timeout'
-      }
-    })()
-
-    console.log(`[login] PIN: ${pinCode || '?'}, session: ${sessionId}`)
-    return res.json({
-      success: true,
-      needPin: true,
-      pinCode: pinCode || null,
-      sessionId,
-      message: pinCode ? `กรุณาเปิด LINE app แล้วกด verify PIN: ${pinCode}` : 'กรุณา verify ที่ LINE app',
-    })
-
-  } catch (err) {
-    console.error('[login] Error:', err.message)
-    return res.status(500).json({ success: false, error: err.message })
-  }
-})
-
-// Step 2: GET /login/check?session=xxx — poll for result
-app.get('/login/check', (req, res) => {
-  const sessionId = req.query.session
-  if (!sessionId) return res.status(400).json({ error: 'session required' })
-
-  const session = loginSessions.get(sessionId)
-  if (!session) return res.json({ status: 'expired', error: 'Session not found or expired' })
-
-  if (session.status === 'success' && session.token) {
-    const expiry = getTokenExpiry()
-    return res.json({ status: 'success', token: session.token, expiry })
-  }
-
-  if (session.status === 'timeout') {
-    return res.json({ status: 'timeout', error: 'ไม่ได้ verify ภายในเวลาที่กำหนด' })
-  }
-
-  const elapsed = Math.floor((Date.now() - session.createdAt) / 1000)
-  return res.json({ status: 'waiting', elapsed, message: 'รอ verify ที่ LINE app...' })
-})
-
-// ─── Update token (สำหรับกรณีต้องเปลี่ยน token ใหม่) ────
-
-app.post('/update-token', (req, res) => {
-  if (!checkAuth(req, res)) return
-  const { token } = req.body || {}
-  if (!token) return res.status(400).json({ success: false, error: 'token is required' })
-
-  LINE_AUTH_TOKEN = token
-  const expiry = getTokenExpiry()
-  console.log(`[update-token] Token updated! Expires: ${expiry.expiresAt}`)
-  res.json({ success: true, expiry })
-})
-
-// ─── Debug: test send + diagnostics ─────────────────────
-
-app.post('/debug-send', async (req, res) => {
-  // No auth required — diagnostic endpoint for /test page
-
-  const { to, text } = req.body || {}
-  if (!to) return res.status(400).json({ error: 'to is required' })
-
-  const testText = text || `🧪 LottoBot test ${new Date().toLocaleString('th-TH')}`
-  const tokenStatus = getTokenExpiry()
-  const toType = getMidType(to)
-
-  console.log(`[debug-send] to=${to}, toType=${toType}, tokenExpired=${tokenStatus.expired}`)
-
-  const result = await sendViaUnofficial(to, testText)
-
-  res.json({
-    sendResult: result,
-    diagnostics: {
-      to: to.slice(-8),
-      toType,
-      toTypeLabel: ['USER', 'ROOM', 'GROUP'][toType] || 'UNKNOWN',
-      tokenExpired: tokenStatus.expired,
-      tokenExpiresAt: tokenStatus.expiresAt,
-      tokenExpiresIn: `${Math.floor(tokenStatus.expiresIn / 3600)}h`,
-    },
-  })
-})
-
-// ─── Send endpoint ───────────────────────────────────────
-
-app.post('/send', async (req, res) => {
-  if (!checkAuth(req, res)) return
-
-  const { mode, to, officialTo, text, imageUrl } = req.body || {}
-  if (!mode) return res.status(400).json({ success: false, error: 'mode is required' })
-
-  const officialGroupId = officialTo || to
-
-  if (mode === 'push_text') {
-    if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
-
-    // 1. Try unofficial (Thrift) — primary
-    if (LINE_AUTH_TOKEN) {
-      const result = await sendViaUnofficial(to, text)
-      if (result.success) return res.json(result)
-      console.warn('[send] unofficial failed:', result.error, '→ fallback official')
-    }
-
-    // 2. Fallback to official
-    if (LINE_CHANNEL_TOKEN && officialGroupId) {
-      const result = await sendViaOfficial(officialGroupId, [{ type: 'text', text }])
-      return result.success ? res.json(result) : res.status(502).json(result)
-    }
-
-    return res.status(502).json({ success: false, error: 'No working LINE credentials' })
-  }
-
-  if (mode === 'push_image_text') {
-    if (!to || !imageUrl || !text) return res.status(400).json({ success: false, error: 'push_image_text requires: to, imageUrl, text' })
-
-    // 1. Try unofficial (text only)
-    if (LINE_AUTH_TOKEN) {
-      const result = await sendViaUnofficial(to, text)
-      if (result.success) return res.json(result)
-      console.warn('[send] unofficial failed:', result.error, '→ fallback official')
-    }
-
-    // 2. Fallback to official (image + text)
-    if (LINE_CHANNEL_TOKEN && officialGroupId) {
-      const result = await sendViaOfficial(officialGroupId, [
-        { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
-        { type: 'text', text },
-      ])
-      return result.success ? res.json(result) : res.status(502).json(result)
-    }
-
-    return res.status(502).json({ success: false, error: 'No working LINE credentials' })
-  }
-
-  if (mode === 'broadcast_text' || mode === 'broadcast_image_text') {
-    if (!LINE_CHANNEL_TOKEN) return res.status(502).json({ success: false, error: 'Broadcast requires official token' })
-
-    const messages = mode === 'broadcast_text'
-      ? [{ type: 'text', text }]
-      : [
-          { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
-          { type: 'text', text },
-        ]
-
-    try {
-      const broadcastRes = await fetch(`${LINE_OFFICIAL_API}/message/broadcast`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LINE_CHANNEL_TOKEN}` },
-        body: JSON.stringify({ messages }),
-      })
-      const result = { success: broadcastRes.ok, via: 'official_broadcast' }
-      return broadcastRes.ok ? res.json(result) : res.status(502).json(result)
-    } catch (err) {
-      return res.status(502).json({ success: false, error: err.message })
-    }
-  }
-
-  return res.status(400).json({ success: false, error: `unsupported mode: ${mode}` })
 })
 
 app.listen(PORT, () => {

@@ -1,13 +1,13 @@
-FROM denoland/deno:2.1.4
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy config and server
-COPY deno.json server.ts ./
+COPY .npmrc package*.json ./
+RUN npm install --omit=dev
 
-# Pre-cache dependencies (including @evex/linejs from JSR)
-RUN deno cache server.ts
+COPY server.js ./
 
+ENV NODE_ENV=production
 EXPOSE 8080
 
-CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "server.ts"]
+CMD ["node", "server.js"]
