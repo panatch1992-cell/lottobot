@@ -146,6 +146,20 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* System Status Link */}
+      <Link
+        href="/status"
+        className="block card bg-gradient-to-r from-blue-50 to-blue-50/50 border-blue-200 hover:border-blue-300 transition-colors"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-blue-700">🏥 ตรวจสอบสถานะระบบ</p>
+            <p className="text-xs text-blue-600 mt-0.5">ทดสอบการเชื่อมต่อ + กลุ่ม LINE + VPS</p>
+          </div>
+          <span className="text-blue-400">→</span>
+        </div>
+      </Link>
+
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-2">
         <Link

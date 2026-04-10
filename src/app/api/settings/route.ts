@@ -1,7 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 
-export async function GET() {
+// Check if request has Supabase auth cookie (same logic as middleware)
+function hasAuthCookie(req: NextRequest): boolean {
+  const allCookies = req.cookies.getAll()
+  return allCookies.some(c =>
+    (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) ||
+    c.name === 'sb-access-token'
+  )
+}
+
+function requireAuth(req: NextRequest) {
+  // Allow CRON_SECRET for programmatic access
+  const authHeader = req.headers.get('authorization')?.replace('Bearer ', '')
+  if (authHeader && authHeader === process.env.CRON_SECRET) return null
+
+  // Require auth cookie for browser requests
+  if (!hasAuthCookie(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  return null
+}
+
+export async function GET(req: NextRequest) {
+  // Require authentication
+  const authError = requireAuth(req)
+  if (authError) return authError
+
   try {
     const db = getServiceClient()
     const [settingsRes, groupsRes] = await Promise.all([
@@ -43,6 +68,10 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  // Require authentication
+  const authError = requireAuth(req)
+  if (authError) return authError
+
   try {
     const db = getServiceClient()
     const body = await req.json()
@@ -82,6 +111,10 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Require authentication
+  const authError = requireAuth(req)
+  if (authError) return authError
+
   try {
     const db = getServiceClient()
     const body = await req.json()
