@@ -392,6 +392,9 @@ export default function DevDashboard() {
       </div>
 
       {/* Raw /health JSON */}
+      {/* Advanced Settings (moved from /settings) */}
+      <AdvancedSettings />
+
       {health && (
         <details className="card">
           <summary className="text-sm font-semibold cursor-pointer">🔬 Raw /health Response</summary>
@@ -435,6 +438,162 @@ export default function DevDashboard() {
           </a>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Advanced Settings Component ─────────────────────
+
+function AdvancedSettings() {
+  const [settings, setSettings] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => {
+        const map: Record<string, string> = {}
+        ;(data.settings || []).forEach((s: { key: string; value: string }) => { map[s.key] = s.value })
+        setSettings(map)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  async function save(key: string, value: string) {
+    setSaving(key)
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value }),
+      })
+      setSettings(prev => ({ ...prev, [key]: value }))
+    } catch { /* silent */ }
+    setSaving(null)
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="card space-y-3">
+      <h3 className="text-sm font-semibold">⚙️ Advanced Settings</h3>
+      <div className="bg-red-50 border border-red-200 rounded p-2 text-[10px] text-red-700">
+        ⚠️ แก้ไขเฉพาะเมื่อจำเป็น — ค่าผิดจะทำให้ระบบหยุดทำงาน
+      </div>
+
+      {/* Telegram */}
+      <div className="border border-gray-200 rounded p-2 space-y-2">
+        <p className="text-xs font-medium">✈️ Telegram Bot</p>
+        <div>
+          <label className="text-[10px] text-text-secondary">Bot Token</label>
+          <input
+            type="password"
+            value={settings.telegram_bot_token || ''}
+            onChange={e => setSettings(prev => ({ ...prev, telegram_bot_token: e.target.value }))}
+            onBlur={e => { if (e.target.value) save('telegram_bot_token', e.target.value) }}
+            className="input font-mono text-xs"
+            placeholder="123456789:ABCdef..."
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-text-secondary">Admin Channel ID</label>
+          <input
+            type="text"
+            value={settings.telegram_admin_channel || ''}
+            onChange={e => setSettings(prev => ({ ...prev, telegram_admin_channel: e.target.value }))}
+            onBlur={e => { if (e.target.value) save('telegram_admin_channel', e.target.value) }}
+            className="input font-mono text-xs"
+            placeholder="-1001234567890"
+          />
+        </div>
+      </div>
+
+      {/* Unofficial Endpoint */}
+      <div className="border border-gray-200 rounded p-2 space-y-2">
+        <p className="text-xs font-medium">🔧 Unofficial Endpoint (VPS)</p>
+        <div>
+          <label className="text-[10px] text-text-secondary">Endpoint URL</label>
+          <input
+            type="text"
+            value={settings.unofficial_line_endpoint || ''}
+            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_endpoint: e.target.value }))}
+            onBlur={e => { if (e.target.value) save('unofficial_line_endpoint', e.target.value) }}
+            className="input font-mono text-xs"
+            placeholder="http://45.77.240.100:8080"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-text-secondary">Auth Token</label>
+          <input
+            type="password"
+            value={settings.unofficial_line_token || ''}
+            onChange={e => setSettings(prev => ({ ...prev, unofficial_line_token: e.target.value }))}
+            onBlur={e => { if (e.target.value) save('unofficial_line_token', e.target.value) }}
+            className="input font-mono text-xs"
+            placeholder="Bearer token"
+          />
+        </div>
+      </div>
+
+      {/* Scraping */}
+      <div className="border border-gray-200 rounded p-2 space-y-2">
+        <p className="text-xs font-medium">🤖 Scrape Config</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-text-secondary">Window (min)</label>
+            <input
+              type="number"
+              value={settings.scrape_window_minutes || '30'}
+              onChange={e => setSettings(prev => ({ ...prev, scrape_window_minutes: e.target.value }))}
+              onBlur={e => save('scrape_window_minutes', e.target.value)}
+              className="input text-xs"
+              min="5" max="60"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-text-secondary">Max retries</label>
+            <input
+              type="number"
+              value={settings.scrape_max_retries || '3'}
+              onChange={e => setSettings(prev => ({ ...prev, scrape_max_retries: e.target.value }))}
+              onBlur={e => save('scrape_max_retries', e.target.value)}
+              className="input text-xs"
+              min="1" max="10"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Flow */}
+      <div className="border border-gray-200 rounded p-2 space-y-2">
+        <p className="text-xs font-medium">⏰ Flow Config</p>
+        <div>
+          <label className="text-[10px] text-text-secondary">LINE add friend link</label>
+          <input
+            type="text"
+            value={settings.line_add_friend_link || ''}
+            onChange={e => setSettings(prev => ({ ...prev, line_add_friend_link: e.target.value }))}
+            onBlur={e => save('line_add_friend_link', e.target.value)}
+            className="input font-mono text-xs"
+            placeholder="https://line.me/R/ti/p/@xxx"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-text-secondary">Random image URL</label>
+          <input
+            type="text"
+            value={settings.random_image_url || ''}
+            onChange={e => setSettings(prev => ({ ...prev, random_image_url: e.target.value }))}
+            onBlur={e => save('random_image_url', e.target.value)}
+            className="input font-mono text-xs"
+            placeholder="https://www.huaypnk.com/top"
+          />
+        </div>
+      </div>
+
+      {saving && <p className="text-[10px] text-text-secondary">Saving {saving}...</p>}
     </div>
   )
 }
