@@ -140,10 +140,11 @@ function SettingsContent() {
       <div className="card space-y-3">
         <h3 className="font-semibold">📱 ตั้งค่าบัญชี LINE Bot</h3>
 
-        {/* ─── วาง Token จาก PC ─── */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-          <p className="text-sm font-medium text-amber-700">🔑 วาง Token จาก PC</p>
-          <p className="text-xs text-amber-600">รัน PIN Login บน PC → copy token → วางที่นี่ → ระบบอัพเดทให้อัตโนมัติ</p>
+        {/* ─── วาง Token จาก PC (สำรอง) ─── */}
+        <details className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <summary className="text-xs font-medium text-gray-600 cursor-pointer">🔑 วาง Token จาก PC (วิธีสำรอง)</summary>
+          <div className="mt-2 space-y-2">
+          <p className="text-xs text-gray-500">ใช้เมื่อ PIN Login ไม่ทำงาน — รัน PIN Login บน PC → copy token → วางที่นี่</p>
           <textarea
             value={settings._pasteToken || ''}
             onChange={e => setSettings(prev => ({ ...prev, _pasteToken: e.target.value }))}
@@ -160,7 +161,7 @@ function SettingsContent() {
               setSaving(true)
               setStatus('⏳ กำลังอัพเดท...')
               try {
-                // 1. Update token on Render via /update-token
+                // 1. Update token on VPS via /update-token
                 const endpoint = settings.unofficial_line_endpoint || ''
                 const authToken = settings.unofficial_line_token || ''
                 if (endpoint) {
@@ -174,7 +175,7 @@ function SettingsContent() {
                   })
                   const updateData = await updateRes.json()
                   if (!updateData.success) {
-                    alert(`❌ อัพเดท Render ไม่สำเร็จ: ${updateData.error || 'unknown error'}`)
+                    alert(`❌ อัพเดท VPS ไม่สำเร็จ: ${updateData.error || 'unknown error'}`)
                     setSaving(false)
                     setStatus('')
                     return
@@ -204,7 +205,7 @@ function SettingsContent() {
                 }
 
                 setSettings(prev => ({ ...prev, _pasteToken: '', line_unofficial_auth_token: token.slice(0, 20) + '...' }))
-                setStatus('✅ Token อัพเดทสำเร็จ! Render + DB อัพเดทแล้ว')
+                setStatus('✅ Token อัพเดทสำเร็จ! VPS + DB อัพเดทแล้ว')
                 loadSettings()
               } catch {
                 alert('❌ เกิดข้อผิดพลาด')
@@ -217,13 +218,8 @@ function SettingsContent() {
             {saving ? '⏳ กำลังอัพเดท...' : '📋 อัพเดท Token'}
           </button>
           {status && <p className="text-xs text-center">{status}</p>}
-        </div>
-
-        <div className="relative flex items-center gap-2 my-1">
-          <div className="flex-1 border-t border-gray-200"></div>
-          <span className="text-xs text-text-secondary">หรือ กรอก email/password</span>
-          <div className="flex-1 border-t border-gray-200"></div>
-        </div>
+          </div>
+        </details>
 
         {(settings.line_bot_password === '***USED***' || settings.line_unofficial_auth_token) && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700">
