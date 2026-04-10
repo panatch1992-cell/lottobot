@@ -10,6 +10,22 @@ export const dynamic = 'force-dynamic'
 
 const TRIGGER_CHAR = '.'
 
+// Simple in-memory webhook event deduplication (prevents LINE retry duplicates)
+// Each serverless instance has its own Set, expires after 5 min
+const processedEvents = new Map<string, number>()
+const EVENT_TTL_MS = 5 * 60 * 1000
+
+function isDuplicateEvent(eventId: string): boolean {
+  // Cleanup old entries
+  const now = Date.now()
+  processedEvents.forEach((ts, id) => {
+    if (now - ts > EVENT_TTL_MS) processedEvents.delete(id)
+  })
+  if (processedEvents.has(eventId)) return true
+  processedEvents.set(eventId, now)
+  return false
+}
+
 /**
  * ดึงผลหวยที่ยังไม่ได้ส่งผ่าน Reply API ให้กลุ่มนี้
  * → query results วันนี้ที่ยังไม่มี send_log channel='line_reply' สำหรับกลุ่มนี้
@@ -85,6 +101,13 @@ export async function POST(req: NextRequest) {
     const events = parsed.events || []
 
     for (const event of events) {
+      // Dedup LINE webhook retries (replyToken is unique per event)
+      const eventId = event.webhookEventId || event.replyToken || `${event.timestamp}-${event.source?.userId || event.source?.groupId || 'x'}`
+      if (isDuplicateEvent(eventId)) {
+        console.log(`[webhook] Skipping duplicate event ${eventId.slice(0, 20)}`)
+        continue
+      }
+
       console.log('LINE webhook event:', event.type, event.source?.type, event.source?.groupId)
 
       // ═══ TRIGGER: ตรวจจับ "." → Reply ด้วยผลหวย (ฟรี!) ═══
