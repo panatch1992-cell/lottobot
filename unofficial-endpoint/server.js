@@ -19,11 +19,19 @@ let LINE_AUTH_TOKEN = process.env.LINE_AUTH_TOKEN || ''
 const LINE_CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
 
 const LINE_THRIFT_API = 'https://gd2.line.naver.jp'
+const LINE_THRIFT_API_ALT = 'https://ga2.line.naver.jp'
 const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
 
+// Try to detect correct host from token
+function getThriftHost() {
+  // ga2 = global api (used by most libraries), gd2 = global data
+  // Try ga2 first as it's more commonly used by unofficial clients
+  return LINE_THRIFT_API_ALT
+}
+
 const LINE_APP_HEADER = {
-  'User-Agent': 'Line/13.4.2',
-  'X-Line-Application': 'DESKTOPWIN\t13.4.2\tWindows\t10.0',
+  'User-Agent': 'Line/14.2.0',
+  'X-Line-Application': 'DESKTOPWIN\t14.2.0\tWindows\t10.0;SECONDARY',
   'X-Line-Carrier': 'wifi',
 }
 
@@ -66,7 +74,7 @@ async function refreshTokenIfNeeded() {
   try {
     const controller1 = new AbortController()
     setTimeout(() => controller1.abort(), 10000)
-    const refreshRes = await fetch(LINE_THRIFT_API + '/RS4', {
+    const refreshRes = await fetch(getThriftHost() + '/RS4', {
       method: 'POST',
       headers: {
         ...LINE_APP_HEADER,
@@ -96,7 +104,7 @@ async function refreshTokenIfNeeded() {
   try {
     const controller2 = new AbortController()
     setTimeout(() => controller2.abort(), 10000)
-    const refreshRes2 = await fetch(LINE_THRIFT_API + '/api/v4p/rs', {
+    const refreshRes2 = await fetch(getThriftHost() + '/api/v4p/rs', {
       method: 'POST',
       headers: {
         ...LINE_APP_HEADER,
@@ -264,7 +272,7 @@ async function sendViaUnofficial(to, text) {
     const controller = new AbortController()
     setTimeout(() => controller.abort(), 15000)
 
-    const res = await fetch(LINE_THRIFT_API + '/S4', {
+    const res = await fetch(getThriftHost() + '/S4', {
       method: 'POST',
       headers: {
         ...LINE_APP_HEADER,
@@ -470,7 +478,7 @@ app.get('/groups', async (req, res) => {
     const controller = new AbortController()
     setTimeout(() => controller.abort(), 15000)
 
-    const groupsRes = await fetch(LINE_THRIFT_API + '/S4', {
+    const groupsRes = await fetch(getThriftHost() + '/S4', {
       method: 'POST',
       headers: {
         ...LINE_APP_HEADER,
@@ -494,7 +502,7 @@ app.get('/groups', async (req, res) => {
         const ctrl = new AbortController()
         setTimeout(() => ctrl.abort(), 10000)
 
-        const gRes = await fetch(LINE_THRIFT_API + '/S4', {
+        const gRes = await fetch(getThriftHost() + '/S4', {
           method: 'POST',
           headers: {
             ...LINE_APP_HEADER,
@@ -771,7 +779,7 @@ async function getRSAKeyAndEncrypt(email, password) {
 
   for (const ep of endpoints) {
     try {
-      const r = await fetch(LINE_THRIFT_API + ep, {
+      const r = await fetch(getThriftHost() + ep, {
         method: 'POST',
         headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
         body: rsaPayload,
@@ -988,7 +996,7 @@ app.post('/login', async (req, res) => {
     for (const ep of authEndpoints) {
       try {
         console.log(`[login] Trying loginZ on ${ep}...`)
-        const r = await fetch(LINE_THRIFT_API + ep, {
+        const r = await fetch(getThriftHost() + ep, {
           method: 'POST',
           headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
           body: payload,
@@ -1059,7 +1067,7 @@ app.post('/login', async (req, res) => {
 
         try {
           const verifyPayload = buildLoginZVerifier(session.verifier)
-          const verifyRes = await fetch(LINE_THRIFT_API + '/api/v4p/rs', {
+          const verifyRes = await fetch(getThriftHost() + '/api/v4p/rs', {
             method: 'POST',
             headers: { ...LINE_APP_HEADER, 'Content-Type': 'application/x-thrift', 'Accept': 'application/x-thrift' },
             body: verifyPayload,
