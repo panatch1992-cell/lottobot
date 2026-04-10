@@ -33,6 +33,7 @@ async function getPendingResults(db: ReturnType<typeof getServiceClient>, offici
   if (!results || results.length === 0) return []
 
   // ดึง send_logs ที่ส่งผ่าน reply แล้ว สำหรับกลุ่มนี้
+  // Note: ตรวจเฉพาะ trigger_reply (ไม่รวม trigger_send เพราะ trigger_send คือการยิง "." ไม่ใช่การ reply ผล)
   let query = db.from('send_logs')
     .select('result_id')
     .eq('channel', 'line')
@@ -98,38 +99,55 @@ export async function POST(req: NextRequest) {
         const groupId = event.source.groupId
         console.log(`[trigger] "." detected in group ${groupId.slice(-8)}`)
 
-        const pending = await getPendingResults(db, groupId)
+        try {
+          const pending = await getPendingResults(db, groupId)
 
-        if (pending.length > 0) {
-          // สร้างข้อความรวมทุกผลที่ยังไม่ส่ง (รวมไม่เกิน 5 messages)
-          const messages: { type: 'text'; text: string }[] = []
+          if (pending.length > 0) {
+            // สร้างข้อความรวมทุกผลที่ยังไม่ส่ง (รวมไม่เกิน 5 messages)
+            // ตัด text ถ้ายาวเกิน 4900 chars (LINE limit 5000)
+            const messages: { type: 'text'; text: string }[] = []
 
-          for (const { result, lottery } of pending.slice(0, 5)) {
-            const formatted = formatResult(lottery, result)
-            messages.push({ type: 'text', text: formatted.line })
+            for (const { result, lottery } of pending.slice(0, 5)) {
+              const formatted = formatResult(lottery, result)
+              const text = formatted.line.length > 4900 ? formatted.line.slice(0, 4895) + '...' : formatted.line
+              messages.push({ type: 'text', text })
+            }
+
+            const startMs = Date.now()
+            const replyRes = await replyMessage(channelToken, event.replyToken, messages)
+            const duration = Date.now() - startMs
+
+            console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${duration}ms)`)
+
+            // Check for replyToken expiry (LINE error 110 / 400)
+            if (!replyRes.success && replyRes.error?.includes('Invalid reply token')) {
+              console.error(`[trigger] ⚠️ Reply token expired for group ${groupId.slice(-8)} — webhook was too slow`)
+            }
+
+            // บันทึก send_logs (ใช้ Promise.allSettled เพื่อไม่ให้ fail หนึ่งอัน block อื่น)
+            const logPromises = pending.slice(0, 5).map(({ result, lottery, groupDbId }) =>
+              db.from('send_logs').insert({
+                lottery_id: lottery.id,
+                result_id: result.id,
+                line_group_id: groupDbId,
+                channel: 'line',
+                msg_type: 'trigger_reply',
+                status: replyRes.success ? 'sent' : 'failed',
+                sent_at: new Date().toISOString(),
+                duration_ms: duration,
+                error_message: replyRes.error || null,
+              })
+            )
+            const logResults = await Promise.allSettled(logPromises)
+            const logFailures = logResults.filter(r => r.status === 'rejected').length
+            if (logFailures > 0) {
+              console.warn(`[trigger] ${logFailures} send_log insert(s) failed`)
+            }
+          } else {
+            console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
           }
-
-          const startMs = Date.now()
-          const replyRes = await replyMessage(channelToken, event.replyToken, messages)
-
-          console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${Date.now() - startMs}ms)`)
-
-          // บันทึก send_logs
-          for (const { result, lottery, groupDbId } of pending.slice(0, 5)) {
-            await db.from('send_logs').insert({
-              lottery_id: lottery.id,
-              result_id: result.id,
-              line_group_id: groupDbId,
-              channel: 'line',
-              msg_type: 'trigger_reply',
-              status: replyRes.success ? 'sent' : 'failed',
-              sent_at: new Date().toISOString(),
-              duration_ms: Date.now() - startMs,
-              error_message: replyRes.error || null,
-            })
-          }
-        } else {
-          console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
+        } catch (triggerErr) {
+          console.error(`[trigger] Error handling trigger:`, triggerErr)
         }
       }
 
