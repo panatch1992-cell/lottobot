@@ -17,6 +17,13 @@
 
 import express from 'express'
 import { loginWithPassword, loginWithAuthToken } from '@evex/linejs'
+import { FileStorage } from '@evex/linejs/storage'
+import { dirname } from 'node:path'
+import { mkdirSync, existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 const app = express()
 
@@ -151,6 +158,44 @@ async function humanLikeDelay() {
 
 const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
 
+// ─── Session Storage (FileStorage for persistence) ──
+
+import { readFileSync, writeFileSync } from 'node:fs'
+
+const SESSION_DIR = process.env.SESSION_DIR || '/opt/lottobot/sessions'
+const SESSION_FILE = `${SESSION_DIR}/linejs-storage.json`
+const TOKEN_FILE = `${SESSION_DIR}/line-auth-token.txt`
+
+if (!existsSync(SESSION_DIR)) {
+  mkdirSync(SESSION_DIR, { recursive: true })
+  console.log(`[session] Created session dir: ${SESSION_DIR}`)
+}
+
+const sessionStorage = new FileStorage(SESSION_FILE)
+console.log(`[session] Using FileStorage at: ${SESSION_FILE}`)
+
+// Try to load persisted token from file if env var is empty
+if (!LINE_AUTH_TOKEN && existsSync(TOKEN_FILE)) {
+  try {
+    const saved = readFileSync(TOKEN_FILE, 'utf-8').trim()
+    if (saved.startsWith('eyJ') && saved.split('.').length === 3) {
+      LINE_AUTH_TOKEN = saved
+      console.log(`[session] Loaded persisted token from ${TOKEN_FILE} (${saved.length} chars)`)
+    }
+  } catch (err) {
+    console.warn(`[session] Failed to load token: ${err.message}`)
+  }
+}
+
+function persistToken(token) {
+  try {
+    writeFileSync(TOKEN_FILE, token, 'utf-8')
+    console.log(`[session] Persisted token to ${TOKEN_FILE}`)
+  } catch (err) {
+    console.warn(`[session] Failed to persist token: ${err.message}`)
+  }
+}
+
 // ─── Global linejs client ───────────────────────────
 
 let client = null
@@ -163,12 +208,13 @@ async function initClient() {
     return
   }
   try {
-    console.log('[init] Initializing linejs client with auth token...')
+    console.log('[init] Initializing linejs client with auth token + FileStorage...')
     client = await loginWithAuthToken(LINE_AUTH_TOKEN, {
       device: 'DESKTOPWIN',
+      storage: sessionStorage,
     })
     clientReady = true
-    console.log('[init] ✅ Client ready')
+    console.log('[init] ✅ Client ready (session persisted to disk)')
   } catch (err) {
     console.error('[init] ❌ Client init failed:', err.message)
     clientReady = false
@@ -414,7 +460,7 @@ app.post('/login', async (req, res) => {
             if (pinResolver) pinResolver(pin)
           },
         },
-        { device: 'DESKTOPWIN' }
+        { device: 'DESKTOPWIN', storage: sessionStorage }
       )
 
       const token = newClient.base.authToken
@@ -424,7 +470,12 @@ app.post('/login', async (req, res) => {
         clientReady = true
         session.status = 'success'
         session.token = token
-        console.log(`[login] ✅ Login success, token obtained`)
+        // Reset anti-ban state on fresh login
+        circuitBreaker.failures = 0
+        circuitBreaker.isOpen = false
+        // Persist token to file so it survives VPS restart
+        persistToken(token)
+        console.log(`[login] ✅ Login success, token obtained + persisted`)
       } else {
         session.status = 'error'
         session.error = 'No token received'
@@ -506,6 +557,13 @@ app.post('/update-token', async (req, res) => {
   LINE_AUTH_TOKEN = token
   clientReady = false
   client = null
+
+  // Persist to file for restart survival
+  persistToken(token)
+
+  // Reset anti-ban state on token update
+  circuitBreaker.failures = 0
+  circuitBreaker.isOpen = false
 
   try {
     await initClient()
