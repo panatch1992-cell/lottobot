@@ -24,6 +24,34 @@ export default function DashboardPage() {
     telegram: 'inactive' as 'active' | 'inactive',
     line: 'inactive' as 'active' | 'inactive',
   })
+  const [systemAlert, setSystemAlert] = useState<{
+    type: 'error' | 'warn' | null
+    title: string
+    detail: string
+  }>({ type: null, title: '', detail: '' })
+
+  useEffect(() => {
+    // Check system health in background
+    fetch('/api/e2e-test').then(r => r.json()).then(data => {
+      if (data.overall === 'FAIL') {
+        const failed = data.tests.filter((t: { status: string }) => t.status === 'fail')
+        setSystemAlert({
+          type: 'error',
+          title: '❌ ระบบมีปัญหา',
+          detail: failed.map((t: { name: string; detail: string }) => `${t.name}: ${t.detail}`).join(' | '),
+        })
+      } else if (data.overall === 'WARN') {
+        const warned = data.tests.filter((t: { status: string }) => t.status === 'warn')
+        setSystemAlert({
+          type: 'warn',
+          title: '⚠️ มีข้อควรระวัง',
+          detail: warned.map((t: { name: string; detail: string }) => `${t.name}: ${t.detail}`).join(' | '),
+        })
+      }
+    }).catch(() => {
+      // silent fail
+    })
+  }, [])
 
   useEffect(() => {
     loadDashboard()
@@ -125,6 +153,40 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
+      {/* System Alert */}
+      {systemAlert.type && (
+        <div className={`rounded-lg p-3 border ${
+          systemAlert.type === 'error'
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium ${
+                systemAlert.type === 'error' ? 'text-red-700' : 'text-amber-700'
+              }`}>
+                {systemAlert.title}
+              </p>
+              <p className={`text-xs mt-1 break-words ${
+                systemAlert.type === 'error' ? 'text-red-600' : 'text-amber-600'
+              }`}>
+                {systemAlert.detail}
+              </p>
+            </div>
+            <Link
+              href="/status"
+              className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+                systemAlert.type === 'error'
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                  : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+              }`}
+            >
+              ดูรายละเอียด →
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Flow Diagram */}
       <FlowDiagram stepsState={flowStatus} />
 
