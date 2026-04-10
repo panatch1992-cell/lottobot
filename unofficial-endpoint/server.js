@@ -36,6 +36,119 @@ const AUTH_TOKEN = (process.env.UNOFFICIAL_AUTH_TOKEN || '').trim()
 let LINE_AUTH_TOKEN = (process.env.LINE_AUTH_TOKEN || '').replace(/\s+/g, '').trim()
 const LINE_CHANNEL_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 
+// ─── Anti-Ban Protection Config ────────────────────
+// Safe defaults for LINE personal account:
+// - Max 500 msg/day (LINE flags ~1000+)
+// - Max 50 msg/hour (burst protection)
+// - Random 3-8 sec delay between sends
+// - Circuit breaker: stop sending after 5 consecutive failures
+const ANTI_BAN = {
+  MAX_MSG_PER_DAY: parseInt(process.env.MAX_MSG_PER_DAY || '500'),
+  MAX_MSG_PER_HOUR: parseInt(process.env.MAX_MSG_PER_HOUR || '50'),
+  MAX_MSG_PER_MINUTE: parseInt(process.env.MAX_MSG_PER_MINUTE || '5'),
+  MIN_DELAY_MS: parseInt(process.env.MIN_DELAY_MS || '3000'),
+  MAX_DELAY_MS: parseInt(process.env.MAX_DELAY_MS || '8000'),
+  CIRCUIT_BREAKER_THRESHOLD: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
+  CIRCUIT_BREAKER_COOLDOWN_MS: parseInt(process.env.CIRCUIT_BREAKER_COOLDOWN_MS || '300000'), // 5 min
+}
+
+// Rate limit counters (in-memory, reset on restart)
+const rateCounters = {
+  day: { count: 0, resetAt: Date.now() + 86400000 },
+  hour: { count: 0, resetAt: Date.now() + 3600000 },
+  minute: { count: 0, resetAt: Date.now() + 60000 },
+}
+
+// Circuit breaker state
+const circuitBreaker = {
+  failures: 0,
+  openedAt: 0,
+  isOpen: false,
+}
+
+// Sending queue for delay enforcement
+let lastSendTime = 0
+
+function resetCounterIfExpired(counter, windowMs) {
+  if (Date.now() >= counter.resetAt) {
+    counter.count = 0
+    counter.resetAt = Date.now() + windowMs
+  }
+}
+
+function checkRateLimit() {
+  resetCounterIfExpired(rateCounters.day, 86400000)
+  resetCounterIfExpired(rateCounters.hour, 3600000)
+  resetCounterIfExpired(rateCounters.minute, 60000)
+
+  if (rateCounters.day.count >= ANTI_BAN.MAX_MSG_PER_DAY) {
+    return { allowed: false, reason: `Daily limit reached (${ANTI_BAN.MAX_MSG_PER_DAY}/day)` }
+  }
+  if (rateCounters.hour.count >= ANTI_BAN.MAX_MSG_PER_HOUR) {
+    return { allowed: false, reason: `Hourly limit reached (${ANTI_BAN.MAX_MSG_PER_HOUR}/hour)` }
+  }
+  if (rateCounters.minute.count >= ANTI_BAN.MAX_MSG_PER_MINUTE) {
+    return { allowed: false, reason: `Per-minute limit reached (${ANTI_BAN.MAX_MSG_PER_MINUTE}/min)` }
+  }
+  return { allowed: true }
+}
+
+function incrementCounters() {
+  rateCounters.day.count++
+  rateCounters.hour.count++
+  rateCounters.minute.count++
+}
+
+function checkCircuitBreaker() {
+  if (!circuitBreaker.isOpen) return { open: false }
+
+  // Check if cooldown expired
+  if (Date.now() - circuitBreaker.openedAt > ANTI_BAN.CIRCUIT_BREAKER_COOLDOWN_MS) {
+    console.log('[circuit-breaker] Cooldown expired, closing breaker')
+    circuitBreaker.isOpen = false
+    circuitBreaker.failures = 0
+    return { open: false }
+  }
+
+  const remainingMs = ANTI_BAN.CIRCUIT_BREAKER_COOLDOWN_MS - (Date.now() - circuitBreaker.openedAt)
+  return { open: true, remainingMs }
+}
+
+function recordSendResult(success) {
+  if (success) {
+    if (circuitBreaker.failures > 0) {
+      console.log('[circuit-breaker] Send succeeded, resetting failure counter')
+      circuitBreaker.failures = 0
+    }
+  } else {
+    circuitBreaker.failures++
+    console.warn(`[circuit-breaker] Failure ${circuitBreaker.failures}/${ANTI_BAN.CIRCUIT_BREAKER_THRESHOLD}`)
+    if (circuitBreaker.failures >= ANTI_BAN.CIRCUIT_BREAKER_THRESHOLD) {
+      console.error('[circuit-breaker] 🚨 THRESHOLD REACHED — Opening breaker for cooldown')
+      circuitBreaker.isOpen = true
+      circuitBreaker.openedAt = Date.now()
+    }
+  }
+}
+
+// Random delay with jitter
+async function humanLikeDelay() {
+  const now = Date.now()
+  const timeSinceLastSend = now - lastSendTime
+  const minDelay = ANTI_BAN.MIN_DELAY_MS
+  const maxDelay = ANTI_BAN.MAX_DELAY_MS
+
+  // Random delay within range
+  const targetDelay = minDelay + Math.floor(Math.random() * (maxDelay - minDelay))
+
+  // If less time passed than targetDelay, wait the rest
+  const waitMs = Math.max(0, targetDelay - timeSinceLastSend)
+  if (waitMs > 0) {
+    await new Promise(r => setTimeout(r, waitMs))
+  }
+  lastSendTime = Date.now()
+}
+
 const LINE_OFFICIAL_API = 'https://api.line.me/v2/bot'
 
 // ─── Global linejs client ───────────────────────────
@@ -117,17 +230,58 @@ function getMidType(mid) {
 }
 
 async function sendViaUnofficial(to, text) {
+  // ─── Anti-ban checks ─────────────────────────────
+
+  // 1. Circuit breaker check
+  const breaker = checkCircuitBreaker()
+  if (breaker.open) {
+    const remainingSec = Math.ceil(breaker.remainingMs / 1000)
+    return {
+      success: false,
+      error: `Circuit breaker OPEN (too many failures). Cooldown: ${remainingSec}s`,
+      circuitBreaker: true,
+    }
+  }
+
+  // 2. Rate limit check
+  const rateCheck = checkRateLimit()
+  if (!rateCheck.allowed) {
+    console.warn(`[anti-ban] Rate limit: ${rateCheck.reason}`)
+    return { success: false, error: rateCheck.reason, rateLimited: true }
+  }
+
+  // 3. Client ready check
   const c = await ensureClient()
   if (!c) return { success: false, error: 'Client not initialized' }
 
+  // 4. Human-like delay (random 3-8 sec between sends)
+  await humanLikeDelay()
+
+  // ─── Actual send ────────────────────────────────
   try {
     console.log(`[unofficial] Sending to ${to.slice(-8)} (type=${getMidType(to)}) text=${text.slice(0, 50)}`)
     const res = await c.base.talk.sendMessage({ to, text })
-    console.log(`[unofficial] ✅ Sent, messageId=${res?.id || '?'}`)
+
+    // Success — update counters + breaker
+    incrementCounters()
+    recordSendResult(true)
+
+    console.log(`[unofficial] ✅ Sent, messageId=${res?.id || '?'} | Today: ${rateCounters.day.count}/${ANTI_BAN.MAX_MSG_PER_DAY}`)
     return { success: true, via: 'unofficial', messageId: res?.id }
   } catch (err) {
     const msg = err?.message || String(err)
     console.error(`[unofficial] ❌ Send failed: ${msg}`)
+
+    // Check for LINE-specific ban signals
+    if (msg.includes('ABUSE_BLOCK') || msg.includes('AUTHENTICATION_FAILED')) {
+      console.error('[anti-ban] 🚨 LINE ban signal detected! Opening circuit breaker immediately')
+      circuitBreaker.failures = ANTI_BAN.CIRCUIT_BREAKER_THRESHOLD
+      circuitBreaker.isOpen = true
+      circuitBreaker.openedAt = Date.now()
+    } else {
+      recordSendResult(false)
+    }
+
     return { success: false, error: msg }
   }
 }
@@ -199,8 +353,35 @@ app.get('/health', (_req, res) => {
       expiresAt: tokenStatus.expiresAt,
       refreshExpiry: tokenStatus.refreshExpiry,
     } : null,
+    antiBan: {
+      config: ANTI_BAN,
+      counters: {
+        day: { sent: rateCounters.day.count, limit: ANTI_BAN.MAX_MSG_PER_DAY, remaining: ANTI_BAN.MAX_MSG_PER_DAY - rateCounters.day.count },
+        hour: { sent: rateCounters.hour.count, limit: ANTI_BAN.MAX_MSG_PER_HOUR, remaining: ANTI_BAN.MAX_MSG_PER_HOUR - rateCounters.hour.count },
+        minute: { sent: rateCounters.minute.count, limit: ANTI_BAN.MAX_MSG_PER_MINUTE, remaining: ANTI_BAN.MAX_MSG_PER_MINUTE - rateCounters.minute.count },
+      },
+      circuitBreaker: {
+        isOpen: circuitBreaker.isOpen,
+        failures: circuitBreaker.failures,
+        threshold: ANTI_BAN.CIRCUIT_BREAKER_THRESHOLD,
+        cooldownRemainingMs: circuitBreaker.isOpen ? Math.max(0, ANTI_BAN.CIRCUIT_BREAKER_COOLDOWN_MS - (Date.now() - circuitBreaker.openedAt)) : 0,
+      },
+    },
     now: new Date().toISOString(),
   })
+})
+
+// Reset anti-ban counters (admin endpoint)
+app.post('/anti-ban/reset', (req, res) => {
+  if (!checkAuth(req, res)) return
+  rateCounters.day = { count: 0, resetAt: Date.now() + 86400000 }
+  rateCounters.hour = { count: 0, resetAt: Date.now() + 3600000 }
+  rateCounters.minute = { count: 0, resetAt: Date.now() + 60000 }
+  circuitBreaker.failures = 0
+  circuitBreaker.isOpen = false
+  circuitBreaker.openedAt = 0
+  console.log('[anti-ban] Counters + circuit breaker reset manually')
+  res.json({ success: true, message: 'Anti-ban state reset' })
 })
 
 app.post('/login', async (req, res) => {
