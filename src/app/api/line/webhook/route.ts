@@ -82,11 +82,22 @@ export async function POST(req: NextRequest) {
     const channelSecret = settings.line_channel_secret
     const channelToken = settings.line_channel_access_token
 
-    // Verify signature
+    // Verify signature — REQUIRED in production
     const body = await req.text()
     const signature = req.headers.get('x-line-signature')
 
-    if (channelSecret && signature) {
+    if (!channelSecret) {
+      // In production, signature verification is mandatory
+      // Allow only in dev (no channel_secret configured)
+      if (process.env.NODE_ENV === 'production') {
+        console.error('LINE webhook: No channel secret configured — BLOCKING request in production')
+        return NextResponse.json({ error: 'Webhook signature verification not configured' }, { status: 500 })
+      }
+      console.warn('LINE webhook: No channel secret, skipping signature verification (dev mode only)')
+    } else if (!signature) {
+      console.error('LINE webhook: Missing x-line-signature header')
+      return NextResponse.json({ error: 'Missing signature header' }, { status: 403 })
+    } else {
       const hash = crypto
         .createHmac('SHA256', channelSecret)
         .update(body)
