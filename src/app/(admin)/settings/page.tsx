@@ -764,7 +764,7 @@ function SettingsContent() {
 
           {/* Unofficial Endpoint */}
           <div className="card space-y-3">
-            <h3 className="font-semibold text-sm">🔧 Unofficial Endpoint (Render)</h3>
+            <h3 className="font-semibold text-sm">🔧 Unofficial Endpoint (VPS)</h3>
             <div>
               <label className="label">Endpoint URL</label>
               <input

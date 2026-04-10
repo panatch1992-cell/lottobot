@@ -424,14 +424,14 @@ export default function DevDashboard() {
           <a href="https://github.com/panatch1992-cell/lottobot" target="_blank" rel="noreferrer" className="block p-2 bg-gray-50 rounded hover:bg-gray-100">
             📦 GitHub Repo
           </a>
-          <a href="https://dashboard.render.com" target="_blank" rel="noreferrer" className="block p-2 bg-gray-50 rounded hover:bg-gray-100">
-            🚀 Render
-          </a>
           <a href="https://my.vultr.com" target="_blank" rel="noreferrer" className="block p-2 bg-gray-50 rounded hover:bg-gray-100">
-            💻 Vultr
+            💻 Vultr VPS
           </a>
           <a href="https://app.supabase.com" target="_blank" rel="noreferrer" className="block p-2 bg-gray-50 rounded hover:bg-gray-100">
             🗄️ Supabase
+          </a>
+          <a href="https://vercel.com" target="_blank" rel="noreferrer" className="block p-2 bg-gray-50 rounded hover:bg-gray-100">
+            ▲ Vercel
           </a>
         </div>
       </div>
