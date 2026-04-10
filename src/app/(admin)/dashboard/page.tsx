@@ -167,10 +167,12 @@ export default function DashboardPage() {
               }`}>
                 {systemAlert.title}
               </p>
-              <p className={`text-xs mt-1 break-words ${
+              <p className={`text-xs mt-1 ${
                 systemAlert.type === 'error' ? 'text-red-600' : 'text-amber-600'
               }`}>
-                {systemAlert.detail}
+                {systemAlert.type === 'error'
+                  ? 'ระบบมีปัญหา กรุณาตรวจสอบ'
+                  : 'มีข้อควรระวัง กรุณาตรวจสอบ'}
               </p>
             </div>
             <Link
