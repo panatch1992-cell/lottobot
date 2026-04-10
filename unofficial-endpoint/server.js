@@ -14,9 +14,9 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }))
 
 const PORT = process.env.PORT || 8080
-const AUTH_TOKEN = process.env.UNOFFICIAL_AUTH_TOKEN || ''
-let LINE_AUTH_TOKEN = process.env.LINE_AUTH_TOKEN || ''
-const LINE_CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
+const AUTH_TOKEN = (process.env.UNOFFICIAL_AUTH_TOKEN || '').trim()
+let LINE_AUTH_TOKEN = (process.env.LINE_AUTH_TOKEN || '').replace(/\s+/g, '').trim()
+const LINE_CHANNEL_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 
 const LINE_THRIFT_API = 'https://gd2.line.naver.jp'
 const LINE_THRIFT_API_ALT = 'https://ga2.line.naver.jp'
@@ -643,6 +643,7 @@ async function testSend() {
 
 app.get('/health', (_req, res) => {
   const tokenStatus = getTokenExpiry()
+  const payload = decodeJwtPayload(LINE_AUTH_TOKEN)
   res.json({
     ok: true,
     service: 'lottobot-unofficial-endpoint',
@@ -650,9 +651,18 @@ app.get('/health', (_req, res) => {
     hasLineToken: !!LINE_CHANNEL_TOKEN,
     hasUnofficialToken: !!LINE_AUTH_TOKEN,
     mode: LINE_AUTH_TOKEN ? 'unofficial (primary)' : 'official only',
+    thriftHost: getThriftHost(),
+    appHeader: LINE_APP_HEADER['X-Line-Application'],
+    tokenDebug: LINE_AUTH_TOKEN ? {
+      length: LINE_AUTH_TOKEN.length,
+      parts: LINE_AUTH_TOKEN.split('.').length,
+      firstChars: LINE_AUTH_TOKEN.slice(0, 20),
+      lastChars: LINE_AUTH_TOKEN.slice(-20),
+      decoded: payload ? { aid: payload.aid, exp: payload.exp, cmode: payload.cmode, ctype: payload.ctype } : 'FAILED_TO_DECODE',
+    } : null,
     token: LINE_AUTH_TOKEN ? {
       expired: tokenStatus.expired,
-      expiresIn: `${Math.floor(tokenStatus.expiresIn / 3600)}h`,
+      expiresIn: isFinite(tokenStatus.expiresIn) ? `${Math.floor(tokenStatus.expiresIn / 3600)}h` : 'unknown',
       expiresAt: tokenStatus.expiresAt,
       refreshExpiry: tokenStatus.refreshExpiry,
       autoRefresh: 'every 6h',
