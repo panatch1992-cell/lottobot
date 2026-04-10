@@ -367,28 +367,49 @@ async function handleGroups(req: Request): Promise<Response> {
   if (!c) return jsonResponse({ success: false, error: "Client not ready" }, 500);
 
   try {
+    // getAllChatMids returns { memberChatMids: string[], invitedChatMids: string[] }
     // @ts-ignore - linejs internal
-    const mids = await c.base.talk.getAllChatMids({ request: { withMemberChats: true, withInvitedChats: false } });
-    console.log("[groups] mids:", JSON.stringify(mids).slice(0, 200));
+    const mids = await c.base.talk.getAllChatMids({
+      request: { withMemberChats: true, withInvitedChats: false },
+      syncReason: "INTERNAL",
+    });
+    console.log("[groups] mids:", JSON.stringify(mids).slice(0, 300));
 
     // @ts-ignore
     const groupIds: string[] = Array.isArray(mids?.memberChatMids) ? mids.memberChatMids : [];
+    console.log(`[groups] Found ${groupIds.length} joined chats`);
 
     const groups: { id: string; name: string }[] = [];
-    for (const gid of groupIds) {
+
+    // Fetch names in batches to avoid long response time
+    if (groupIds.length > 0) {
       try {
         // @ts-ignore
-        const info = await c.base.talk.getChats({ gids: [gid], withMembers: false, withInvitees: false });
+        const chatsRes = await c.base.talk.getChats({
+          chatMids: groupIds,
+          withMembers: false,
+          withInvitees: false,
+        });
         // @ts-ignore
-        const name = info?.chats?.[0]?.chatName || info?.chats?.[0]?.name || "(unknown)";
-        groups.push({ id: gid, name });
-      } catch {
-        groups.push({ id: gid, name: "(error)" });
+        const chats = chatsRes?.chats || [];
+        for (const chat of chats) {
+          groups.push({
+            id: chat.chatMid,
+            name: chat.chatName || "(unnamed)",
+          });
+        }
+      } catch (err) {
+        console.error("[groups] getChats failed:", (err as Error).message);
+        // Fallback: return IDs without names
+        for (const gid of groupIds) {
+          groups.push({ id: gid, name: "(name unavailable)" });
+        }
       }
     }
 
     return jsonResponse({ success: true, count: groups.length, groups });
   } catch (err) {
+    console.error("[groups] Error:", (err as Error).message);
     return jsonResponse({ success: false, error: (err as Error).message }, 500);
   }
 }

@@ -2,8 +2,8 @@ FROM denoland/deno:2.1.4
 
 WORKDIR /app
 
-# Copy server file
-COPY server.ts ./
+# Copy config and server
+COPY deno.json server.ts ./
 
 # Pre-cache dependencies (including @evex/linejs from JSR)
 RUN deno cache server.ts
