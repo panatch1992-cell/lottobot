@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatStats } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { pushTextMessage, sendImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { sleep } from '@/lib/utils'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
+import { getRandomLuckyImageUrl } from '@/lib/huaypnk-scraper'
 import type { Lottery, Result, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -96,6 +97,17 @@ export async function GET(req: NextRequest) {
     const lineToken = settings.line_channel_access_token
     const statsQuota = lineToken && sendStatsLine ? await checkLineQuota() : null
     if (lineToken && sendStatsLine && statsQuota?.canSend) {
+      // ดึง lucky image URL จาก huaypnk.com/top ครั้งเดียวต่อหวย
+      // ถ้าดึงไม่ได้ → ข้ามส่งรูปโดยไม่กระทบสถิติ
+      const luckyDirectUrl = await getRandomLuckyImageUrl(lottery.name)
+      const baseUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
+      // ใช้ proxy route เพื่อ relay รูปจาก huaypnk.com → ป้องกัน hotlink block จาก LINE server
+      const luckyProxyUrl = luckyDirectUrl
+        ? `${baseUrl}/api/lucky-image?url=${encodeURIComponent(luckyDirectUrl)}`
+        : null
+
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
         const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
@@ -105,6 +117,7 @@ export async function GET(req: NextRequest) {
         if (sentStatsGroupIds.has(group.id)) continue
         if (limitStatsGroupIds.has(group.id)) continue
 
+        // 1) ส่งข้อความสถิติ
         const lineResult = await pushTextMessage(lineToken, primaryId, formatted.line, officialId)
         if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
           await flagMonthlyLimitHit()
@@ -118,7 +131,14 @@ export async function GET(req: NextRequest) {
           sent_at: new Date().toISOString(),
           error_message: lineResult.error || null,
         })
-        // Short delay between groups
+
+        // 2) ส่งรูปเลขเด็ดจาก huaypnk.com (ถ้ามี) ตามหลังสถิติ
+        if (lineResult.success && luckyProxyUrl) {
+          await sleep(1500 + Math.floor(Math.random() * 1000))
+          await sendImageAndText(primaryId, luckyProxyUrl, '', officialId)
+        }
+
+        // Short delay ระหว่างกลุ่ม
         await sleep(500 + Math.floor(Math.random() * 1000))
       }
     }
