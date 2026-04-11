@@ -351,6 +351,9 @@ export default function DevDashboard() {
         )}
       </div>
 
+      {/* LINE OA Bot Info */}
+      <BotInfoCard />
+
       {/* Test Send to Specific Group */}
       <div className="card space-y-2">
         <h3 className="text-sm font-semibold">🧪 Test Send (เลือกกลุ่ม)</h3>
@@ -528,6 +531,123 @@ export default function DevDashboard() {
 }
 
 // ─── Advanced Settings Component ─────────────────────
+
+// ─── LINE OA Bot Info Card ───────────────────────────
+
+type BotInfo = {
+  bot?: {
+    userId?: string
+    basicId?: string
+    premiumId?: string
+    displayName?: string
+    pictureUrl?: string
+    chatMode?: string
+  }
+  addFriend?: {
+    url?: string | null
+    id?: string
+    qrCode?: string | null
+  }
+  error?: string
+}
+
+function BotInfoCard() {
+  const [info, setInfo] = useState<BotInfo | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/line/bot-info')
+      const data = await res.json()
+      setInfo(data)
+    } catch (err) {
+      setInfo({ error: err instanceof Error ? err.message : 'error' })
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (loading) {
+    return (
+      <div className="card">
+        <p className="text-xs text-text-secondary">⏳ กำลังดึงข้อมูล LINE OA...</p>
+      </div>
+    )
+  }
+
+  if (info?.error || !info?.bot) {
+    return (
+      <div className="card bg-red-50 border-red-200">
+        <h3 className="text-sm font-semibold text-red-700">🤖 LINE OA Bot Info</h3>
+        <p className="text-xs text-red-600 mt-1">{info?.error || 'ไม่สามารถดึงข้อมูลได้'}</p>
+        <button onClick={load} className="text-xs text-red-700 underline mt-1">🔄 ลองใหม่</button>
+      </div>
+    )
+  }
+
+  const bot = info.bot
+  const addFriend = info.addFriend
+
+  return (
+    <div className="card space-y-2">
+      <h3 className="text-sm font-semibold">🤖 LINE OA Bot Info</h3>
+      <div className="flex items-start gap-3">
+        {bot.pictureUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={bot.pictureUrl} alt="bot" className="w-14 h-14 rounded-full" />
+        )}
+        <div className="flex-1 space-y-1 text-xs">
+          <p><b>{bot.displayName || '-'}</b></p>
+          <p className="font-mono text-text-secondary">
+            Basic ID: <span className="text-gold">{bot.basicId || '-'}</span>
+          </p>
+          {bot.premiumId && (
+            <p className="font-mono text-text-secondary">
+              Premium ID: <span className="text-gold">{bot.premiumId}</span>
+            </p>
+          )}
+          <p className="text-text-secondary">
+            Chat mode: <span className="font-mono">{bot.chatMode}</span>
+          </p>
+        </div>
+      </div>
+
+      {addFriend?.id && (
+        <div className="pt-2 border-t border-gray-100 space-y-2">
+          <p className="text-xs font-medium">📲 วิธีเพิ่มเพื่อน:</p>
+
+          {/* Option 1: Click URL */}
+          {addFriend.url && (
+            <a
+              href={addFriend.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-xs bg-green-50 text-green-700 px-3 py-2 rounded hover:bg-green-100 border border-green-200"
+            >
+              🔗 กด link เปิด LINE app: <span className="font-mono">{addFriend.id}</span>
+            </a>
+          )}
+
+          {/* Option 2: Search by ID */}
+          <div className="text-xs text-text-secondary">
+            หรือเปิด LINE app → Add Friend → Search → พิมพ์: <code className="bg-gray-100 px-1 rounded font-mono text-gold">{addFriend.id}</code>
+          </div>
+
+          {/* Option 3: QR code */}
+          {addFriend.qrCode && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-text-secondary">📱 แสกน QR code</summary>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={addFriend.qrCode} alt="QR" className="mt-2 w-40 h-40 border rounded" />
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function AdvancedSettings() {
   const [settings, setSettings] = useState<Record<string, string>>({})
