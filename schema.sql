@@ -365,3 +365,121 @@ insert into bot_settings (key, value, description) values
   ('event_breaker_cooldown_sec', '120', 'Cooldown ก่อนให้ลอง half-open'),
   ('event_alert_rate_limit_minutes', '10', 'Suppress alert ซ้ำในกี่นาที')
 on conflict (key) do nothing;
+
+-- ─── Hybrid Reply System (migration 005) ────────────
+create table if not exists pending_replies (
+  id uuid primary key default uuid_generate_v4(),
+  line_group_id uuid not null references line_groups(id) on delete cascade,
+  lottery_id uuid references lotteries(id) on delete set null,
+  intent_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  trigger_text text not null,
+  trigger_phrase_used text,
+  status text not null default 'pending',
+  retry_count integer not null default 0,
+  max_retries integer not null default 2,
+  expires_at timestamptz not null,
+  trigger_sent_at timestamptz,
+  replied_at timestamptz,
+  webhook_event_id text,
+  reply_token_used text,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_pending_replies_lookup
+  on pending_replies(line_group_id, status, created_at);
+create index if not exists idx_pending_replies_expires
+  on pending_replies(expires_at) where status in ('pending', 'trigger_sent');
+create index if not exists idx_pending_replies_lottery
+  on pending_replies(lottery_id, intent_type, created_at desc);
+
+create table if not exists lucky_images (
+  id uuid primary key default uuid_generate_v4(),
+  storage_path text not null,
+  public_url text not null,
+  category text not null default 'general',
+  caption text,
+  source_url text,
+  source_hash text unique,
+  use_count integer not null default 0,
+  last_used_at timestamptz,
+  uploaded_by text,
+  uploaded_at timestamptz not null default now(),
+  is_active boolean not null default true
+);
+create index if not exists idx_lucky_images_active_category
+  on lucky_images(is_active, category);
+create index if not exists idx_lucky_images_rotation
+  on lucky_images(is_active, last_used_at nulls first, use_count);
+
+create table if not exists bot_accounts (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  endpoint_url text,
+  endpoint_token text,
+  line_mid text,
+  line_display_name text,
+  is_active boolean not null default true,
+  health_status text not null default 'unknown',
+  consecutive_failures integer not null default 0,
+  consecutive_successes integer not null default 0,
+  daily_send_count integer not null default 0,
+  daily_reset_at timestamptz,
+  hourly_send_count integer not null default 0,
+  hourly_reset_at timestamptz,
+  last_used_at timestamptz,
+  cooldown_until timestamptz,
+  priority integer not null default 100,
+  last_error text,
+  last_error_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_bot_accounts_rotation
+  on bot_accounts(is_active, cooldown_until nulls first, priority, last_used_at nulls first)
+  where is_active = true;
+
+create table if not exists trigger_phrase_history (
+  id uuid primary key default uuid_generate_v4(),
+  line_group_id uuid not null references line_groups(id) on delete cascade,
+  phrase text not null,
+  category text not null default 'general',
+  used_at timestamptz not null default now()
+);
+create index if not exists idx_trigger_phrase_history_group
+  on trigger_phrase_history(line_group_id, used_at desc);
+
+insert into bot_settings (key, value, description) values
+  ('hybrid_reply_enabled', 'false', 'เปิด Hybrid Reply System (Phase 3)'),
+  ('pending_reply_expiry_min', '5', 'อายุของ pending_reply (นาที)'),
+  ('pending_reply_max_retries', '2', 'Retry trigger ได้กี่ครั้ง'),
+  ('trigger_phrase_pool_general',
+    '["อัพเดทครับ","มาแล้วครับ","📢","🔔","เช็กผล","งวดใหม่","🎯","ดูผลกัน"]',
+    'Pool trigger phrase general'),
+  ('trigger_phrase_pool_result',
+    '["📢 ผลออกแล้ว","ผลมาครับ","🎉 ออกแล้ว","🎯 ผลมา","เช็กเลขกัน","ออกแล้วครับ"]',
+    'Pool trigger phrase result'),
+  ('trigger_phrase_pool_announce',
+    '["📢 รายการต่อไป","ต่อไป","➡️ รอบหน้า","รอบถัดไป","🕐 ถัดไป"]',
+    'Pool trigger phrase announce'),
+  ('trigger_phrase_pool_stats',
+    '["📋 สถิติ","🔍 ย้อนหลัง","ดูสถิติกัน","📊 ข้อมูล","ย้อนไปดู"]',
+    'Pool trigger phrase stats'),
+  ('trigger_phrase_recent_window', '5', 'กัน repeat ของ phrase ล่าสุด'),
+  ('opportunistic_reply_enabled', 'true',
+    'Real user พิมพ์ → ใช้ replyToken flush pending_replies'),
+  ('bot_account_rotation_enabled', 'false',
+    'Rotation pool ของหลาย LINE user accounts'),
+  ('bot_account_auto_pause_on_error', 'true',
+    'Auto-pause ที่เจอ 401/429 spike'),
+  ('bot_account_cooldown_min', '30', 'Cooldown (นาที) เมื่อ auto-pause'),
+  ('lucky_image_auto_sync_enabled', 'false',
+    'Cron scrape huaypnk อัตโนมัติ'),
+  ('lucky_image_sync_interval_hours', '168',
+    'ช่วงห่าง auto-sync lucky images'),
+  ('lucky_image_fallback_live_scrape', 'true',
+    'Fallback live scrape ถ้า library ว่าง'),
+  ('reply_warmup_ping_enabled', 'true',
+    'Cron ping webhook ทุก 3 นาที เพื่อ warm')
+on conflict (key) do nothing;

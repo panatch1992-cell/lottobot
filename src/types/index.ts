@@ -113,3 +113,125 @@ export interface TodayLotteryStatus {
   lineStatus: SendStatus | null
   lineGroupCount: number
 }
+
+// ─── Hybrid Reply System (migration 005) ───────────────
+
+export type PendingReplyIntent =
+  | 'announce'       // Phase 1: รายการต่อไป + สถิติ + รูปเลขเด็ด
+  | 'result'         // Phase 6: ผลหวย บน/ล่าง/เต็ม
+  | 'countdown_20'   // Phase 2 (direct — no reply needed)
+  | 'countdown_10'   // Phase 3
+  | 'countdown_5'    // Phase 4
+  | 'closing'        // Phase 5 (direct)
+
+export type PendingReplyStatus =
+  | 'pending'
+  | 'trigger_sent'
+  | 'replied'
+  | 'expired'
+  | 'failed'
+
+export interface PendingReply {
+  id: string
+  line_group_id: string
+  lottery_id: string | null
+  intent_type: PendingReplyIntent
+  payload: PendingReplyPayload
+  trigger_text: string
+  trigger_phrase_used: string | null
+  status: PendingReplyStatus
+  retry_count: number
+  max_retries: number
+  expires_at: string
+  trigger_sent_at: string | null
+  replied_at: string | null
+  webhook_event_id: string | null
+  reply_token_used: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PendingReplyPayload {
+  text?: string
+  image_url?: string
+  image_caption?: string
+  stats_text?: string
+  result_text?: string
+  lottery_name?: string
+  custom_link?: string
+  // free-form extras the composer can read
+  [key: string]: unknown
+}
+
+export type LuckyImageCategory =
+  | 'general'
+  | 'laos'
+  | 'stock'
+  | 'vietnam'
+  | 'hanoi'
+  | 'thai'
+  | 'korea'
+  | 'china'
+  | 'japan'
+  | 'other'
+
+export interface LuckyImage {
+  id: string
+  storage_path: string
+  public_url: string
+  category: LuckyImageCategory | string
+  caption: string | null
+  source_url: string | null
+  source_hash: string | null
+  use_count: number
+  last_used_at: string | null
+  uploaded_by: string | null
+  uploaded_at: string
+  is_active: boolean
+}
+
+export type BotAccountHealth =
+  | 'unknown'
+  | 'healthy'
+  | 'degraded'
+  | 'banned'
+  | 'cooldown'
+
+export interface BotAccount {
+  id: string
+  name: string
+  endpoint_url: string | null
+  endpoint_token: string | null
+  line_mid: string | null
+  line_display_name: string | null
+  is_active: boolean
+  health_status: BotAccountHealth
+  consecutive_failures: number
+  consecutive_successes: number
+  daily_send_count: number
+  daily_reset_at: string | null
+  hourly_send_count: number
+  hourly_reset_at: string | null
+  last_used_at: string | null
+  cooldown_until: string | null
+  priority: number
+  last_error: string | null
+  last_error_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TriggerPhraseCategory =
+  | 'general'
+  | 'result'
+  | 'announce'
+  | 'stats'
+
+export interface TriggerPhraseHistoryRow {
+  id: string
+  line_group_id: string
+  phrase: string
+  category: TriggerPhraseCategory | string
+  used_at: string
+}
