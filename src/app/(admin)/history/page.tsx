@@ -104,8 +104,15 @@ export default function HistoryPage() {
 
             const isTriggerSend = log.msg_type === 'trigger_send'
             const isTriggerReply = log.msg_type === 'trigger_reply'
-            const displayIcon = isTriggerSend ? '📤' : isTriggerReply ? '💬' : (lottery?.flag || '🎰')
-            const displayName = isTriggerSend ? 'Trigger Send (.)' : isTriggerReply ? 'Trigger Reply' : (lottery?.name || 'Unknown')
+            // Trigger reply has lottery_id → show lottery info (ผลหวยที่ส่ง)
+            // Trigger send = ส่ง "." trigger (ไม่มี lottery info)
+            const displayIcon = isTriggerSend
+              ? '📤'
+              : (lottery?.flag || (isTriggerReply ? '💬' : '🎰'))
+            const displayName = isTriggerSend
+              ? 'Trigger Send (.)'
+              : (lottery?.name || (isTriggerReply ? 'Reply' : 'Unknown'))
+            const displaySuffix = isTriggerReply && lottery ? ' 📢' : ''
 
             return (
               <div key={log.id} className="px-4 py-3">
@@ -113,7 +120,7 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-2.5 min-w-0">
                     <span className="text-lg">{displayIcon}</span>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{displayName}</p>
+                      <p className="text-sm font-medium truncate">{displayName}{displaySuffix}</p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                           isTg ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
