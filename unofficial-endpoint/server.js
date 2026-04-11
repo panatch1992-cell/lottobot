@@ -15,6 +15,7 @@
  *   GET  /test          — HTML test page
  */
 
+import 'dotenv/config'
 import express from 'express'
 import { loginWithPassword, loginWithAuthToken } from '@evex/linejs'
 import { FileStorage } from '@evex/linejs/storage'
