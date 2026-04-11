@@ -33,12 +33,13 @@ function isHttpsUrl(url: string | undefined | null): url is string {
 }
 
 /**
- * แปลง 1 pending_reply → LINE bubbles (สูงสุด 2 bubble: text + image)
+ * แปลง 1 pending_reply → LINE bubbles (สูงสุด 3 bubble: text + image + lucky)
  *
  * Rules:
  *   - payload.text  → text bubble
- *   - payload.image_url → image bubble
- *   - ถ้าไม่มีทั้งคู่ → ใช้ trigger_text เป็น fallback
+ *   - payload.image_url → image bubble (เช่น result card / stats image)
+ *   - payload.lucky_image_url → image bubble (รูปเลขเด็ด optional)
+ *   - ถ้าไม่มีทั้งหมด → ใช้ trigger_text เป็น fallback
  */
 export function composeSingle(pending: PendingReply): LineMessage[] {
   const payload = (pending.payload || {}) as PendingReplyPayload
@@ -56,11 +57,22 @@ export function composeSingle(pending: PendingReply): LineMessage[] {
   }
 
   // Image bubble
-  if (isHttpsUrl(payload.image_url)) {
+  const imageUrl = (payload.image_url as string | undefined) || undefined
+  if (isHttpsUrl(imageUrl)) {
     bubbles.push({
       type: 'image',
-      originalContentUrl: payload.image_url,
-      previewImageUrl: payload.image_url,
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+    })
+  }
+
+  // Optional lucky image bubble (prediction / charm image)
+  const luckyUrl = (payload.lucky_image_url as string | undefined) || undefined
+  if (isHttpsUrl(luckyUrl)) {
+    bubbles.push({
+      type: 'image',
+      originalContentUrl: luckyUrl,
+      previewImageUrl: luckyUrl,
     })
   }
 

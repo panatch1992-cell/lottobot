@@ -155,6 +155,7 @@ export interface PendingReply {
 export interface PendingReplyPayload {
   text?: string
   image_url?: string
+  lucky_image_url?: string | null
   image_caption?: string
   stats_text?: string
   result_text?: string

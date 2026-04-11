@@ -49,6 +49,8 @@ import {
   pickTriggerPhrase,
   recordPhraseUsed,
 } from '@/lib/hybrid/trigger-phrases'
+import { pickLuckyImagesForBatch } from '@/lib/hybrid/lucky-image-picker'
+import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
 
 const TRIGGER_CHAR = '.'
 
@@ -375,7 +377,14 @@ async function dispatchHybrid(
 ): Promise<{ succeeded: number; failed: number; details: Array<{ group: string; success: boolean; attempts: number; error?: string }> }> {
   const db = getServiceClient()
   const formatted = formatResult(lottery, result)
-  const imageUrl = buildImageUrl(lottery, result, opts)
+  const resultImageUrl = buildImageUrl(lottery, result, opts)
+
+  // Pre-pick lucky images — 1 per group, pool distinct for rotation
+  // (falls back to live scrape if DB library is empty)
+  const luckyImages = await pickLuckyImagesForBatch(groups.length, {
+    category: 'general',
+    lotteryName: lottery.name,
+  })
 
   // Per-group mapping: which groups receive which lotteries
   const { data: allGroupLotteries } = await db.from('group_lotteries').select('group_id, lottery_id')
@@ -388,6 +397,7 @@ async function dispatchHybrid(
   let succeeded = 0
   let failed = 0
   const details: Array<{ group: string; success: boolean; attempts: number; error?: string }> = []
+  let luckyIdx = 0
 
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i] as LineGroup & { send_all_lotteries?: boolean; custom_link?: string; custom_message?: string }
@@ -445,6 +455,11 @@ async function dispatchHybrid(
     if (group.custom_message) lineMsg += `\n${group.custom_message}`
     if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
 
+    // Pick lucky image for this group (rotation via pre-batched picks)
+    const luckyPick = luckyImages[luckyIdx] || null
+    luckyIdx++
+    const luckyImageUrl = luckyPick?.url || null
+
     // Pick trigger phrase (avoid-repeat)
     let phrasePick: { phrase: string; category: 'result' }
     try {
@@ -466,7 +481,8 @@ async function dispatchHybrid(
       intent: 'result',
       payload: {
         text: lineMsg,
-        image_url: imageUrl,
+        image_url: resultImageUrl,       // main result image (number card)
+        lucky_image_url: luckyImageUrl,  // lucky prediction image (optional)
         lottery_name: lottery.name,
         result_text: lineMsg,
       },
@@ -487,9 +503,13 @@ async function dispatchHybrid(
     }
 
     // Self-bot sends trigger phrase to get replyToken
+    // Rotation: sendViaRotation falls back to default sendText if no pool configured
     const start = Date.now()
     const { result: sendRes, attempts } = await withRetry(
-      () => sendText(primaryId, phrasePick.phrase, officialId),
+      async () => {
+        const { result } = await sendViaRotation(primaryId, phrasePick.phrase, officialId)
+        return result
+      },
       opts,
     )
     const latency = Date.now() - start

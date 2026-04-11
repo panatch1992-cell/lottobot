@@ -255,6 +255,8 @@ export default function DevDashboard() {
         <Link href="/status" className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">🏥 Status</Link>
         <Link href="/settings" className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">⚙️ Settings</Link>
         <Link href="/history" className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">📋 History</Link>
+        <Link href="/lucky-images" className="px-3 py-1 bg-gold/20 text-gold rounded hover:bg-gold/30">📸 Lucky Images</Link>
+        <Link href="/bot-accounts" className="px-3 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200">🤖 Bot Accounts</Link>
         <button onClick={loadAll} disabled={loading} className="px-3 py-1 bg-gold/20 text-gold rounded hover:bg-gold/30 disabled:opacity-50">
           {loading ? '⏳' : '🔄'} Refresh
         </button>
