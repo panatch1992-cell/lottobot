@@ -52,8 +52,8 @@ async function triggerAllGroups() {
         error: sendResult.error,
       })
 
-      // Log trigger send
-      await db.from('send_logs').insert({
+      // Log trigger send (with error handling!)
+      const { error: insertError } = await db.from('send_logs').insert({
         lottery_id: null,
         result_id: null,
         line_group_id: group.id,
@@ -63,11 +63,16 @@ async function triggerAllGroups() {
         sent_at: new Date().toISOString(),
         error_message: sendResult.error || null,
       })
+      if (insertError) {
+        console.error(`[trigger] Failed to insert send_log for group ${group.name}:`, insertError)
+      }
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error'
+      console.error(`[trigger] Error sending to ${group.name}:`, errMsg)
       results.push({
         group: group.name,
         success: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
+        error: errMsg,
       })
     }
 
