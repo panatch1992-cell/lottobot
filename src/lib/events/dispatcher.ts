@@ -39,10 +39,22 @@ import {
 import { recordDelivery, updateDispatchJob } from './logging'
 import { recordFailure, recordSuccess } from './breaker'
 import { fireAlert } from './alerts'
+import {
+  createPendingReply,
+  markTriggerSent,
+  markTriggerFailed,
+  hasActiveForIntent,
+} from '@/lib/hybrid/pending-replies'
+import {
+  pickTriggerPhrase,
+  recordPhraseUsed,
+} from '@/lib/hybrid/trigger-phrases'
+import { pickLuckyImagesForBatch } from '@/lib/hybrid/lucky-image-picker'
+import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
 
 const TRIGGER_CHAR = '.'
 
-type SendMode = 'trigger' | 'push' | 'broadcast'
+type SendMode = 'trigger' | 'push' | 'broadcast' | 'hybrid'
 
 interface DispatcherOptions {
   mode: SendMode
@@ -63,8 +75,10 @@ interface DispatcherOptions {
 
 async function loadDispatcherOptions(): Promise<DispatcherOptions> {
   const settings = await getSettings()
-  const rawMode = (settings.line_send_mode || 'push').toLowerCase()
+  const hybridEnabled = String(settings.hybrid_reply_enabled || 'false').toLowerCase() === 'true'
+  const rawMode = (settings.line_send_mode || (hybridEnabled ? 'hybrid' : 'push')).toLowerCase()
   const mode: SendMode =
+    rawMode === 'hybrid' ? 'hybrid' :
     rawMode === 'trigger' ? 'trigger' :
     rawMode === 'broadcast' ? 'broadcast' :
     'push'
@@ -343,6 +357,193 @@ async function dispatchPush(
   return { succeeded, failed, details }
 }
 
+// ─── Mode: hybrid (pending_reply + self-bot trigger, Reply API flush) ─
+// Flow:
+//   1. For each group:
+//      a. Dedupe: ถ้ามี pending_reply intent='result' ของ lottery นี้ในกลุ่ม → skip
+//      b. Build payload: text (formatted.line) + image_url (generate-image)
+//      c. Pick trigger phrase จาก 'result' pool (avoid-repeat)
+//      d. createPendingReply (status=pending)
+//      e. Self-bot sendText(trigger_phrase) → mark trigger_sent + record phrase
+//      f. Log delivery_log per group
+//   2. จากจุดนี้ LINE webhook จะเป็นคน flush pending_reply ผ่าน Reply API
+//      (หน้าที่ของ dispatcher จบแค่ trigger sent)
+async function dispatchHybrid(
+  job: DispatchJob,
+  lottery: Lottery,
+  result: Result,
+  groups: LineGroup[],
+  opts: DispatcherOptions,
+): Promise<{ succeeded: number; failed: number; details: Array<{ group: string; success: boolean; attempts: number; error?: string }> }> {
+  const db = getServiceClient()
+  const formatted = formatResult(lottery, result)
+  const resultImageUrl = buildImageUrl(lottery, result, opts)
+
+  // Pre-pick lucky images — 1 per group, pool distinct for rotation
+  // (falls back to live scrape if DB library is empty)
+  const luckyImages = await pickLuckyImagesForBatch(groups.length, {
+    category: 'general',
+    lotteryName: lottery.name,
+  })
+
+  // Per-group mapping: which groups receive which lotteries
+  const { data: allGroupLotteries } = await db.from('group_lotteries').select('group_id, lottery_id')
+  const groupLotteryMap = new Map<string, Set<string>>()
+  for (const gl of allGroupLotteries || []) {
+    if (!groupLotteryMap.has(gl.group_id)) groupLotteryMap.set(gl.group_id, new Set())
+    groupLotteryMap.get(gl.group_id)!.add(gl.lottery_id)
+  }
+
+  let succeeded = 0
+  let failed = 0
+  const details: Array<{ group: string; success: boolean; attempts: number; error?: string }> = []
+  let luckyIdx = 0
+
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i] as LineGroup & { send_all_lotteries?: boolean; custom_link?: string; custom_message?: string }
+    const unofficialId = group.unofficial_group_id || (group.line_group_id || '').toLowerCase()
+    const officialId = group.line_group_id || ''
+    const primaryId = unofficialId || officialId
+
+    if (!primaryId) {
+      await recordDelivery({
+        dispatch_job_id: job.id, trigger_id: job.trigger_id,
+        target_type: 'line_group', target_id: '', target_name: group.name,
+        provider: 'hybrid', status: 'skipped', error_message: 'no group id',
+      })
+      details.push({ group: group.name, success: false, attempts: 0, error: 'no group id' })
+      failed++
+      continue
+    }
+
+    // Selective lottery routing
+    const sendAll = group.send_all_lotteries !== false
+    if (!sendAll) {
+      const allowed = groupLotteryMap.get(group.id)
+      if (!allowed || !allowed.has(lottery.id)) {
+        await recordDelivery({
+          dispatch_job_id: job.id, trigger_id: job.trigger_id,
+          target_type: 'line_group', target_id: primaryId, target_name: group.name,
+          provider: 'hybrid', status: 'skipped',
+          error_message: 'lottery not in group subscription',
+        })
+        details.push({ group: group.name, success: false, attempts: 0, error: 'not subscribed' })
+        continue
+      }
+    }
+
+    // Dedup: กัน dispatcher สร้าง pending_reply ซ้ำในรอบเดียวกัน
+    const alreadyActive = await hasActiveForIntent({
+      lineGroupId: group.id,
+      lotteryId: lottery.id,
+      intent: 'result',
+    })
+    if (alreadyActive) {
+      await recordDelivery({
+        dispatch_job_id: job.id, trigger_id: job.trigger_id,
+        target_type: 'line_group', target_id: primaryId, target_name: group.name,
+        provider: 'hybrid', status: 'skipped',
+        error_message: 'pending_reply already active',
+      })
+      details.push({ group: group.name, success: true, attempts: 0, error: 'already pending' })
+      succeeded++
+      continue
+    }
+
+    // Build reply payload (pre-computed so webhook reads only)
+    let lineMsg = formatted.line
+    if (group.custom_message) lineMsg += `\n${group.custom_message}`
+    if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
+
+    // Pick lucky image for this group (rotation via pre-batched picks)
+    const luckyPick = luckyImages[luckyIdx] || null
+    luckyIdx++
+    const luckyImageUrl = luckyPick?.url || null
+
+    // Pick trigger phrase (avoid-repeat)
+    let phrasePick: { phrase: string; category: 'result' }
+    try {
+      const picked = await pickTriggerPhrase({
+        lineGroupId: group.id,
+        category: 'result',
+      })
+      phrasePick = { phrase: picked.phrase, category: 'result' }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      phrasePick = { phrase: `📢 ${lottery.flag} ${lottery.name}`, category: 'result' }
+      console.warn('[dispatchHybrid] pickTriggerPhrase failed, using fallback:', msg)
+    }
+
+    // Create pending_reply row
+    const pending = await createPendingReply({
+      lineGroupId: group.id,
+      lotteryId: lottery.id,
+      intent: 'result',
+      payload: {
+        text: lineMsg,
+        image_url: resultImageUrl,       // main result image (number card)
+        lucky_image_url: luckyImageUrl,  // lucky prediction image (optional)
+        lottery_name: lottery.name,
+        result_text: lineMsg,
+      },
+      triggerText: phrasePick.phrase,
+      triggerPhraseUsed: phrasePick.phrase,
+    })
+
+    if (!pending) {
+      await recordDelivery({
+        dispatch_job_id: job.id, trigger_id: job.trigger_id,
+        target_type: 'line_group', target_id: primaryId, target_name: group.name,
+        provider: 'hybrid', status: 'failed',
+        error_message: 'pending_reply insert failed',
+      })
+      details.push({ group: group.name, success: false, attempts: 0, error: 'pending_reply insert failed' })
+      failed++
+      continue
+    }
+
+    // Self-bot sends trigger phrase to get replyToken
+    // Rotation: sendViaRotation falls back to default sendText if no pool configured
+    const start = Date.now()
+    const { result: sendRes, attempts } = await withRetry(
+      async () => {
+        const { result } = await sendViaRotation(primaryId, phrasePick.phrase, officialId)
+        return result
+      },
+      opts,
+    )
+    const latency = Date.now() - start
+
+    if (sendRes.success) {
+      await markTriggerSent(pending.id)
+      await recordPhraseUsed({
+        lineGroupId: group.id,
+        phrase: phrasePick.phrase,
+        category: 'result',
+      })
+      succeeded++
+      details.push({ group: group.name, success: true, attempts })
+    } else {
+      await markTriggerFailed(pending.id, sendRes.error || 'unknown')
+      failed++
+      details.push({ group: group.name, success: false, attempts, error: sendRes.error })
+    }
+
+    await recordDelivery({
+      dispatch_job_id: job.id, trigger_id: job.trigger_id,
+      target_type: 'line_group', target_id: primaryId, target_name: group.name,
+      provider: 'hybrid', attempt_no: attempts,
+      status: sendRes.success ? 'sent' : 'failed',
+      latency_ms: latency, error_message: sendRes.error || null,
+    })
+
+    const delay = opts.batchDelayMs + jitter(opts.jitterMs)
+    await sleep((i + 1) % opts.batchSize === 0 ? delay * 2 : delay)
+  }
+
+  return { succeeded, failed, details }
+}
+
 // ─── Mode: broadcast (single send to all friends) ──────
 async function dispatchBroadcast(
   job: DispatchJob,
@@ -460,6 +661,8 @@ export async function runDispatchJob(
       completed_at: new Date().toISOString(),
     })
     return { jobId: job.id, mode: opts.mode, total: 0, succeeded: 0, failed: 0, canary: opts.canaryEnabled, details: [] }
+  } else if (opts.mode === 'hybrid') {
+    outcome = await dispatchHybrid(job, lottery, result, groups, opts)
   } else if (opts.mode === 'trigger') {
     outcome = await dispatchTrigger(job, groups, opts)
   } else {

@@ -3,6 +3,12 @@ import { getServiceClient, getSettings } from '@/lib/supabase'
 import { getGroupSummary } from '@/lib/line-messaging'
 import { replyMessage } from '@/lib/line-reply'
 import { formatResult } from '@/lib/formatter'
+import {
+  findFlushable,
+  claimForReply,
+  revertClaim,
+} from '@/lib/hybrid/pending-replies'
+import { composeBatch } from '@/lib/hybrid/reply-composer'
 import type { Lottery, Result } from '@/types'
 import crypto from 'crypto'
 
@@ -121,67 +127,124 @@ export async function POST(req: NextRequest) {
 
       console.log('LINE webhook event:', event.type, event.source?.type, event.source?.groupId)
 
-      // ═══ TRIGGER: ตรวจจับ "." → Reply ด้วยผลหวย (ฟรี!) ═══
+      // ═══ Incoming text message → Reply flush (Hybrid + legacy) ═══
       if (
         event.type === 'message' &&
         event.message?.type === 'text' &&
-        event.message.text?.trim() === TRIGGER_CHAR &&
         event.source?.type === 'group' &&
         event.replyToken &&
         channelToken
       ) {
         const groupId = event.source.groupId
-        console.log(`[trigger] "." detected in group ${groupId.slice(-8)}`)
+        const msgText = (event.message.text || '').trim()
+        const isLegacyTrigger = msgText === TRIGGER_CHAR
 
-        try {
-          const pending = await getPendingResults(db, groupId)
+        // Look up DB group ID (unified for both paths)
+        const { data: groupRow } = await db
+          .from('line_groups')
+          .select('id')
+          .eq('line_group_id', groupId)
+          .eq('is_active', true)
+          .maybeSingle()
 
-          if (pending.length > 0) {
-            // สร้างข้อความรวมทุกผลที่ยังไม่ส่ง (รวมไม่เกิน 5 messages)
-            // ตัด text ถ้ายาวเกิน 4900 chars (LINE limit 5000)
-            const messages: { type: 'text'; text: string }[] = []
+        // ── Hybrid path: check pending_replies first (priority over legacy) ──
+        const hybridEnabled = String(settings.hybrid_reply_enabled || 'false').toLowerCase() === 'true'
+        const opportunisticEnabled = String(settings.opportunistic_reply_enabled || 'true').toLowerCase() === 'true'
 
-            for (const { result, lottery } of pending.slice(0, 5)) {
-              const formatted = formatResult(lottery, result)
-              const text = formatted.line.length > 4900 ? formatted.line.slice(0, 4895) + '...' : formatted.line
-              messages.push({ type: 'text', text })
-            }
+        let handledByHybrid = false
 
-            const startMs = Date.now()
-            const replyRes = await replyMessage(channelToken, event.replyToken, messages)
-            const duration = Date.now() - startMs
+        if (groupRow && channelToken && (hybridEnabled || isLegacyTrigger)) {
+          // trigger_sent = ปกติ (self-bot เพิ่งส่ง trigger มา)
+          // pending    = opportunistic (real user พิมพ์ อาจยังไม่ได้ trigger)
+          const flushable = await findFlushable(groupRow.id, {
+            onlyTriggerSent: !opportunisticEnabled,
+            limit: 5,
+          })
 
-            console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${duration}ms)`)
+          if (flushable.length > 0) {
+            const { messages, usedIds, leftoverIds } = composeBatch(flushable)
 
-            // Check for replyToken expiry (LINE error 110 / 400)
-            if (!replyRes.success && replyRes.error?.includes('Invalid reply token')) {
-              console.error(`[trigger] ⚠️ Reply token expired for group ${groupId.slice(-8)} — webhook was too slow`)
-            }
-
-            // บันทึก send_logs (ใช้ Promise.allSettled เพื่อไม่ให้ fail หนึ่งอัน block อื่น)
-            const logPromises = pending.slice(0, 5).map(({ result, lottery, groupDbId }) =>
-              db.from('send_logs').insert({
-                lottery_id: lottery.id,
-                result_id: result.id,
-                line_group_id: groupDbId,
-                channel: 'line',
-                msg_type: 'trigger_reply',
-                status: replyRes.success ? 'sent' : 'failed',
-                sent_at: new Date().toISOString(),
-                duration_ms: duration,
-                error_message: replyRes.error || null,
+            if (usedIds.length > 0 && messages.length > 0) {
+              // Atomic claim first — prevent duplicate replies on retry
+              const claimed = await claimForReply({
+                ids: usedIds,
+                replyToken: event.replyToken,
+                webhookEventId: eventId,
               })
-            )
-            const logResults = await Promise.allSettled(logPromises)
-            const logFailures = logResults.filter(r => r.status === 'rejected').length
-            if (logFailures > 0) {
-              console.warn(`[trigger] ${logFailures} send_log insert(s) failed`)
+
+              if (claimed.length > 0) {
+                const startMs = Date.now()
+                const replyRes = await replyMessage(channelToken, event.replyToken, messages)
+                const duration = Date.now() - startMs
+
+                console.log(
+                  `[hybrid] Reply ${replyRes.success ? '✅' : '❌'} ${groupId.slice(-8)} ` +
+                  `(${messages.length} msgs, ${claimed.length} pending, ${leftoverIds.length} leftover, ${duration}ms)`
+                )
+
+                if (!replyRes.success) {
+                  // Reply fail → revert claim so next webhook can retry
+                  await revertClaim({ ids: claimed, error: replyRes.error || 'reply failed' })
+                  if (replyRes.error?.includes('Invalid reply token')) {
+                    console.error(`[hybrid] ⚠️ Reply token expired for ${groupId.slice(-8)}`)
+                  }
+                } else {
+                  handledByHybrid = true
+                }
+              }
             }
-          } else {
-            console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
           }
-        } catch (triggerErr) {
-          console.error(`[trigger] Error handling trigger:`, triggerErr)
+        }
+
+        // ── Legacy path: "." trigger on results table (unchanged, kept for fallback) ──
+        if (!handledByHybrid && isLegacyTrigger) {
+          console.log(`[trigger] legacy "." flow for group ${groupId.slice(-8)}`)
+
+          try {
+            const pending = await getPendingResults(db, groupId)
+
+            if (pending.length > 0) {
+              const messages: { type: 'text'; text: string }[] = []
+              for (const { result, lottery } of pending.slice(0, 5)) {
+                const formatted = formatResult(lottery, result)
+                const text = formatted.line.length > 4900 ? formatted.line.slice(0, 4895) + '...' : formatted.line
+                messages.push({ type: 'text', text })
+              }
+
+              const startMs = Date.now()
+              const replyRes = await replyMessage(channelToken, event.replyToken, messages)
+              const duration = Date.now() - startMs
+
+              console.log(`[trigger] Reply ${replyRes.success ? '✅' : '❌'} to ${groupId.slice(-8)} (${messages.length} results, ${duration}ms)`)
+
+              if (!replyRes.success && replyRes.error?.includes('Invalid reply token')) {
+                console.error(`[trigger] ⚠️ Reply token expired for group ${groupId.slice(-8)} — webhook was too slow`)
+              }
+
+              const logPromises = pending.slice(0, 5).map(({ result, lottery, groupDbId }) =>
+                db.from('send_logs').insert({
+                  lottery_id: lottery.id,
+                  result_id: result.id,
+                  line_group_id: groupDbId,
+                  channel: 'line',
+                  msg_type: 'trigger_reply',
+                  status: replyRes.success ? 'sent' : 'failed',
+                  sent_at: new Date().toISOString(),
+                  duration_ms: duration,
+                  error_message: replyRes.error || null,
+                })
+              )
+              const logResults = await Promise.allSettled(logPromises)
+              const logFailures = logResults.filter(r => r.status === 'rejected').length
+              if (logFailures > 0) {
+                console.warn(`[trigger] ${logFailures} send_log insert(s) failed`)
+              }
+            } else {
+              console.log(`[trigger] No pending results for group ${groupId.slice(-8)}`)
+            }
+          } catch (triggerErr) {
+            console.error(`[trigger] Error handling trigger:`, triggerErr)
+          }
         }
       }
 
