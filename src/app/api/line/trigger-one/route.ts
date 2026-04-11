@@ -37,9 +37,10 @@ export async function POST(req: NextRequest) {
   }
 
   const g = group as LineGroup
-  const unofficialId = g.unofficial_group_id || ''
   const officialId = g.line_group_id || ''
-  const targetId = unofficialId || officialId
+  // unofficial MID = LOWER(official MID) — fallback ใช้ lowercase ถ้าไม่มี unofficial_group_id
+  const unofficialId = g.unofficial_group_id || officialId.toLowerCase()
+  const targetId = unofficialId
 
   if (!targetId) {
     return NextResponse.json({

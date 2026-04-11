@@ -34,10 +34,11 @@ async function triggerAllGroups() {
   const results: { group: string; success: boolean; error?: string }[] = []
 
   for (const group of groups as LineGroup[]) {
-    // ใช้ unofficial_group_id (MID) เป็นหลัก, fallback เป็น line_group_id (official)
-    const unofficialId = group.unofficial_group_id || ''
+    // ใช้ unofficial_group_id เป็นหลัก, fallback เป็น LOWER(line_group_id)
+    // (LINE MID ฝั่ง official = C..., ฝั่ง unofficial = c... — ต่างแค่ case)
     const officialId = group.line_group_id || ''
-    const targetId = unofficialId || officialId
+    const unofficialId = group.unofficial_group_id || officialId.toLowerCase()
+    const targetId = unofficialId
 
     if (!targetId) {
       results.push({ group: group.name, success: false, error: 'ไม่มี group ID' })

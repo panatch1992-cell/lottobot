@@ -49,51 +49,50 @@ export async function POST() {
     return NextResponse.json({ success: false, error: 'ไม่พบกลุ่ม — บัญชี LINE อาจไม่ได้อยู่ในกลุ่มใดๆ' })
   }
 
-  // Step 2: ดึงกลุ่มจาก DB
-  const { data: dbGroups } = await db.from('line_groups').select('id, name, line_group_id, unofficial_group_id')
+  // Step 2: ดึงกลุ่มจาก DB (เฉพาะ record ที่มี line_group_id — มาจาก OA webhook join)
+  const { data: dbGroups } = await db.from('line_groups')
+    .select('id, name, line_group_id, unofficial_group_id')
+    .not('line_group_id', 'is', null)
   const existing = dbGroups || []
 
-  // Step 3: Match + Update
+  // Step 3: Match ด้วย MID เท่านั้น (LOWER(line_group_id) === unofficial MID)
+  // — ไม่ match ด้วยชื่อเด็ดขาด (เสี่ยงชื่อซ้ำ → แก้ผิดกลุ่ม)
+  // — ไม่ insert record ใหม่ (รอ OA webhook join event เท่านั้น)
   let matched = 0
-  let created = 0
+  let skipped = 0
+  let unknown = 0
   const results: { name: string; mid: string; action: string }[] = []
 
   for (const ug of groups) {
-    // เช็คว่ามี MID นี้อยู่แล้วไหม
-    const alreadyExists = existing.find(eg => eg.unofficial_group_id === ug.id)
-    if (alreadyExists) {
-      results.push({ name: ug.name, mid: ug.id, action: 'มีอยู่แล้ว' })
+    // หา DB record ที่ LOWER(line_group_id) ตรงกับ unofficial MID
+    const match = existing.find(eg =>
+      eg.line_group_id && eg.line_group_id.toLowerCase() === ug.id.toLowerCase()
+    )
+
+    if (!match) {
+      unknown++
+      results.push({ name: ug.name, mid: ug.id, action: 'ไม่พบใน DB (OA ยังไม่ join กลุ่มนี้)' })
       continue
     }
 
-    // Match ด้วยชื่อ
-    const nameMatch = existing.find(eg =>
-      eg.name && ug.name &&
-      (eg.name.includes(ug.name) || ug.name.includes(eg.name)) &&
-      !eg.unofficial_group_id
-    )
-
-    if (nameMatch) {
-      await db.from('line_groups')
-        .update({ unofficial_group_id: ug.id, updated_at: new Date().toISOString() })
-        .eq('id', nameMatch.id)
-      matched++
-      results.push({ name: ug.name, mid: ug.id, action: `match "${nameMatch.name}"` })
-    } else {
-      // สร้างใหม่
-      await db.from('line_groups').insert({
-        name: ug.name || `กลุ่ม ${ug.id.slice(-6)}`,
-        unofficial_group_id: ug.id,
-        is_active: true,
-      })
-      created++
-      results.push({ name: ug.name, mid: ug.id, action: 'สร้างใหม่' })
+    // ถ้า unofficial_group_id ถูกอยู่แล้ว → skip
+    if (match.unofficial_group_id === ug.id) {
+      skipped++
+      results.push({ name: ug.name, mid: ug.id, action: 'ตรงอยู่แล้ว' })
+      continue
     }
+
+    // Update unofficial_group_id ให้ตรง
+    await db.from('line_groups')
+      .update({ unofficial_group_id: ug.id, updated_at: new Date().toISOString() })
+      .eq('id', match.id)
+    matched++
+    results.push({ name: ug.name, mid: ug.id, action: `sync → "${match.name}"` })
   }
 
   return NextResponse.json({
     success: true,
-    summary: `พบ ${groups.length} กลุ่ม — match: ${matched}, สร้างใหม่: ${created}`,
+    summary: `พบ ${groups.length} กลุ่ม — sync: ${matched}, ตรงอยู่แล้ว: ${skipped}, ไม่รู้จัก: ${unknown}`,
     groups: results,
   })
 }
