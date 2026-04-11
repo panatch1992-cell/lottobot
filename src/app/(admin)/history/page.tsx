@@ -1,53 +1,75 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { today } from '@/lib/utils'
-import type { SendLog, Lottery, LineGroup } from '@/types'
+import type { Lottery, LineGroup } from '@/types'
+
+type HistoryEntry = {
+  id: string
+  source: 'legacy' | 'pipeline'
+  lottery_id: string | null
+  line_group_id: string | null
+  channel: 'telegram' | 'line'
+  msg_type: string
+  status: string
+  sent_at: string | null
+  duration_ms: number | null
+  error_message: string | null
+  result_id: string | null
+  target_name: string | null
+  provider: string | null
+}
+
+type HistoryResponse = {
+  date: string
+  entries: HistoryEntry[]
+  lotteries: Lottery[]
+  groups: LineGroup[]
+  results: Array<{ id: string; source_url: string | null }>
+  counts: { total: number; legacy: number; pipeline: number; sent: number; failed: number }
+}
 
 export default function HistoryPage() {
   const [date, setDate] = useState(today())
-  const [logs, setLogs] = useState<SendLog[]>([])
-  const [lotteries, setLotteries] = useState<Record<string, Lottery>>({})
-  const [groups, setGroups] = useState<Record<string, LineGroup>>({})
+  const [data, setData] = useState<HistoryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'telegram' | 'line'>('all')
-  const [results, setResults] = useState<Record<string, { source_url: string | null }>>({})
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'legacy' | 'pipeline'>('all')
 
   useEffect(() => { loadHistory() }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadHistory() {
     setLoading(true)
-    const startOfDay = `${date}T00:00:00`
-    const endOfDay = `${date}T23:59:59`
-
-    const [logsRes, lotteriesRes, groupsRes, resultsRes] = await Promise.all([
-      supabase.from('send_logs').select('*').gte('created_at', startOfDay).lte('created_at', endOfDay).order('created_at', { ascending: false }),
-      supabase.from('lotteries').select('*'),
-      supabase.from('line_groups').select('*'),
-      supabase.from('results').select('id, source_url').eq('draw_date', date),
-    ])
-
-    const resultsMap: Record<string, { source_url: string | null }> = {}
-    ;(resultsRes.data || []).forEach((r: { id: string; source_url: string | null }) => { resultsMap[r.id] = r })
-    setResults(resultsMap)
-
-    const lotteriesMap: Record<string, Lottery> = {}
-    ;(lotteriesRes.data || []).forEach((l: Lottery) => { lotteriesMap[l.id] = l })
-
-    const groupsMap: Record<string, LineGroup> = {}
-    ;(groupsRes.data || []).forEach((g: LineGroup) => { groupsMap[g.id] = g })
-
-    setLogs((logsRes.data || []) as SendLog[])
-    setLotteries(lotteriesMap)
-    setGroups(groupsMap)
-    setLoading(false)
+    try {
+      const res = await fetch(`/api/history?date=${date}`)
+      const json = (await res.json()) as HistoryResponse
+      setData(json)
+    } catch {
+      setData(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const filtered = filter === 'all' ? logs : logs.filter(l => l.channel === filter)
-  const tgSent = logs.filter(l => l.channel === 'telegram' && l.status === 'sent').length
-  const lineSent = logs.filter(l => l.channel === 'line' && l.status === 'sent').length
-  const failedCount = logs.filter(l => l.status === 'failed').length
+  const lotteries: Record<string, Lottery> = {}
+  ;(data?.lotteries || []).forEach(l => { lotteries[l.id] = l })
+
+  const groups: Record<string, LineGroup> = {}
+  ;(data?.groups || []).forEach(g => { groups[g.id] = g })
+
+  const results: Record<string, { source_url: string | null }> = {}
+  ;(data?.results || []).forEach(r => { results[r.id] = r })
+
+  const entries = data?.entries || []
+  const filtered = entries.filter(e => {
+    if (filter !== 'all' && e.channel !== filter) return false
+    if (sourceFilter !== 'all' && e.source !== sourceFilter) return false
+    return true
+  })
+
+  const tgSent = entries.filter(l => l.channel === 'telegram' && l.status === 'sent').length
+  const lineSent = entries.filter(l => l.channel === 'line' && l.status === 'sent').length
+  const failedCount = entries.filter(l => l.status === 'failed').length
 
   return (
     <div className="space-y-4">
@@ -71,6 +93,21 @@ export default function HistoryPage() {
         </div>
       </div>
 
+      {/* Source filter (legacy vs pipeline) */}
+      <div className="flex bg-gray-100 rounded-lg p-0.5">
+        {(['all', 'pipeline', 'legacy'] as const).map(s => (
+          <button
+            key={s}
+            onClick={() => setSourceFilter(s)}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              sourceFilter === s ? 'bg-white shadow-sm text-text-primary' : 'text-text-secondary'
+            }`}
+          >
+            {s === 'all' ? 'ทุกแหล่ง' : s === 'pipeline' ? 'Event Pipeline' : 'Legacy'}
+          </button>
+        ))}
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-3 gap-2">
         <div className="card text-center py-2.5">
@@ -87,6 +124,14 @@ export default function HistoryPage() {
         </div>
       </div>
 
+      {/* Breakdown */}
+      {data && (
+        <div className="text-[11px] text-text-secondary flex gap-3">
+          <span>Pipeline: {data.counts.pipeline}</span>
+          <span>Legacy: {data.counts.legacy}</span>
+        </div>
+      )}
+
       {/* Log List */}
       {loading ? (
         <div className="text-center py-12"><div className="animate-spin text-2xl">📋</div></div>
@@ -98,20 +143,18 @@ export default function HistoryPage() {
       ) : (
         <div className="card p-0 divide-y divide-gray-50">
           {filtered.map(log => {
-            const lottery = lotteries[log.lottery_id]
+            const lottery = log.lottery_id ? lotteries[log.lottery_id] : null
             const group = log.line_group_id ? groups[log.line_group_id] : null
             const isTg = log.channel === 'telegram'
-
             const isTriggerSend = log.msg_type === 'trigger_send'
             const isTriggerReply = log.msg_type === 'trigger_reply'
-            // Trigger reply has lottery_id → show lottery info (ผลหวยที่ส่ง)
-            // Trigger send = ส่ง "." trigger (ไม่มี lottery info)
+
             const displayIcon = isTriggerSend
               ? '📤'
               : (lottery?.flag || (isTriggerReply ? '💬' : '🎰'))
             const displayName = isTriggerSend
               ? 'Trigger Send (.)'
-              : (lottery?.name || (isTriggerReply ? 'Reply' : 'Unknown'))
+              : (lottery?.name || log.target_name || (isTriggerReply ? 'Reply' : 'Unknown'))
             const displaySuffix = isTriggerReply && lottery ? ' 📢' : ''
 
             return (
@@ -121,11 +164,16 @@ export default function HistoryPage() {
                     <span className="text-lg">{displayIcon}</span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{displayName}{displaySuffix}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                           isTg ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
                         }`}>
                           {isTg ? '✈️ TG' : '💬 LINE'}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          log.source === 'pipeline' ? 'bg-purple-50 text-purple-600' : 'bg-gray-50 text-gray-500'
+                        }`}>
+                          {log.source === 'pipeline' ? '⚡ pipe' : '📜 legacy'}
                         </span>
                         {log.result_id && results[log.result_id] && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -144,6 +192,7 @@ export default function HistoryPage() {
                           </span>
                         )}
                         {group && <span className="text-[10px] text-text-secondary">{group.name}</span>}
+                        {!group && log.target_name && <span className="text-[10px] text-text-secondary">{log.target_name}</span>}
                         {log.duration_ms && <span className="text-[10px] text-text-secondary">{(log.duration_ms / 1000).toFixed(1)}s</span>}
                       </div>
                     </div>
@@ -153,6 +202,7 @@ export default function HistoryPage() {
                     {log.status === 'sending' && <span className="text-[11px] font-medium text-amber-500">● กำลังส่ง</span>}
                     {log.status === 'failed' && <span className="text-[11px] font-medium text-red-500">✗ ล้มเหลว</span>}
                     {log.status === 'pending' && <span className="text-[11px] text-text-secondary">⏳ รอ</span>}
+                    {log.status === 'skipped' && <span className="text-[11px] text-text-secondary">— ข้าม</span>}
                     <span className="text-[10px] text-text-secondary">
                       {log.sent_at ? new Date(log.sent_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—'}
                     </span>

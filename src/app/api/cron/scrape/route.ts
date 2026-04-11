@@ -3,267 +3,78 @@ import { getServiceClient, getSettings } from '@/lib/supabase'
 import { scrapeWithFallback } from '@/lib/scraper'
 import { isStockLottery, fetchStockLotteryResult } from '@/lib/stock-fetcher'
 import { isHanoiLaosLottery, getHanoiLaosSource, browserScrape } from '@/lib/browser-scraper'
-import { formatResult, formatTgAdminLog } from '@/lib/formatter'
-import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText, broadcastImageAndText, broadcastText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
 import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
-import type { Lottery, ScrapeSource, LineGroup } from '@/types'
+import { ingestEvent } from '@/lib/events/orchestrator'
+import type { Lottery, ScrapeSource } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Vercel max for hobby plan
 
-// Helper: บันทึกผล + ส่ง TG/LINE
-async function saveAndSend(
+// ─── saveAndDispatch ───────────────────────────────────
+// New responsibility: ONLY save the result row + emit a LOTTERY_RESULT_READY
+// event through the orchestrator. All sending, retry, breaker and logging
+// live in src/lib/events/dispatcher.ts now.
+async function saveAndDispatch(
   db: ReturnType<typeof getServiceClient>,
   lottery: Lottery,
   resultData: { top_number?: string; bottom_number?: string; full_number?: string },
   sourceUrl: string,
-  settings: Record<string, string>,
   todayStr: string,
-) {
+): Promise<{ success: boolean; error?: string; dispatched?: { total: number; succeeded: number; failed: number } }> {
   try {
-  // Save result
-  const { data: savedResult, error: insertError } = await db.from('results').upsert({
-    lottery_id: lottery.id,
-    draw_date: todayStr,
-    top_number: resultData.top_number || null,
-    bottom_number: resultData.bottom_number || null,
-    full_number: resultData.full_number || null,
-    raw_data: resultData,
-    source_url: sourceUrl,
-    scraped_at: new Date().toISOString(),
-  }, { onConflict: 'lottery_id,draw_date' }).select().single()
-
-  if (!savedResult) return { success: false, error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}` }
-
-  // Check if already sent OR recently failed (prevent infinite retry)
-  const { data: existingLogs } = await db.from('send_logs')
-    .select('channel, status, error_message, line_group_id')
-    .eq('result_id', savedResult.id)
-
-  const alreadySentTG = existingLogs?.some(l => l.channel === 'telegram' && l.status === 'sent')
-
-  // Per-group tracking: which groups already sent or hit monthly limit
-  const sentLineGroupIds = new Set(
-    (existingLogs || [])
-      .filter(l => l.channel === 'line' && l.status === 'sent' && l.line_group_id)
-      .map(l => l.line_group_id)
-  )
-  const limitLineGroupIds = new Set(
-    (existingLogs || [])
-      .filter(l => l.channel === 'line' && l.error_message?.includes('monthly limit') && l.line_group_id)
-      .map(l => l.line_group_id)
-  )
-
-  // Format
-  const formatted = formatResult(lottery, savedResult)
-
-  // Send to Telegram (skip if already sent)
-  if (!alreadySentTG && settings.telegram_bot_token && settings.telegram_admin_channel) {
-    const { count } = await db.from('line_groups').select('*', { count: 'exact', head: true }).eq('is_active', true)
-    const adminMsg = formatTgAdminLog(lottery, savedResult, count || 0, 0)
-    const startTg = Date.now()
-    const tgResult = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, adminMsg)
-
-    await db.from('send_logs').insert({
-      lottery_id: lottery.id,
-      result_id: savedResult.id,
-      channel: 'telegram',
-      msg_type: 'result',
-      status: tgResult.success ? 'sent' : 'failed',
-      sent_at: new Date().toISOString(),
-      duration_ms: Date.now() - startTg,
-      error_message: tgResult.error || null,
-    })
-  }
-
-  // Send to LINE
-  const lineToken = settings.line_channel_access_token
-  const sendMode = settings.line_send_mode || 'push' // 'push' | 'broadcast' | 'trigger'
-
-  // Global quota check
-  const lineQuota = lineToken ? await checkLineQuota() : null
-  if (lineToken && lineQuota && !lineQuota.canSend) {
-    // ไม่ส่ง LINE แต่ยังบันทึกผลได้
-  }
-
-  if (lineToken && lineQuota?.canSend) {
-    const thaiDate = formatted.line.match(/งวดวันที่\s*(.+)/)?.[1] || todayStr
-
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
-      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
-      || 'https://lottobot-chi.vercel.app'
-    const imageParams = new URLSearchParams({
-      lottery_name: lottery.name, flag: lottery.flag, date: thaiDate,
-      ...(resultData.top_number ? { top_number: resultData.top_number } : {}),
-      ...(resultData.bottom_number ? { bottom_number: resultData.bottom_number } : {}),
-      ...(resultData.full_number ? { full_number: resultData.full_number } : {}),
-      theme: settings.default_theme || 'shopee',
-      font_style: settings.default_font_style || 'rounded',
-      digit_size: settings.default_digit_size || 'm',
-      layout: settings.default_layout || 'horizontal',
-    })
-    const imageUrl = `${baseUrl}/api/generate-image?${imageParams.toString()}`
-
-    // ═══ BROADCAST MODE: ส่งครั้งเดียวถึงเพื่อนทุกคน (ประหยัด quota) ═══
-    if (sendMode === 'broadcast') {
-      const alreadyBroadcast = existingLogs?.some(l => l.channel === 'line' && l.status === 'sent' && !l.line_group_id)
-      if (!alreadyBroadcast) {
-        const startLine = Date.now()
-        let lineResult = await broadcastImageAndText(lineToken, imageUrl, formatted.line)
-        if (!lineResult.success) {
-          if (lineResult.error?.includes('monthly limit')) {
-            await flagMonthlyLimitHit()
-          } else {
-            lineResult = await broadcastText(lineToken, formatted.line)
-            if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
-              await flagMonthlyLimitHit()
-            }
-          }
-        }
-        await db.from('send_logs').insert({
+    const { data: savedResult, error: insertError } = await db
+      .from('results')
+      .upsert(
+        {
           lottery_id: lottery.id,
-          result_id: savedResult.id,
-          channel: 'line',
-          msg_type: 'result',
-          status: lineResult.success ? 'sent' : 'failed',
-          sent_at: new Date().toISOString(),
-          duration_ms: Date.now() - startLine,
-          error_message: lineResult.error || null,
-        })
+          draw_date: todayStr,
+          top_number: resultData.top_number || null,
+          bottom_number: resultData.bottom_number || null,
+          full_number: resultData.full_number || null,
+          raw_data: resultData,
+          source_url: sourceUrl,
+          scraped_at: new Date().toISOString(),
+        },
+        { onConflict: 'lottery_id,draw_date' },
+      )
+      .select()
+      .single()
+
+    if (!savedResult) {
+      return {
+        success: false,
+        error: `DB: ${insertError?.message || insertError?.code || 'insert returned null'}`,
       }
     }
 
-    // ═══ PUSH MODE: ส่งทีละกลุ่ม (รองรับ per-group customization) ═══
-    if (sendMode === 'push') {
-    const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
+    // Deterministic trigger_id per (lottery, date) — safe to collide: the
+    // orchestrator uses dispatch_jobs status for authoritative dedup, not
+    // trigger_id uniqueness.
+    const trigger_id = `scrape-${lottery.id}-${todayStr}`
 
-    // Get group-lottery mapping for selective sending
-    const { data: allGroupLotteries } = await db.from('group_lotteries').select('group_id, lottery_id')
-    const groupLotteryMap = new Map<string, Set<string>>()
-    for (const gl of allGroupLotteries || []) {
-      if (!groupLotteryMap.has(gl.group_id)) groupLotteryMap.set(gl.group_id, new Set())
-      groupLotteryMap.get(gl.group_id)!.add(gl.lottery_id)
-    }
-
-    for (const group of (groups || []) as (LineGroup & { send_all_lotteries?: boolean; custom_link?: string; custom_message?: string })[]) {
-      if (!group.line_group_id) continue
-
-      // Per-group: skip if already sent or hit monthly limit
-      if (sentLineGroupIds.has(group.id)) continue
-      if (limitLineGroupIds.has(group.id)) continue
-
-      // Check if this group should receive this lottery
-      const sendAll = group.send_all_lotteries !== false
-      if (!sendAll) {
-        const allowedLotteries = groupLotteryMap.get(group.id)
-        if (!allowedLotteries || !allowedLotteries.has(lottery.id)) continue
-      }
-
-      // Build message with optional custom link/message
-      let lineMsg = formatted.line
-      if (group.custom_message) lineMsg += `\n${group.custom_message}`
-      if (group.custom_link) lineMsg += `\n🔗 ${group.custom_link}`
-
-      const startLine = Date.now()
-      const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
-      const officialId = group.line_group_id || ''
-      const primaryId = unofficialId || officialId  // unofficial first, fallback official
-      let lineResult = await pushImageAndText(lineToken, primaryId, imageUrl, lineMsg, officialId)
-      if (!lineResult.success) {
-        if (lineResult.error?.includes('monthly limit')) {
-          await flagMonthlyLimitHit()
-        } else {
-          lineResult = await pushTextMessage(lineToken, primaryId, lineMsg, officialId)
-          if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
-            await flagMonthlyLimitHit()
-          }
-        }
-      }
-      await db.from('send_logs').insert({
-        lottery_id: lottery.id,
+    const result = await ingestEvent({
+      trigger_id,
+      source: 'scrape',
+      lottery_id: lottery.id,
+      draw_date: todayStr,
+      round: null,
+      numbers: {
+        top_number: resultData.top_number || null,
+        bottom_number: resultData.bottom_number || null,
+        full_number: resultData.full_number || null,
+      },
+      metadata: {
+        source_url: sourceUrl,
         result_id: savedResult.id,
-        line_group_id: group.id,
-        channel: 'line',
-        msg_type: 'result',
-        status: lineResult.success ? 'sent' : 'failed',
-        sent_at: new Date().toISOString(),
-        duration_ms: Date.now() - startLine,
-        error_message: lineResult.error || null,
-      })
+      },
+    })
 
-      // Short delay between groups (500ms-1.5s) to stay within Vercel 60s limit
-      await sleep(500 + Math.floor(Math.random() * 1000))
+    return {
+      success: result.ok,
+      error: result.ok ? undefined : result.reason,
+      dispatched: result.dispatched,
     }
-    } // end push mode
-
-    // ═══ TRIGGER MODE: ส่ง "." ให้ LINE OA Reply ฟรี 100%! ═══
-    if (sendMode === 'trigger') {
-      // Trigger mode: ส่ง "." ผ่าน unofficial API → LINE OA webhook จับ → Reply ผลหวย (ฟรี)
-      // ผลหวยอยู่ใน DB แล้ว (savedResult) → webhook จะดึงเอง
-      // Dedup check: only skip if we already have a SUCCESSFUL trigger_send for this result
-      const alreadyTriggered = (existingLogs || []).some(l => {
-        const msgType = (l as unknown as { msg_type?: string }).msg_type
-        return l.channel === 'line' && l.status === 'sent' && msgType === 'trigger_send'
-      })
-
-      if (!alreadyTriggered) {
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
-          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
-          || 'https://lottobot-chi.vercel.app'
-        const startTrigger = Date.now()
-        let triggerData: { sent?: number; groups?: number; error?: string } = {}
-        let triggerError: string | null = null
-
-        try {
-          // Add timeout to prevent hanging cron job
-          const controller = new AbortController()
-          const timer = setTimeout(() => controller.abort(), 30000) // 30s max
-
-          const triggerRes = await fetch(`${baseUrl}/api/line/trigger`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-          })
-          clearTimeout(timer)
-
-          triggerData = await triggerRes.json().catch(() => ({}))
-          if (!triggerRes.ok) {
-            triggerError = `HTTP ${triggerRes.status}: ${JSON.stringify(triggerData).slice(0, 200)}`
-          }
-        } catch (err) {
-          triggerError = err instanceof Error
-            ? (err.name === 'AbortError' ? 'Timeout (30s)' : err.message)
-            : String(err)
-          console.error('[trigger] Fetch error:', triggerError)
-        }
-
-        const sentCount = triggerData.sent || 0
-        const totalGroups = triggerData.groups || 0
-        const success = sentCount > 0
-
-        try {
-          await db.from('send_logs').insert({
-            lottery_id: lottery.id,
-            result_id: savedResult.id,
-            channel: 'line',
-            msg_type: 'trigger_send',
-            status: success ? 'sent' : 'failed',
-            sent_at: new Date().toISOString(),
-            duration_ms: Date.now() - startTrigger,
-            error_message: success ? null : (triggerError || triggerData.error || `${sentCount}/${totalGroups} groups sent`),
-          })
-        } catch (logErr) {
-          console.error('[trigger] Failed to insert send_log:', logErr)
-        }
-
-        console.log(`[trigger] Result: ${sentCount}/${totalGroups} groups (${success ? 'OK' : 'FAILED'})`)
-      }
-    } // end trigger mode
-  }
-
-  return { success: true }
   } catch (err) {
     return { success: false, error: `Exception: ${err instanceof Error ? err.message : String(err)}` }
   }
@@ -289,7 +100,6 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // Get settings via REST API (bypasses Supabase JS client empty-string bug)
   const settings = await getSettings()
 
   const scrapeWindowMinutes = parseInt(settings.scrape_window_minutes || '30', 10)
@@ -305,91 +115,164 @@ export async function GET(req: NextRequest) {
     return nowMinutes >= resultMin && nowMinutes <= resultMin + scrapeWindowMinutes
   })
 
-  // Check which ones don't have results yet today
-  const { data: existingResults } = await db.from('results').select('lottery_id').eq('draw_date', todayStr)
+  // Skip lotteries where we've already successfully dispatched today
+  // (dispatch_job with status='succeeded' for same lottery_id).
+  const { data: succeededJobs } = await db
+    .from('dispatch_jobs')
+    .select('lottery_id')
+    .eq('status', 'succeeded')
+    .gte('created_at', `${todayStr}T00:00:00Z`)
+  const alreadyDispatched = new Set((succeededJobs || []).map(r => r.lottery_id))
+
+  // Also skip lotteries where we already have a fresh result but no send yet
+  // (orchestrator will handle re-dispatch on the next pass using dispatch_jobs state).
+  const { data: existingResults } = await db
+    .from('results')
+    .select('lottery_id')
+    .eq('draw_date', todayStr)
   const hasResult = new Set((existingResults || []).map(r => r.lottery_id))
 
-  const needFetch = inWindow.filter(l => !hasResult.has(l.id))
+  const needFetch = inWindow.filter(l => !hasResult.has(l.id) || !alreadyDispatched.has(l.id))
 
-  const results: { lottery: string; success: boolean; method?: string; error?: string }[] = []
+  const results: { lottery: string; success: boolean; method?: string; error?: string; dispatched?: { total: number; succeeded: number; failed: number } }[] = []
 
   for (const lottery of needFetch) {
+    // If we already have a result row but no succeeded dispatch, just re-dispatch
+    // without scraping again.
+    if (hasResult.has(lottery.id)) {
+      const { data: existing } = await db
+        .from('results')
+        .select('*')
+        .eq('lottery_id', lottery.id)
+        .eq('draw_date', todayStr)
+        .maybeSingle()
+      if (existing) {
+        const dispatch = await saveAndDispatch(
+          db,
+          lottery,
+          {
+            top_number: existing.top_number,
+            bottom_number: existing.bottom_number,
+            full_number: existing.full_number,
+          },
+          existing.source_url || 'scrape',
+          todayStr,
+        )
+        results.push({
+          lottery: lottery.name,
+          success: dispatch.success,
+          method: 'redispatch',
+          error: dispatch.error,
+          dispatched: dispatch.dispatched,
+        })
+        continue
+      }
+    }
+
     // === METHOD 1: Stock Index (หวยหุ้น) — ดึงจาก Yahoo Finance ===
     if (isStockLottery(lottery.name)) {
       const stockRes = await fetchStockLotteryResult(lottery.name)
 
       if (stockRes.success && stockRes.top_number) {
-        const saveRes = await saveAndSend(db, lottery, {
-          top_number: stockRes.top_number,
-          bottom_number: stockRes.bottom_number,
-        }, `stock://${stockRes.symbol}`, settings, todayStr)
+        const dispatch = await saveAndDispatch(
+          db,
+          lottery,
+          {
+            top_number: stockRes.top_number,
+            bottom_number: stockRes.bottom_number,
+          },
+          `stock://${stockRes.symbol}`,
+          todayStr,
+        )
 
         results.push({
           lottery: lottery.name,
-          success: saveRes.success,
+          success: dispatch.success,
           method: 'stock_index',
-          error: saveRes.success ? undefined : (saveRes.error || 'Save/send failed'),
+          error: dispatch.success ? undefined : (dispatch.error || 'dispatch failed'),
+          dispatched: dispatch.dispatched,
         })
         continue
       }
 
-      // Stock fetch failed — fall through to try scrape sources
       results.push({
         lottery: lottery.name,
         success: false,
         method: 'stock_index',
         error: stockRes.error,
       })
-      // Don't continue — try scrape sources as fallback
+      // fall through to try scrape sources
     }
 
-    // === METHOD 2: Browser Scrape (Hanoi/Laos — Puppeteer bypass Cloudflare) ===
+    // === METHOD 2: Browser Scrape (Hanoi/Laos) ===
     if (isHanoiLaosLottery(lottery.name)) {
       const sourceInfo = getHanoiLaosSource(lottery.name)
       if (sourceInfo) {
-        // Get selectors from scrape_sources table (if configured)
-        const { data: browserSources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true).limit(1)
+        const { data: browserSources } = await db
+          .from('scrape_sources')
+          .select('*')
+          .eq('lottery_id', lottery.id)
+          .eq('is_active', true)
+          .limit(1)
         const selectors = (browserSources?.[0]?.selector_config as import('@/types').SelectorConfig) || {}
 
         const browserRes = await browserScrape(sourceInfo.url, selectors, sourceInfo.searchName)
 
         if (browserRes.success && browserRes.data) {
-          const saveRes = await saveAndSend(db, lottery, {
-            top_number: browserRes.data.top_number,
-            bottom_number: browserRes.data.bottom_number,
-            full_number: browserRes.data.full_number,
-          }, `browser://${sourceInfo.url}`, settings, todayStr)
+          const dispatch = await saveAndDispatch(
+            db,
+            lottery,
+            {
+              top_number: browserRes.data.top_number,
+              bottom_number: browserRes.data.bottom_number,
+              full_number: browserRes.data.full_number,
+            },
+            `browser://${sourceInfo.url}`,
+            todayStr,
+          )
 
           results.push({
             lottery: lottery.name,
-            success: saveRes.success,
+            success: dispatch.success,
             method: 'browser',
-            error: saveRes.success ? undefined : (saveRes.error || 'save failed'),
+            error: dispatch.success ? undefined : (dispatch.error || 'dispatch failed'),
+            dispatched: dispatch.dispatched,
           })
 
           if (browserSources?.[0]) {
-            await db.from('scrape_sources').update({ last_success_at: new Date().toISOString(), last_error: null }).eq('id', browserSources[0].id)
+            await db
+              .from('scrape_sources')
+              .update({ last_success_at: new Date().toISOString(), last_error: null })
+              .eq('id', browserSources[0].id)
           }
           continue
         }
 
-        // Browser failed
         if (browserSources?.[0]) {
-          await db.from('scrape_sources').update({ last_error: `Browser: ${browserRes.error}` }).eq('id', browserSources[0].id)
+          await db
+            .from('scrape_sources')
+            .update({ last_error: `Browser: ${browserRes.error}` })
+            .eq('id', browserSources[0].id)
         }
-        results.push({ lottery: lottery.name, success: false, method: 'browser', error: browserRes.error || 'browser scrape returned no data' })
-        // Fall through to CSS scrape
+        results.push({
+          lottery: lottery.name,
+          success: false,
+          method: 'browser',
+          error: browserRes.error || 'browser scrape returned no data',
+        })
       }
     }
 
-    // === METHOD 3: Web Scraping (CSS selectors — axios) ===
-    const { data: sources } = await db.from('scrape_sources').select('*').eq('lottery_id', lottery.id).eq('is_active', true)
+    // === METHOD 3: Web Scraping (CSS selectors) ===
+    const { data: sources } = await db
+      .from('scrape_sources')
+      .select('*')
+      .eq('lottery_id', lottery.id)
+      .eq('is_active', true)
 
-    if (!sources || sources.length === 0) {
-      continue
-    }
+    if (!sources || sources.length === 0) continue
 
-    // Retry logic
+    // Retry loop
     let scrapeRes: Awaited<ReturnType<typeof scrapeWithFallback>> = { success: false, error: '' }
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -397,50 +280,52 @@ export async function GET(req: NextRequest) {
       if (scrapeRes.success) break
 
       for (const src of sources as ScrapeSource[]) {
-        await db.from('scrape_sources').update({
-          last_error: `Attempt ${attempt}: ${scrapeRes.error}`,
-        }).eq('id', src.id)
+        await db
+          .from('scrape_sources')
+          .update({ last_error: `Attempt ${attempt}: ${scrapeRes.error}` })
+          .eq('id', src.id)
       }
 
-      if (attempt < maxRetries) {
-        await sleep(retryDelayMs)
-      }
+      if (attempt < maxRetries) await sleep(retryDelayMs)
     }
 
     if (!scrapeRes.success || !scrapeRes.data) {
-      await db.from('send_logs').insert({
-        lottery_id: lottery.id,
-        channel: 'telegram',
-        msg_type: 'result',
-        status: 'failed',
-        error_message: `Scrape failed after ${maxRetries} attempts: ${scrapeRes.error}`,
-      })
       results.push({ lottery: lottery.name, success: false, method: 'scrape', error: scrapeRes.error })
       continue
     }
 
-    // Update scrape source success
     if (scrapeRes.source) {
-      await db.from('scrape_sources').update({ last_success_at: new Date().toISOString(), last_error: null }).eq('id', scrapeRes.source.id)
+      await db
+        .from('scrape_sources')
+        .update({ last_success_at: new Date().toISOString(), last_error: null })
+        .eq('id', scrapeRes.source.id)
     }
 
-    const saveRes = await saveAndSend(db, lottery, {
-      top_number: scrapeRes.data.top_number,
-      bottom_number: scrapeRes.data.bottom_number,
-      full_number: scrapeRes.data.full_number,
-    }, scrapeRes.source?.url || 'scrape', settings, todayStr)
+    const dispatch = await saveAndDispatch(
+      db,
+      lottery,
+      {
+        top_number: scrapeRes.data.top_number,
+        bottom_number: scrapeRes.data.bottom_number,
+        full_number: scrapeRes.data.full_number,
+      },
+      scrapeRes.source?.url || 'scrape',
+      todayStr,
+    )
 
     results.push({
       lottery: lottery.name,
-      success: saveRes.success,
+      success: dispatch.success,
       method: 'scrape',
+      error: dispatch.error,
+      dispatched: dispatch.dispatched,
     })
   }
 
   return NextResponse.json({
     fetched: results.length,
     total_in_window: inWindow.length,
-    already_have_result: inWindow.length - needFetch.length,
+    already_dispatched_today: alreadyDispatched.size,
     results,
     timestamp: new Date().toISOString(),
   })
