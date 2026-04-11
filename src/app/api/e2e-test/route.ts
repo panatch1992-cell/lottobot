@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceClient, getSettings } from '@/lib/supabase'
+import { getServiceClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -47,6 +47,17 @@ export async function GET(req: NextRequest) {
   const sendReal = url.searchParams.get('send') === '1'
   const tests: TestResult[] = []
 
+  // Helper: read settings directly from Supabase client (bypass getSettings REST API bug)
+  async function getSettingsMap(): Promise<Record<string, string>> {
+    const db = getServiceClient()
+    const { data } = await db.from('bot_settings').select('key, value')
+    const map: Record<string, string> = {}
+    ;(data || []).forEach((s: { key: string; value: string }) => {
+      if (s.key && s.value) map[s.key] = s.value
+    })
+    return map
+  }
+
   // ─── Test 1: Database connectivity ──────────────
   tests.push(await runTest('DB Connection', async () => {
     const db = getServiceClient()
@@ -57,7 +68,7 @@ export async function GET(req: NextRequest) {
 
   // ─── Test 2: Settings are configured ────────────
   tests.push(await runTest('Settings configured', async () => {
-    const settings = await getSettings()
+    const settings = await getSettingsMap()
     const required = {
       unofficial_line_endpoint: settings.unofficial_line_endpoint,
       unofficial_line_token: settings.unofficial_line_token,
@@ -76,7 +87,7 @@ export async function GET(req: NextRequest) {
 
   // ─── Test 3: VPS health ─────────────────────────
   tests.push(await runTest('VPS /health', async () => {
-    const settings = await getSettings()
+    const settings = await getSettingsMap()
     const endpoint = (settings.unofficial_line_endpoint || '').replace(/\/+$/, '')
     if (!endpoint) return { status: 'fail', detail: 'No endpoint configured' }
 
@@ -124,7 +135,7 @@ export async function GET(req: NextRequest) {
 
   // ─── Test 5: Telegram bot ───────────────────────
   tests.push(await runTest('Telegram bot', async () => {
-    const settings = await getSettings()
+    const settings = await getSettingsMap()
     const token = settings.telegram_bot_token
     if (!token) return { status: 'skip', detail: 'No token' }
 
