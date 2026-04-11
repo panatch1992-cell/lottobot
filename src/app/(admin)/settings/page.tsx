@@ -19,6 +19,7 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('')
+  const [autoSyncing, setAutoSyncing] = useState(false)
   const [systemCheck, setSystemCheck] = useState<{ overall: string; checks: { name: string; status: string; detail: string }[] } | null>(null)
   const [checking, setChecking] = useState(false)
   const [setupResult, setSetupResult] = useState<{ success: boolean; steps: { step: string; status: string; detail: string }[]; summary?: string; pinCode?: string; sessionId?: string } | null>(null)
@@ -36,6 +37,28 @@ function SettingsContent() {
       setGroups(data.groups || [])
     } catch { /* ignore */ }
     setLoading(false)
+
+    // Auto-sync groups in background (silent — don't block UI)
+    autoSyncGroups()
+  }
+
+  async function autoSyncGroups() {
+    setAutoSyncing(true)
+    try {
+      const res = await fetch('/api/sync-groups', { method: 'POST' })
+      const data = await res.json()
+      if (data.success && ((data.matched || 0) > 0 || (data.created || 0) > 0)) {
+        // Only reload if something changed
+        const changeMsg = `✅ พบกลุ่มใหม่/อัพเดท ${(data.matched || 0) + (data.created || 0)} กลุ่ม`
+        setStatus(changeMsg)
+        setTimeout(() => setStatus(''), 4000)
+        // Reload groups
+        const reloadRes = await fetch('/api/settings')
+        const reloadData = await reloadRes.json()
+        setGroups(reloadData.groups || [])
+      }
+    } catch { /* silent fail */ }
+    setAutoSyncing(false)
   }
 
   async function saveSetting(key: string, value: string) {
@@ -453,32 +476,25 @@ function SettingsContent() {
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
-          <button
-            onClick={async () => {
-              setSaving(true)
-              setStatus('⏳ กำลัง sync...')
-              try {
-                const res = await fetch('/api/sync-groups', { method: 'POST' })
-                const data = await res.json()
-                if (data.success) {
-                  setStatus(`✅ Sync สำเร็จ! match: ${data.matched || 0}, สร้างใหม่: ${data.created || 0}`)
-                  loadSettings()
-                } else {
-                  setStatus(`❌ ${data.error || 'sync failed'}`)
-                }
-              } catch {
-                setStatus('❌ เกิดข้อผิดพลาด')
-              }
-              setSaving(false)
-              setTimeout(() => setStatus(''), 5000)
-            }}
-            disabled={saving}
-            className="text-xs bg-gold/20 text-gold px-3 py-1 rounded-lg hover:bg-gold/30 disabled:opacity-50"
-          >
-            🔄 Sync กลุ่ม
-          </button>
+          {autoSyncing ? (
+            <span className="text-xs text-text-secondary flex items-center gap-1">
+              <span className="animate-spin">🔄</span> กำลัง sync...
+            </span>
+          ) : (
+            <button
+              onClick={autoSyncGroups}
+              className="text-xs text-text-secondary hover:text-gold"
+              title="Refresh กลุ่ม"
+            >
+              🔄 Refresh
+            </button>
+          )}
         </div>
-        <p className="text-xs text-text-secondary">เชิญ <b>@LottoBot</b> + <b>บัญชี bot (onepnk1)</b> เข้ากลุ่ม → กดปุ่ม &quot;🔄 Sync กลุ่ม&quot;</p>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700">
+          <p className="font-medium">💡 เพิ่มกลุ่มใหม่ง่าย ๆ:</p>
+          <p>1. เชิญ <b>@LottoBot</b> + <b>บัญชี bot</b> เข้ากลุ่ม LINE</p>
+          <p>2. เปิดหน้านี้ใหม่ → ระบบ auto sync ให้เอง</p>
+        </div>
 
         {groups.filter(g => g.is_active).length > 15 && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
