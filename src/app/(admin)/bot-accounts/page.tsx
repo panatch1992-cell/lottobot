@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 interface BotAccount {
@@ -118,6 +119,14 @@ export default function BotAccountsPage() {
 
   return (
     <div>
+      <div className="mb-3 flex items-center gap-2 text-xs">
+        <Link href="/dev" className="text-text-secondary hover:text-text-primary">
+          ← Dev Tools
+        </Link>
+        <span className="text-text-secondary">/</span>
+        <span className="text-text-primary">Bot Accounts</span>
+      </div>
+
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-text-primary">🤖 Bot Accounts Pool</h1>
         <p className="text-sm text-text-secondary mt-1">

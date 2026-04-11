@@ -561,10 +561,17 @@ function SettingsContent() {
         <div className="space-y-2">
           {[
             {
+              id: 'hybrid',
+              label: '✨ Hybrid (ใหม่ล่าสุด)',
+              desc: 'Dispatcher → pending_reply → self-bot ส่ง trigger → webhook Reply พร้อมรูปเลขเด็ด (Phase 3)',
+              badge: 'ฟรี + รูป',
+              badgeColor: 'bg-purple-100 text-purple-700',
+            },
+            {
               id: 'trigger',
-              label: '🎯 Trigger (แนะนำ)',
+              label: '🎯 Trigger',
               desc: 'ส่ง "." ผ่านบัญชี LINE → OA ตอบกลับผลหวย (Reply API ฟรี 100%! ไม่จำกัด)',
-              badge: 'ฟรี!',
+              badge: 'ฟรี',
               badgeColor: 'bg-green-100 text-green-700',
             },
             {
@@ -584,7 +591,12 @@ function SettingsContent() {
           ].map(mode => (
             <button
               key={mode.id}
-              onClick={() => saveSetting('line_send_mode', mode.id)}
+              onClick={async () => {
+                await saveSetting('line_send_mode', mode.id)
+                // Keep hybrid_reply_enabled in sync with the selected mode.
+                // (Redundant with line_send_mode=hybrid but acts as a kill switch.)
+                await saveSetting('hybrid_reply_enabled', mode.id === 'hybrid' ? 'true' : 'false')
+              }}
               className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                 (settings.line_send_mode || 'push') === mode.id
                   ? 'border-gold bg-gold/5 shadow-sm' : 'border-gray-200 hover:border-gray-300'
@@ -598,6 +610,31 @@ function SettingsContent() {
             </button>
           ))}
         </div>
+
+        {(settings.line_send_mode || 'push') === 'hybrid' && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-800 space-y-2">
+            <p className="font-medium">✨ โหมด Hybrid เปิดใช้งาน (Phase 3)</p>
+            <p>Flow: ผลหวยมา → สร้าง pending_reply → self-bot ส่ง trigger (phrase สุ่ม) → webhook Reply (text + result card + รูปเลขเด็ด)</p>
+            <p>⚡ Reply API ฟรี 100% ไม่จำกัด · รูปเลขเด็ดจาก DB · Rotation pool</p>
+            <div className="flex gap-2 pt-1 flex-wrap">
+              <a
+                href="/lucky-images"
+                className="inline-flex items-center gap-1 bg-white border border-purple-300 text-purple-700 px-2 py-1 rounded text-xs font-medium hover:bg-purple-50"
+              >
+                📸 คลังรูป
+              </a>
+              <a
+                href="/bot-accounts"
+                className="inline-flex items-center gap-1 bg-white border border-purple-300 text-purple-700 px-2 py-1 rounded text-xs font-medium hover:bg-purple-50"
+              >
+                🤖 Bot Accounts
+              </a>
+              <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">
+                💡 เริ่มด้วย &quot;Sync จาก huaypnk&quot; ที่หน้าคลังรูป
+              </span>
+            </div>
+          </div>
+        )}
 
         {(settings.line_send_mode || 'push') === 'trigger' && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700 space-y-1">
