@@ -11,6 +11,11 @@ const pageTitles: Record<string, string> = {
   '/lotteries': 'จัดการหวย',
   '/history': 'ประวัติส่ง',
   '/settings': 'ตั้งค่า',
+  '/dev': 'Dev Tools',
+  '/status': 'สถานะระบบ',
+  '/groups': 'จัดการกลุ่ม',
+  '/lucky-images': 'คลังรูปเลขเด็ด',
+  '/bot-accounts': 'Bot Accounts',
 }
 
 export default function TopBar() {
