@@ -23,23 +23,21 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 })
 
-// Read bot_settings via direct REST API (bypasses Supabase JS client empty-string bug)
+// Read bot_settings via Supabase client (avoids REST API incomplete-data bug)
 export async function getSettings(): Promise<Record<string, string>> {
   const settings: Record<string, string> = {}
   try {
-    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/bot_settings?select=key,value`
-    const res = await fetch(url, {
-      headers: {
-        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ''}`,
-      },
-    })
-    const data = await res.json()
-    if (Array.isArray(data)) {
-      data.forEach((s: { key: string; value: string }) => { if (s.key && s.value) settings[s.key] = s.value })
+    const db = getServiceClient()
+    const { data, error } = await db.from('bot_settings').select('key, value')
+    if (error) {
+      console.error('[getSettings] Supabase error:', error.message)
+      return settings
     }
-  } catch {
-    // fallback silent
+    ;(data || []).forEach((s: { key: string; value: string }) => {
+      if (s.key && s.value) settings[s.key] = s.value
+    })
+  } catch (err) {
+    console.error('[getSettings] Exception:', err instanceof Error ? err.message : String(err))
   }
   return settings
 }
