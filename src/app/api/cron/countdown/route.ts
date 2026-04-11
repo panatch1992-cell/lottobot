@@ -5,6 +5,7 @@ import { sendToTelegram } from '@/lib/telegram'
 import { pushTextMessage, pushImageAndText, flagMonthlyLimitHit } from '@/lib/messaging-service'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
 import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
+import { getShuffledLuckyImageUrls } from '@/lib/huaypnk-scraper'
 import type { Lottery, LineGroup, Result } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -30,36 +31,11 @@ const FLOW_STEPS = [
 ]
 
 // ─── Scrape random images from web ──────────────────────
-
+// ใช้ huaypnk-scraper (shared cache + cheerio parser + label matching)
+// แทน regex-based scraper เพื่อหลีกเลี่ยงการ fetch ซ้ำและผลลัพธ์ที่คลาดเคลื่อน
 async function scrapeRandomImages(url: string, count: number): Promise<string[]> {
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return []
-    const html = await res.text()
-
-    // Extract image URLs from the page
-    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
-    const images: string[] = []
-    let match
-    while ((match = imgRegex.exec(html)) !== null) {
-      let src = match[1]
-      // Filter: only lottery/prediction images, skip icons/logos
-      if (src.includes('logo') || src.includes('icon') || src.includes('favicon')) continue
-      if (src.length < 20) continue
-      // Make absolute URL
-      if (src.startsWith('//')) src = 'https:' + src
-      else if (src.startsWith('/')) {
-        try { src = new URL(src, url).href } catch { continue }
-      }
-      if (src.startsWith('http')) images.push(src)
-    }
-
-    // Shuffle and pick N unique images
-    const shuffled = images.sort(() => Math.random() - 0.5)
-    return shuffled.slice(0, count)
+    return await getShuffledLuckyImageUrls(count, url)
   } catch (err) {
     console.error(`[countdown] scrapeRandomImages error: ${err instanceof Error ? err.message : err}`)
     return []
@@ -254,6 +230,9 @@ export async function GET(req: NextRequest) {
         if (images.length > 0) {
           const lineToken = 'unused'
           let imgIdx = 0
+          const baseUrl =
+            process.env.NEXT_PUBLIC_SITE_URL ||
+            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
 
           for (const group of activeGroups) {
             const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
@@ -267,17 +246,26 @@ export async function GET(req: NextRequest) {
             const imgUrl = images[imgIdx % images.length]
             imgIdx++
 
+            // ใช้ proxy route เพื่อ relay รูปจาก huaypnk.com → ป้องกัน hotlink block
+            const proxiedUrl = `${baseUrl}/api/lucky-image?url=${encodeURIComponent(imgUrl)}`
+
             // ใช้ custom_link ของกลุ่ม ถ้ามี ไม่งั้นใช้ URL หลัก
             const groupLink = group.custom_link || randomImageUrl
             const caption = `🎰 ${lottery.flag} ${lottery.name}\n🔗 ${groupLink}`
 
-            const result = await pushImageAndText(lineToken, primaryId, imgUrl, caption, officialId)
+            const result = await pushImageAndText(lineToken, primaryId, proxiedUrl, caption, officialId)
+            if (!result.success && result.error?.includes('monthly limit')) {
+              await flagMonthlyLimitHit()
+            }
             await logSend(db, lottery.id, 'line', step.type, result.success, tag, result.error, group.id)
 
             await sleep(500 + Math.floor(Math.random() * 1000))
           }
 
           sent.push(`${lottery.name} (🖼️ image)`)
+        } else {
+          // ไม่พบรูป → log 1 แถว เพื่อ observability (ไม่กระทบ flow อื่น)
+          await logSend(db, lottery.id, 'line', step.type, false, tag, 'no_image_found')
         }
       }
 

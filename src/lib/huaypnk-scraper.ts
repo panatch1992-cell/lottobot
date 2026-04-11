@@ -1,17 +1,22 @@
 /**
  * huaypnk-scraper.ts
  *
- * ดึงรูปเลขเด็ด/สุ่มจาก https://www.huaypnk.com/top
+ * ดึงรูปเลขเด็ด/สุ่มจาก https://www.huaypnk.com/top (หรือ URL อื่นที่ระบุ)
  * แล้วจับคู่กับชื่อหวยที่ส่งมา (ถ้าไม่พบ → สุ่มจากทั้งหมด)
  *
  * ใช้ axios + cheerio (มีอยู่แล้วใน project)
+ *
+ * มี in-memory cache (TTL) เพื่อหลีกเลี่ยงการ re-scrape ซ้ำ ๆ ภายในรอบสั้น ๆ
+ * — เหมาะกับกรณีหลายหวย/หลายกลุ่มออกผลในเวลาใกล้กัน
  */
 
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 
 const HUAYPNK_TOP_URL = 'https://www.huaypnk.com/top'
+const HUAYPNK_ORIGIN = 'https://www.huaypnk.com'
 const FETCH_TIMEOUT_MS = 10_000
+const CACHE_TTL_MS = 60_000 // 60 วินาที
 
 const SCRAPER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -22,14 +27,41 @@ export interface LuckyImageResult {
   matched: boolean   // true ถ้าชื่อตรงกับ lotteryName ที่ขอ
 }
 
+// ─── In-memory cache (per warm serverless instance) ──────
+// key: source URL · value: { at, images }
+const scrapeCache = new Map<string, { at: number; images: LuckyImageResult[] }>()
+
+function readCache(url: string): LuckyImageResult[] | null {
+  const hit = scrapeCache.get(url)
+  if (!hit) return null
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    scrapeCache.delete(url)
+    return null
+  }
+  return hit.images
+}
+
+function writeCache(url: string, images: LuckyImageResult[]) {
+  scrapeCache.set(url, { at: Date.now(), images })
+}
+
+export function clearHuaypnkCache() {
+  scrapeCache.clear()
+}
+
 // ─── Helpers ────────────────────────────────────────────
 
-function makeAbsolute(src: string): string {
+function makeAbsolute(src: string, baseUrl: string): string {
   if (!src) return ''
   if (src.startsWith('http')) return src
   if (src.startsWith('//')) return `https:${src}`
-  if (src.startsWith('/')) return `https://www.huaypnk.com${src}`
-  return `https://www.huaypnk.com/${src}`
+  try {
+    return new URL(src, baseUrl).href
+  } catch {
+    // fallback: treat baseUrl as origin
+    if (src.startsWith('/')) return `${HUAYPNK_ORIGIN}${src}`
+    return `${HUAYPNK_ORIGIN}/${src}`
+  }
 }
 
 function looksLikeContentImage(src: string): boolean {
@@ -63,20 +95,50 @@ function extractKeywords(lotteryName: string): string[] {
 // ─── Main scraper ────────────────────────────────────────
 
 /**
- * ดึงรูปเลขเด็ดจาก huaypnk.com/top
+ * ดึงรูปเลขเด็ดจาก URL ที่ระบุ (default: huaypnk.com/top)
  * ถ้า lotteryName ระบุมา → พยายาม match ก่อน → ถ้าไม่พบ return ทั้งหมด
  * ถ้าไม่ระบุ → return ทุกรูป
+ *
+ * มี cache ภายใน TTL=60s ต่อ URL เพื่อลด traffic
  */
-export async function scrapeLuckyImages(lotteryName?: string): Promise<LuckyImageResult[]> {
+export async function scrapeLuckyImages(
+  lotteryName?: string,
+  sourceUrl: string = HUAYPNK_TOP_URL,
+): Promise<LuckyImageResult[]> {
+  const cached = readCache(sourceUrl)
+  const allImages = cached ?? (await fetchAndParse(sourceUrl))
+
+  if (!cached && allImages.length > 0) writeCache(sourceUrl, allImages)
+
+  if (allImages.length === 0) return []
+  if (!lotteryName) return allImages
+
+  // พยายาม match ชื่อหวย
+  const keywords = extractKeywords(lotteryName)
+  const matched = allImages.filter(img => {
+    const lbl = img.lotteryLabel.toLowerCase()
+    if (!lbl) return false
+    return keywords.some(k => lbl.includes(k))
+  })
+
+  if (matched.length > 0) {
+    return matched.map(m => ({ ...m, matched: true }))
+  }
+
+  // ไม่พบการจับคู่ → คืนทั้งหมด (caller สุ่มเอง)
+  return allImages
+}
+
+async function fetchAndParse(sourceUrl: string): Promise<LuckyImageResult[]> {
   let html: string
   try {
-    const { data } = await axios.get<string>(HUAYPNK_TOP_URL, {
+    const { data } = await axios.get<string>(sourceUrl, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
         'User-Agent': SCRAPER_UA,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://www.huaypnk.com/',
+        'Referer': HUAYPNK_ORIGIN + '/',
         'Cache-Control': 'no-cache',
       },
     })
@@ -99,7 +161,7 @@ export async function scrapeLuckyImages(lotteryName?: string): Promise<LuckyImag
 
     if (!looksLikeContentImage(src)) return
 
-    const absoluteUrl = makeAbsolute(src)
+    const absoluteUrl = makeAbsolute(src, sourceUrl)
     if (!absoluteUrl) return
 
     // หา label ที่ใกล้รูปที่สุด
@@ -132,23 +194,6 @@ export async function scrapeLuckyImages(lotteryName?: string): Promise<LuckyImag
     })
   })
 
-  if (allImages.length === 0) return []
-
-  if (!lotteryName) return allImages
-
-  // พยายาม match ชื่อหวย
-  const keywords = extractKeywords(lotteryName)
-  const matched = allImages.filter(img => {
-    const lbl = img.lotteryLabel.toLowerCase()
-    if (!lbl) return false
-    return keywords.some(k => lbl.includes(k))
-  })
-
-  if (matched.length > 0) {
-    return matched.map(m => ({ ...m, matched: true }))
-  }
-
-  // ไม่พบการจับคู่ → คืนทั้งหมด (caller สุ่มเอง)
   return allImages
 }
 
@@ -156,8 +201,25 @@ export async function scrapeLuckyImages(lotteryName?: string): Promise<LuckyImag
  * ดึง URL รูปสุ่มสำหรับหวย lotteryName
  * คืน null ถ้าดึงไม่ได้หรือหน้าว่าง
  */
-export async function getRandomLuckyImageUrl(lotteryName?: string): Promise<string | null> {
-  const images = await scrapeLuckyImages(lotteryName)
+export async function getRandomLuckyImageUrl(
+  lotteryName?: string,
+  sourceUrl: string = HUAYPNK_TOP_URL,
+): Promise<string | null> {
+  const images = await scrapeLuckyImages(lotteryName, sourceUrl)
   if (images.length === 0) return null
   return images[Math.floor(Math.random() * images.length)].imageUrl
+}
+
+/**
+ * ดึงหลาย URL รูปสุ่ม (ไม่ซ้ำกัน) สำหรับแจกหลายกลุ่ม
+ * คืน empty array ถ้าดึงไม่ได้
+ */
+export async function getShuffledLuckyImageUrls(
+  count: number,
+  sourceUrl: string = HUAYPNK_TOP_URL,
+): Promise<string[]> {
+  const images = await scrapeLuckyImages(undefined, sourceUrl)
+  if (images.length === 0) return []
+  const shuffled = images.slice().sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count).map(i => i.imageUrl)
 }

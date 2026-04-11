@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
     if (lineToken && sendStatsLine && statsQuota?.canSend) {
       // ดึง lucky image URL จาก huaypnk.com/top ครั้งเดียวต่อหวย
       // ถ้าดึงไม่ได้ → ข้ามส่งรูปโดยไม่กระทบสถิติ
+      // huaypnk-scraper มี cache TTL 60s → หลายหวยในรอบเดียวกันจะ share การ fetch
       const luckyDirectUrl = await getRandomLuckyImageUrl(lottery.name)
       const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ||
@@ -107,6 +108,9 @@ export async function GET(req: NextRequest) {
       const luckyProxyUrl = luckyDirectUrl
         ? `${baseUrl}/api/lucky-image?url=${encodeURIComponent(luckyDirectUrl)}`
         : null
+
+      // caption ที่ไม่ว่าง (บาง endpoint ไม่ยอมรับ text=='')
+      const luckyCaption = `🎰 ${lottery.flag} ${lottery.name}`.trim()
 
       const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
@@ -133,13 +137,46 @@ export async function GET(req: NextRequest) {
         })
 
         // 2) ส่งรูปเลขเด็ดจาก huaypnk.com (ถ้ามี) ตามหลังสถิติ
+        //    — log result เพื่อ observability
+        //    — ใช้ caption ที่ไม่ว่าง
+        //    — ไม่นับ fail นี้เป็น breaker failure (รูปเป็น optional)
         if (lineResult.success && luckyProxyUrl) {
           await sleep(1500 + Math.floor(Math.random() * 1000))
-          await sendImageAndText(primaryId, luckyProxyUrl, '', officialId)
+          const imgResult = await sendImageAndText(primaryId, luckyProxyUrl, luckyCaption, officialId)
+          if (!imgResult.success && imgResult.error?.includes('monthly limit')) {
+            await flagMonthlyLimitHit()
+          }
+          await db.from('send_logs').insert({
+            lottery_id: lottery.id,
+            line_group_id: group.id,
+            channel: 'line',
+            msg_type: 'stats',
+            status: imgResult.success ? 'sent' : 'failed',
+            sent_at: new Date().toISOString(),
+            // prefix ที่ทำให้ history page แยกแยะได้ว่าเป็น lucky image ไม่ใช่ text สถิติ
+            error_message: imgResult.success
+              ? 'lucky_image:ok'
+              : `lucky_image:${imgResult.error || 'unknown'}`,
+          })
+        } else if (lineResult.success && !luckyProxyUrl) {
+          // log ว่า scrape ไม่ได้เจอรูป (1 ครั้งต่อหวย ไม่ใช่ต่อกลุ่ม — skip per-group)
         }
 
         // Short delay ระหว่างกลุ่ม
         await sleep(500 + Math.floor(Math.random() * 1000))
+      }
+
+      // log ว่า scraper หาไม่เจอรูปสำหรับหวยนี้ (1 แถวต่อหวย → ไม่ spam logs)
+      if (!luckyProxyUrl) {
+        await db.from('send_logs').insert({
+          lottery_id: lottery.id,
+          line_group_id: null,
+          channel: 'line',
+          msg_type: 'stats',
+          status: 'failed',
+          sent_at: new Date().toISOString(),
+          error_message: 'lucky_image:no_image_found',
+        })
       }
     }
 
