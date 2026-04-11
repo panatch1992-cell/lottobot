@@ -75,6 +75,8 @@ type DbStats = {
   sendLogsSuccess1h: number
 }
 
+type Group = { id: string; name: string; is_active: boolean }
+
 export default function DevDashboard() {
   const [health, setHealth] = useState<HealthData | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
@@ -83,6 +85,10 @@ export default function DevDashboard() {
   const [endpoint, setEndpoint] = useState('')
   const [loading, setLoading] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [allGroups, setAllGroups] = useState<Group[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  const [sendingTest, setSendingTest] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
 
   async function loadAll() {
     setLoading(true)
@@ -119,6 +125,13 @@ export default function DevDashboard() {
         .limit(30)
       setRecentLogs(logs || [])
 
+      // Fetch all groups for test send dropdown
+      const { data: groupsData } = await supabase
+        .from('line_groups')
+        .select('id, name, is_active')
+        .order('name')
+      setAllGroups((groupsData || []) as Group[])
+
       // DB stats
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
       const [
@@ -152,6 +165,42 @@ export default function DevDashboard() {
       console.error('Dev dashboard load error:', err)
     }
     setLoading(false)
+  }
+
+  async function sendTestToGroup() {
+    if (!selectedGroupId) {
+      setTestResult({ success: false, message: 'กรุณาเลือกกลุ่ม' })
+      return
+    }
+    setSendingTest(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/line/trigger-one', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: selectedGroupId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTestResult({
+          success: true,
+          message: `✅ ส่งเข้า "${data.group?.name}" สำเร็จ (${data.durationMs}ms) — เช็คใน LINE app`,
+        })
+      } else {
+        setTestResult({
+          success: false,
+          message: `❌ ${data.error || 'fail'}`,
+        })
+      }
+      // Reload logs to show the new entry
+      setTimeout(() => loadAll(), 1000)
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: `❌ ${err instanceof Error ? err.message : 'error'}`,
+      })
+    }
+    setSendingTest(false)
   }
 
   async function resetAntiBan() {
@@ -298,6 +347,42 @@ export default function DevDashboard() {
                 )}
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Test Send to Specific Group */}
+      <div className="card space-y-2">
+        <h3 className="text-sm font-semibold">🧪 Test Send (เลือกกลุ่ม)</h3>
+        <p className="text-[10px] text-text-secondary">
+          ส่ง &quot;.&quot; ไปกลุ่มเดียว — สำหรับทดสอบโดยไม่กระทบกลุ่มอื่น
+        </p>
+        <div className="flex gap-2">
+          <select
+            value={selectedGroupId}
+            onChange={e => setSelectedGroupId(e.target.value)}
+            className="input text-xs flex-1"
+          >
+            <option value="">-- เลือกกลุ่ม --</option>
+            {allGroups.map(g => (
+              <option key={g.id} value={g.id}>
+                {g.is_active ? '✅' : '⚪'} {g.name} ({g.id.slice(-8)})
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={sendTestToGroup}
+            disabled={sendingTest || !selectedGroupId}
+            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {sendingTest ? '⏳' : '📤 ส่ง "."'}
+          </button>
+        </div>
+        {testResult && (
+          <div className={`text-xs p-2 rounded ${
+            testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+          }`}>
+            {testResult.message}
           </div>
         )}
       </div>
