@@ -625,15 +625,19 @@ app.post('/send', async (req, res) => {
   if (mode === 'push_text') {
     if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
 
+    // Trigger pattern: "." MUST be sent via unofficial (personal account)
+    // so that OA receives it as an incoming webhook event and can reply.
+    // Fallback to official would make OA send the message itself —
+    // which does NOT trigger a webhook for the OA to reply to.
+    // → If unofficial fails, return the error; do NOT fallback.
     const result = await sendViaUnofficial(to, text)
     if (result.success) return res.json(result)
-    console.warn(`[send] unofficial failed: ${result.error} → fallback official`)
-
-    if (LINE_CHANNEL_TOKEN && officialGroupId) {
-      const off = await sendViaOfficial(officialGroupId, [{ type: 'text', text }])
-      return off.success ? res.json(off) : res.status(502).json(off)
-    }
-    return res.status(502).json({ success: false, error: result.error })
+    console.warn(`[send] unofficial push_text failed: ${result.error}`)
+    return res.status(502).json({
+      success: false,
+      error: result.error,
+      note: 'push_text does not fallback to official (breaks trigger pattern)',
+    })
   }
 
   if (mode === 'push_image_text') {
