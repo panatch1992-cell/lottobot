@@ -451,8 +451,34 @@ function SettingsContent() {
 
       {/* ═══ 3. กลุ่ม LINE ═══ */}
       <div className="card space-y-3">
-        <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
-        <p className="text-xs text-text-secondary">กลุ่มจะเพิ่มอัตโนมัติเมื่อเชิญ Bot เข้ากลุ่ม</p>
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">👥 กลุ่ม LINE ({groups.filter(g => g.is_active).length}/{groups.length})</h3>
+          <button
+            onClick={async () => {
+              setSaving(true)
+              setStatus('⏳ กำลัง sync...')
+              try {
+                const res = await fetch('/api/sync-groups', { method: 'POST' })
+                const data = await res.json()
+                if (data.success) {
+                  setStatus(`✅ Sync สำเร็จ! match: ${data.matched || 0}, สร้างใหม่: ${data.created || 0}`)
+                  loadSettings()
+                } else {
+                  setStatus(`❌ ${data.error || 'sync failed'}`)
+                }
+              } catch {
+                setStatus('❌ เกิดข้อผิดพลาด')
+              }
+              setSaving(false)
+              setTimeout(() => setStatus(''), 5000)
+            }}
+            disabled={saving}
+            className="text-xs bg-gold/20 text-gold px-3 py-1 rounded-lg hover:bg-gold/30 disabled:opacity-50"
+          >
+            🔄 Sync กลุ่ม
+          </button>
+        </div>
+        <p className="text-xs text-text-secondary">เชิญ <b>@LottoBot</b> + <b>บัญชี bot (onepnk1)</b> เข้ากลุ่ม → กดปุ่ม &quot;🔄 Sync กลุ่ม&quot;</p>
 
         {groups.filter(g => g.is_active).length > 15 && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
