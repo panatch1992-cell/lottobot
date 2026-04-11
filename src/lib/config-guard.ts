@@ -1,12 +1,12 @@
 /**
  * config-guard.ts — Required-field validation for cron jobs
  *
- * ทุก cron ต้องเรียก assertConfig() ก่อนทำงาน
- * ถ้า config ขาด → fail ทันที + แจ้ง Telegram
+ * ทุก cron ต้องเรียก validateCronConfig() ก่อนทำงาน
+ * ถ้า config ขาด → fail ทันที + fire alert ผ่าน events/alerts
  */
 
-import { sendToTelegram } from '@/lib/telegram'
 import { getSettings } from '@/lib/supabase'
+import { fireAlert } from '@/lib/events/alerts'
 
 export interface ConfigIssue {
   field: string
@@ -75,28 +75,25 @@ export async function validateLineGroups(
 }
 
 /**
- * แจ้งเตือน config ผิดพลาดผ่าน Telegram (ส่งครั้งเดียวต่อวัน)
+ * แจ้งเตือน config ผิดพลาดผ่าน events/alerts
+ * (dedupe ใน DB ต่อ alert_key — รอด cold-start, rate-limited ตาม
+ *  event_alert_rate_limit_minutes)
  */
-const alertedToday = new Set<string>()
-
 export async function alertConfigIssues(cronName: string, issues: ConfigIssue[]) {
   const errors = issues.filter(i => i.severity === 'error')
   if (errors.length === 0) return
 
-  const key = `${cronName}_${new Date().toISOString().slice(0, 10)}`
-  if (alertedToday.has(key)) return
-  alertedToday.add(key)
-
-  const settings = await getSettings()
-  if (!settings.telegram_bot_token || !settings.telegram_admin_channel) return
-
-  const msg = [
-    `🚨 <b>Config Error: ${cronName}</b>`,
-    '',
-    ...errors.map(e => `❌ <code>${e.field}</code>: ${e.message}`),
+  const detail = [
+    ...errors.map(e => `• ${e.field}: ${e.message}`),
     '',
     '→ แก้ไขที่หน้า /settings',
   ].join('\n')
 
-  await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, msg)
+  await fireAlert({
+    alert_key: `config_error:${cronName}`,
+    severity: 'error',
+    title: `Config Error: ${cronName}`,
+    detail,
+    metadata: { cron: cronName, issues: errors },
+  })
 }
