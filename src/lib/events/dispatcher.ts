@@ -77,8 +77,18 @@ interface DispatcherOptions {
 
 async function loadDispatcherOptions(): Promise<DispatcherOptions> {
   const settings = await getSettings()
-  const hybridEnabled = String(settings.hybrid_reply_enabled || 'false').toLowerCase() === 'true'
-  const rawMode = (settings.line_send_mode || (hybridEnabled ? 'hybrid' : 'push')).toLowerCase()
+  const settingsCount = Object.keys(settings).length
+  if (settingsCount === 0) {
+    console.error('[dispatcher] ⚠️ getSettings() returned EMPTY — using env var fallbacks')
+  }
+
+  const hybridEnabled =
+    String(settings.hybrid_reply_enabled || process.env.HYBRID_REPLY_ENABLED || 'false').toLowerCase() === 'true'
+  const rawMode = (
+    settings.line_send_mode ||
+    process.env.LINE_SEND_MODE ||
+    (hybridEnabled ? 'hybrid' : 'push')
+  ).toLowerCase()
   let mode: SendMode =
     rawMode === 'hybrid' ? 'hybrid' :
     rawMode === 'trigger' ? 'trigger' :
@@ -86,13 +96,12 @@ async function loadDispatcherOptions(): Promise<DispatcherOptions> {
     'push'
 
   // Belt-and-suspenders: force hybrid if hybrid_reply_enabled=true
-  // regardless of line_send_mode (catches stale/empty getSettings)
   if (mode !== 'hybrid' && hybridEnabled) {
     console.warn(`[dispatcher] mode=${mode} but hybrid_reply_enabled=true → forcing hybrid`)
     mode = 'hybrid'
   }
 
-  console.log(`[dispatcher] loadDispatcherOptions: mode=${mode} (raw=${rawMode}, hybridEnabled=${hybridEnabled}, line_send_mode=${settings.line_send_mode || '(empty)'})`)
+  console.log(`[dispatcher] loadDispatcherOptions: mode=${mode} (raw=${rawMode}, hybridEnabled=${hybridEnabled}, line_send_mode=${settings.line_send_mode || '(empty)'}, settingsCount=${settingsCount})`)
 
 
   return {
@@ -115,10 +124,20 @@ async function loadDispatcherOptions(): Promise<DispatcherOptions> {
 
 async function loadTargetGroups(opts: DispatcherOptions): Promise<LineGroup[]> {
   const db = getServiceClient()
-  const { data } = await db.from('line_groups').select('*').eq('is_active', true)
+  // Explicit column select — do NOT use select('*') because PostgREST may
+  // cache the schema and not return columns added after initial deployment
+  // (e.g., unofficial_group_id added via migration).
+  const { data, error } = await db.from('line_groups')
+    .select('id, name, line_group_id, unofficial_group_id, is_active, custom_link, custom_message, send_all_lotteries, line_notify_token, member_count, created_at, updated_at')
+    .eq('is_active', true)
+
+  if (error) {
+    console.error('[dispatcher] loadTargetGroups error:', error.message)
+  }
+
   const groups = (data || []) as LineGroup[]
 
-  // Diagnostic: log MID sources so we can see if unofficial_group_id is returned
+  // Diagnostic: log MID sources
   for (const g of groups) {
     const ug = g.unofficial_group_id
     const lg = g.line_group_id
