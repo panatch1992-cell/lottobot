@@ -37,6 +37,13 @@ export default function LuckyImagesPage() {
   const [debugging, setDebugging] = useState(false)
   const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null)
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  // Custom URL for scrape (override default huaypnk)
+  const [sourceUrl, setSourceUrl] = useState('')
+  // Bulk paste textarea
+  const [bulkUrls, setBulkUrls] = useState('')
+  const [bulkCategory, setBulkCategory] = useState('general')
+  const [bulkImporting, setBulkImporting] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -83,15 +90,21 @@ export default function LuckyImagesPage() {
   }
 
   async function syncFromHuaypnk() {
-    if (!confirm('ดึงรูปจาก huaypnk.com/top ตอนนี้?')) return
+    const useUrl = sourceUrl.trim() || 'https://www.huaypnk.com/top'
+    if (!confirm(`ดึงรูปจาก ${useUrl} ตอนนี้?`)) return
     setSyncing(true)
     setMessage(null)
-    const res = await fetch('/api/admin/lucky-images/sync-huaypnk', { method: 'POST' })
+    const res = await fetch('/api/admin/lucky-images/sync-huaypnk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sourceUrl.trim() ? { url: sourceUrl.trim() } : {}),
+    })
     const data = await res.json()
     if (res.ok) {
+      const src = data.source ? ` [${data.source}]` : ''
       setMessage({
-        type: 'ok',
-        text: `เพิ่ม ${data.added} รูป · ข้าม ${data.skipped} ซ้ำ · fail ${data.failed}`,
+        type: data.added > 0 ? 'ok' : 'err',
+        text: `เพิ่ม ${data.added} รูป · ข้าม ${data.skipped} · fail ${data.failed}${src}`,
       })
       await load()
     } else {
@@ -100,14 +113,42 @@ export default function LuckyImagesPage() {
     setSyncing(false)
   }
 
+  async function bulkImport() {
+    const urls = bulkUrls.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean)
+    if (urls.length === 0) {
+      setMessage({ type: 'err', text: 'กรุณา paste URL อย่างน้อย 1 อัน' })
+      return
+    }
+    setBulkImporting(true)
+    setMessage(null)
+    const res = await fetch('/api/admin/lucky-images/bulk-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls, category: bulkCategory }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setMessage({
+        type: data.added > 0 ? 'ok' : 'err',
+        text: `เพิ่ม ${data.added} · ข้าม ${data.skipped} · invalid ${data.invalid} (จาก ${data.total})`,
+      })
+      if (data.added > 0) setBulkUrls('')
+      await load()
+    } else {
+      setMessage({ type: 'err', text: data.error || 'import ล้มเหลว' })
+    }
+    setBulkImporting(false)
+  }
+
   async function runDebug(browserMode = false) {
     setDebugging(true)
     setDebugResult(null)
     setMessage(null)
     try {
-      const url = browserMode
-        ? '/api/admin/lucky-images/debug-huaypnk?mode=browser'
-        : '/api/admin/lucky-images/debug-huaypnk'
+      const params = new URLSearchParams()
+      if (browserMode) params.set('mode', 'browser')
+      if (sourceUrl.trim()) params.set('url', sourceUrl.trim())
+      const url = `/api/admin/lucky-images/debug-huaypnk?${params.toString()}`
       const res = await fetch(url)
       const data = await res.json()
       setDebugResult(data)
@@ -195,13 +236,87 @@ export default function LuckyImagesPage() {
 
       {/* Actions */}
       <div className="bg-white rounded-lg p-4 mb-4 space-y-3">
-        <button
-          onClick={syncFromHuaypnk}
-          disabled={syncing}
-          className="w-full py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
-        >
-          {syncing ? 'กำลังดึง... (อาจใช้เวลา ~30 วิ ถ้าต้อง fallback browser)' : '🔁 Sync จาก huaypnk.com/top'}
-        </button>
+        {/* Bulk paste toggle */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowBulk(s => !s)}
+            className="flex-1 py-2 px-3 bg-green-100 text-green-800 rounded-lg text-sm font-medium"
+          >
+            {showBulk ? '▲ ซ่อน Bulk Import' : '📋 Bulk Import (paste URL หลาย ๆ อัน)'}
+          </button>
+        </div>
+
+        {showBulk && (
+          <div className="border rounded-lg p-3 bg-green-50 space-y-2">
+            <div className="text-xs text-green-900">
+              💡 วิธีใช้: ไปที่ Google Images / Facebook ค้นคำว่า &quot;เลขเด็ด&quot; → คลิกขวาที่รูป → Copy image address → paste ทีละบรรทัด (หรือ CSV)
+            </div>
+            <textarea
+              placeholder={'https://example.com/image1.jpg\nhttps://example.com/image2.png\n...'}
+              value={bulkUrls}
+              onChange={(e) => setBulkUrls(e.target.value)}
+              rows={8}
+              className="w-full px-3 py-2 border rounded-lg text-xs font-mono"
+            />
+            <div className="flex gap-2 items-center">
+              <select
+                value={bulkCategory}
+                onChange={(e) => setBulkCategory(e.target.value)}
+                className="px-3 py-2 border rounded-lg text-xs"
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={bulkImport}
+                disabled={bulkImporting || !bulkUrls.trim()}
+                className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                {bulkImporting ? 'กำลังนำเข้า...' : `นำเข้า ${bulkUrls.split(/[\r\n,]+/).filter(s => s.trim()).length} URL`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Custom source URL for scrape */}
+        <div className="border-t pt-3">
+          <div className="text-sm font-medium mb-2">🔗 Source URL (เว้นว่าง = huaypnk.com/top)</div>
+          <input
+            type="url"
+            placeholder="https://..."
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg mb-2 text-sm"
+          />
+          <div className="flex gap-1 flex-wrap mb-2">
+            <span className="text-[10px] text-text-secondary self-center">ลองได้:</span>
+            {[
+              { label: 'huaypnk', url: 'https://www.huaypnk.com/top' },
+              { label: 'huayded789', url: 'https://www.huayded789.com' },
+              { label: 'tanghuay', url: 'https://www.tanghuay.net' },
+              { label: 'siamlotto', url: 'https://siamlotto.net' },
+            ].map(preset => (
+              <button
+                key={preset.label}
+                onClick={() => setSourceUrl(preset.url)}
+                className="text-[10px] px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={syncFromHuaypnk}
+            disabled={syncing}
+            className="w-full py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {syncing ? 'กำลังดึง... (~30 วิ ถ้าต้อง fallback browser)' : '🔁 Sync จาก URL'}
+          </button>
+        </div>
+
         <div className="flex gap-2">
           <button
             onClick={() => runDebug(false)}
@@ -215,7 +330,7 @@ export default function LuckyImagesPage() {
             onClick={() => runDebug(true)}
             disabled={debugging}
             className="flex-1 py-2 px-3 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium disabled:opacity-50"
-            title="Headless browser (Puppeteer) — ช้า ~30 วิ แต่เห็นรูปที่ render โดย JS"
+            title="Headless browser (Puppeteer) — ช้า ~30 วิ"
           >
             {debugging ? '...' : '🌐 Debug (Browser)'}
           </button>

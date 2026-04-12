@@ -35,7 +35,8 @@ test.describe('Lucky Images Page (Hybrid)', () => {
     await page.goto('/lucky-images')
     // TopBar also shows the title → match the page's big h1 (with 📸 icon)
     await expect(page.getByRole('heading', { name: /📸 คลังรูปเลขเด็ด/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Sync จาก huaypnk/ })).toBeVisible()
+    // Sync button now says "Sync จาก URL" (configurable source)
+    await expect(page.getByRole('button', { name: /Sync จาก URL/ })).toBeVisible()
     // Empty state is shown when items is empty
     await expect(page.getByText(/ยังไม่มีรูปในคลัง/)).toBeVisible({ timeout: 5000 })
   })
