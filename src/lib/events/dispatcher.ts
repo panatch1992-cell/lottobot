@@ -520,16 +520,10 @@ async function dispatchHybrid(
       continue
     }
 
-    // ─── Human-like pre-send (thinking + typing) ───────
-    // Non-blocking observability: log the computed trace so admins can audit
-    // via dev logs (or /dev if we add it later). Sleeps happen inside.
-    const human = await humanLikePreSend(phrasePick.phrase)
-    if (human.totalMs > 0) {
-      console.log(
-        `[dispatchHybrid] humanlike ${group.name.slice(0, 16)}: ${human.totalMs}ms ` +
-          human.trace.map(t => `${t.label}=${t.ms}`).join(' '),
-      )
-    }
+    // Humanlike delay is handled by the VPS-side humanLikeDelay()
+    // (3-8s per send). We don't add Vercel-side delay because it
+    // would eat into the 60s function timeout for cron routes.
+    // The VPS delay alone is sufficient for anti-ban realism.
 
     // Self-bot sends trigger phrase to get replyToken
     // noFallback=true → Hybrid MUST use unofficial (user account) so
