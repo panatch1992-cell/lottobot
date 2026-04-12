@@ -515,11 +515,18 @@ async function dispatchHybrid(
     }
 
     // Self-bot sends trigger phrase to get replyToken
-    // Rotation: sendViaRotation falls back to default sendText if no pool configured
+    // noFallback=true → Hybrid MUST use unofficial (user account) so
+    // LINE generates a replyToken. Falling back to Official push is
+    // semantically wrong (no token) AND wastes monthly quota.
     const start = Date.now()
     const { result: sendRes, attempts } = await withRetry(
       async () => {
-        const { result } = await sendViaRotation(primaryId, phrasePick.phrase, officialId)
+        const { result } = await sendViaRotation(
+          primaryId,
+          phrasePick.phrase,
+          officialId,
+          { noFallback: true },
+        )
         return result
       },
       opts,

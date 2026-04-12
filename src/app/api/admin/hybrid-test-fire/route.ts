@@ -112,6 +112,8 @@ interface TargetReport {
   trigger_sent: boolean
   latency_ms: number
   error?: string
+  unofficial_error?: string
+  fallback_skipped?: boolean
 }
 
 export async function POST(req: NextRequest) {
@@ -296,8 +298,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Send trigger via self-bot
+    // noFallback=true → never fall back to Official push (wastes quota + no replyToken)
     const t0 = Date.now()
-    const { result: sendRes } = await sendViaRotation(primaryId, phrase, officialId)
+    const { result: sendRes } = await sendViaRotation(
+      primaryId,
+      phrase,
+      officialId,
+      { noFallback: true },
+    )
     const latencyMs = Date.now() - t0
 
     if (sendRes.success) {
@@ -316,6 +324,8 @@ export async function POST(req: NextRequest) {
       trigger_sent: sendRes.success,
       latency_ms: latencyMs,
       error: sendRes.error,
+      unofficial_error: sendRes.unofficialError,
+      fallback_skipped: sendRes.fallbackSkipped,
     })
   }
 

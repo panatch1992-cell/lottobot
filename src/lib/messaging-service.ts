@@ -10,6 +10,22 @@ import { getSettings } from '@/lib/supabase'
 export type SendResult = {
   success: boolean
   error?: string
+  unofficialError?: string
+  fallbackSkipped?: boolean
+  circuitBreaker?: boolean
+  rateLimited?: boolean
+}
+
+export interface SendOptions {
+  /**
+   * When true, tells the self-bot endpoint NOT to fall back to the
+   * Official LINE Messaging API if unofficial (user account) fails.
+   *
+   * Hybrid-mode trigger sends MUST set this: the whole point is to
+   * have a user-account message in the group so LINE issues a
+   * replyToken. Official push can't do that and wastes monthly quota.
+   */
+  noFallback?: boolean
 }
 
 export type HealthCheckResult = {
@@ -29,11 +45,11 @@ async function getUnofficialConfig() {
   return { endpoint, token }
 }
 
-// ─── Core: call Render endpoint ─────────────────────────
+// ─── Core: call Render/VPS endpoint ─────────────────────
 
 async function callUnofficial(
   mode: string,
-  payload: Record<string, string>,
+  payload: Record<string, string | boolean>,
 ): Promise<SendResult> {
   const { endpoint, token } = await getUnofficialConfig()
 
@@ -53,17 +69,39 @@ async function callUnofficial(
       body: JSON.stringify({ mode, ...payload }),
     })
 
+    const data = await res.json().catch(() => null)
+
     if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      return { success: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 180)}` : ''}` }
+      // Parse the richer error envelope the server now returns
+      const errorParts: string[] = [`HTTP ${res.status}`]
+      if (data && typeof data === 'object') {
+        if (data.error) errorParts.push(String(data.error).slice(0, 200))
+      } else {
+        const body = await res.text().catch(() => '')
+        if (body) errorParts.push(body.slice(0, 180))
+      }
+      return {
+        success: false,
+        error: errorParts.join(': '),
+        unofficialError: data?.unofficial_error || undefined,
+        fallbackSkipped: data?.fallback_skipped || false,
+        circuitBreaker: data?.circuitBreaker || false,
+        rateLimited: data?.rateLimited || false,
+      }
     }
 
-    const data = await res.json().catch(() => ({}))
-    if (data?.success === false) {
-      return { success: false, error: data.error || 'endpoint returned failure' }
+    if (data && data.success === false) {
+      return {
+        success: false,
+        error: data.error || 'endpoint returned failure',
+        unofficialError: data.unofficial_error,
+      }
     }
 
-    return { success: true }
+    return {
+      success: true,
+      unofficialError: data?.unofficial_error, // present when fallback succeeded after unofficial failed
+    }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }
@@ -71,12 +109,29 @@ async function callUnofficial(
 
 // ─── Public API ─────────────────────────────────────────
 
-export async function sendText(to: string, text: string, officialTo?: string): Promise<SendResult> {
-  return callUnofficial('push_text', { to, text, ...(officialTo ? { officialTo } : {}) })
+export async function sendText(
+  to: string,
+  text: string,
+  officialTo?: string,
+  options: SendOptions = {},
+): Promise<SendResult> {
+  const payload: Record<string, string | boolean> = { to, text }
+  if (officialTo) payload.officialTo = officialTo
+  if (options.noFallback) payload.no_fallback = true
+  return callUnofficial('push_text', payload)
 }
 
-export async function sendImageAndText(to: string, imageUrl: string, text: string, officialTo?: string): Promise<SendResult> {
-  return callUnofficial('push_image_text', { to, imageUrl, text, ...(officialTo ? { officialTo } : {}) })
+export async function sendImageAndText(
+  to: string,
+  imageUrl: string,
+  text: string,
+  officialTo?: string,
+  options: SendOptions = {},
+): Promise<SendResult> {
+  const payload: Record<string, string | boolean> = { to, imageUrl, text }
+  if (officialTo) payload.officialTo = officialTo
+  if (options.noFallback) payload.no_fallback = true
+  return callUnofficial('push_image_text', payload)
 }
 
 export async function broadcastTextMessage(text: string): Promise<SendResult> {
