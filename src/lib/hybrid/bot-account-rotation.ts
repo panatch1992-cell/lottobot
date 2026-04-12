@@ -26,7 +26,21 @@ import { sendText } from '@/lib/messaging-service'
 import { fireAlert } from '@/lib/events/alerts'
 import type { BotAccount } from '@/types'
 
-type SendResult = { success: boolean; error?: string }
+type SendResult = {
+  success: boolean
+  error?: string
+  unofficialError?: string
+  fallbackSkipped?: boolean
+}
+
+export interface SendViaRotationOptions {
+  /**
+   * Disable Official LINE API fallback on the self-bot side.
+   * Hybrid trigger sends MUST set this — Official push can't
+   * generate the replyToken we need and wastes monthly quota.
+   */
+  noFallback?: boolean
+}
 
 const DEFAULT_COOLDOWN_MIN = 30
 const AUTO_PAUSE_THRESHOLD = 3
@@ -150,24 +164,25 @@ export async function sendViaRotation(
   to: string,
   text: string,
   officialTo?: string,
+  options: SendViaRotationOptions = {},
 ): Promise<{ result: SendResult; accountId: string | null }> {
   const account = await getNextBotAccount()
 
   if (!account) {
     // Rotation disabled or no available account → fallback default
-    const result = await sendText(to, text, officialTo)
+    const result = await sendText(to, text, officialTo, { noFallback: options.noFallback })
     return { result, accountId: null }
   }
 
   // If account has custom endpoint, call it directly; otherwise use default
   if (account.endpoint_url) {
-    const result = await callBotEndpoint(account, to, text, officialTo)
+    const result = await callBotEndpoint(account, to, text, officialTo, options)
     await markAccountUsed(account.id, result.success, result.error)
     return { result, accountId: account.id }
   }
 
   // Shared endpoint path — still track usage on this account row
-  const result = await sendText(to, text, officialTo)
+  const result = await sendText(to, text, officialTo, { noFallback: options.noFallback })
   await markAccountUsed(account.id, result.success, result.error)
   return { result, accountId: account.id }
 }
@@ -176,7 +191,8 @@ async function callBotEndpoint(
   account: BotAccount,
   to: string,
   text: string,
-  officialTo?: string,
+  officialTo: string | undefined,
+  options: SendViaRotationOptions,
 ): Promise<SendResult> {
   if (!account.endpoint_url) {
     return { success: false, error: 'no endpoint_url' }
@@ -196,19 +212,33 @@ async function callBotEndpoint(
         to,
         text,
         ...(officialTo ? { officialTo } : {}),
+        ...(options.noFallback ? { no_fallback: true } : {}),
       }),
     })
 
+    const data = await res.json().catch(() => null) as (Record<string, unknown> | null)
+
     if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      return { success: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 180)}` : ''}` }
+      const errorMsg = (data?.error as string) || `HTTP ${res.status}`
+      return {
+        success: false,
+        error: `HTTP ${res.status}: ${errorMsg.slice(0, 200)}`,
+        unofficialError: (data?.unofficial_error as string) || undefined,
+        fallbackSkipped: Boolean(data?.fallback_skipped),
+      }
     }
 
-    const data = await res.json().catch(() => ({}))
-    if (data?.success === false) {
-      return { success: false, error: data.error || 'endpoint returned failure' }
+    if (data && data.success === false) {
+      return {
+        success: false,
+        error: (data.error as string) || 'endpoint returned failure',
+        unofficialError: (data.unofficial_error as string) || undefined,
+      }
     }
-    return { success: true }
+    return {
+      success: true,
+      unofficialError: (data?.unofficial_error as string) || undefined,
+    }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'unknown' }
   }

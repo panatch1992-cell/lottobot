@@ -618,6 +618,38 @@ app.post('/update-token', async (req, res) => {
   }
 })
 
+// ─── Admin maintenance: reset circuit breaker + counters ──
+// Useful when breaker is stuck open and admin doesn't want to
+// restart the whole process (e.g. on Vultr/PM2 deploy).
+app.post('/reset-breaker', async (req, res) => {
+  if (!checkAuth(req, res)) return
+
+  const before = {
+    isOpen: circuitBreaker.isOpen,
+    failures: circuitBreaker.failures,
+    openedAt: circuitBreaker.openedAt,
+  }
+  circuitBreaker.isOpen = false
+  circuitBreaker.failures = 0
+  circuitBreaker.openedAt = 0
+
+  // Also reset rate counters so an admin-initiated reset is a clean slate
+  if (req.body?.reset_counters) {
+    rateCounters.day.count = 0
+    rateCounters.hour.count = 0
+    rateCounters.minute.count = 0
+    sendsSinceBreak = 0
+  }
+
+  console.log('[reset-breaker] admin reset:', before, '→', circuitBreaker)
+  return res.json({
+    success: true,
+    before,
+    after: { ...circuitBreaker },
+    counters: { ...rateCounters },
+  })
+})
+
 app.get('/groups', async (req, res) => {
   if (!checkAuth(req, res)) return
 
@@ -661,23 +693,52 @@ app.get('/groups', async (req, res) => {
 app.post('/send', async (req, res) => {
   if (!checkAuth(req, res)) return
 
-  const { mode, to, officialTo, text, imageUrl } = req.body || {}
+  const { mode, to, officialTo, text, imageUrl, no_fallback } = req.body || {}
   if (!mode) return res.status(400).json({ success: false, error: 'mode is required' })
 
   const officialGroupId = officialTo || to
+
+  // Hybrid trigger path should NEVER fall back to Official API —
+  // the whole point is to get a user-account message in the group so
+  // LINE generates a replyToken the OA can use. Official push wastes
+  // monthly quota AND doesn't produce a replyToken anyway.
+  //
+  // Callers set `no_fallback: true` in the request body. We also
+  // honor the env var DISABLE_OFFICIAL_FALLBACK=true for a blanket
+  // lockdown on hosts where the Official quota is exhausted.
+  const envNoFallback = String(process.env.DISABLE_OFFICIAL_FALLBACK || '').toLowerCase() === 'true'
+  const skipFallback = no_fallback === true || envNoFallback
 
   if (mode === 'push_text') {
     if (!to || !text) return res.status(400).json({ success: false, error: 'push_text requires: to, text' })
 
     const result = await sendViaUnofficial(to, text)
     if (result.success) return res.json(result)
-    console.warn(`[send] unofficial failed: ${result.error} → fallback official`)
+    console.warn(`[send] unofficial failed: ${result.error}${skipFallback ? ' (no_fallback — not trying official)' : ' → fallback official'}`)
+
+    if (skipFallback) {
+      return res.status(502).json({
+        success: false,
+        error: result.error,
+        unofficial_error: result.error,
+        circuitBreaker: result.circuitBreaker || false,
+        rateLimited: result.rateLimited || false,
+        fallback_skipped: true,
+      })
+    }
 
     if (LINE_CHANNEL_TOKEN && officialGroupId) {
       const off = await sendViaOfficial(officialGroupId, [{ type: 'text', text }])
-      return off.success ? res.json(off) : res.status(502).json(off)
+      if (off.success) {
+        return res.json({ ...off, unofficial_error: result.error })
+      }
+      return res.status(502).json({ ...off, unofficial_error: result.error })
     }
-    return res.status(502).json({ success: false, error: result.error })
+    return res.status(502).json({
+      success: false,
+      error: result.error,
+      unofficial_error: result.error,
+    })
   }
 
   if (mode === 'push_image_text') {
@@ -686,14 +747,28 @@ app.post('/send', async (req, res) => {
     const result = await sendViaUnofficial(to, text)
     if (result.success) return res.json(result)
 
+    if (skipFallback) {
+      return res.status(502).json({
+        success: false,
+        error: result.error,
+        unofficial_error: result.error,
+        fallback_skipped: true,
+      })
+    }
+
     if (LINE_CHANNEL_TOKEN && officialGroupId) {
       const off = await sendViaOfficial(officialGroupId, [
         { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
         { type: 'text', text },
       ])
-      return off.success ? res.json(off) : res.status(502).json(off)
+      if (off.success) return res.json({ ...off, unofficial_error: result.error })
+      return res.status(502).json({ ...off, unofficial_error: result.error })
     }
-    return res.status(502).json({ success: false, error: result.error })
+    return res.status(502).json({
+      success: false,
+      error: result.error,
+      unofficial_error: result.error,
+    })
   }
 
   if (mode === 'broadcast_text' || mode === 'broadcast_image_text') {
