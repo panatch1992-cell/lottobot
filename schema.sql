@@ -481,5 +481,23 @@ insert into bot_settings (key, value, description) values
   ('lucky_image_fallback_live_scrape', 'true',
     'Fallback live scrape ถ้า library ว่าง'),
   ('reply_warmup_ping_enabled', 'true',
-    'Cron ping webhook ทุก 3 นาที เพื่อ warm')
+    'Cron ping webhook ทุก 3 นาที เพื่อ warm'),
+
+  -- Humanlike behavior (migration 006)
+  ('humanlike_enabled', 'true', 'Enable humanlike trigger-send delays'),
+  ('humanlike_typing_ms_per_char', '80', 'Typing speed (ms per char)'),
+  ('humanlike_typing_min_ms', '400', 'Min typing duration'),
+  ('humanlike_typing_max_ms', '3500', 'Max typing duration'),
+  ('humanlike_typing_jitter_ratio', '0.35', 'Per-char jitter ratio'),
+  ('humanlike_thinking_min_ms', '2000', 'Min short thinking time'),
+  ('humanlike_thinking_max_ms', '5000', 'Max short thinking time'),
+  ('humanlike_long_pause_ratio', '0.2', 'Ratio of sends that get a longer pause'),
+  ('humanlike_long_pause_min_ms', '5000', 'Min long pause duration'),
+  ('humanlike_long_pause_max_ms', '15000', 'Max long pause duration'),
+  ('humanlike_break_every_n', '15', 'Long break every N sends'),
+  ('humanlike_break_min_ms', '20000', 'Min break duration'),
+  ('humanlike_break_max_ms', '60000', 'Max break duration'),
+  ('humanlike_night_multiplier', '1.6', 'Delay multiplier at night'),
+  ('humanlike_night_start_hour', '22', 'Night start hour (BKK)'),
+  ('humanlike_night_end_hour', '7', 'Night end hour (BKK)')
 on conflict (key) do nothing;

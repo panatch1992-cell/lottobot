@@ -51,6 +51,7 @@ import {
 } from '@/lib/hybrid/trigger-phrases'
 import { pickLuckyImagesForBatch } from '@/lib/hybrid/lucky-image-picker'
 import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
+import { humanLikePreSend } from '@/lib/hybrid/humanlike'
 
 const TRIGGER_CHAR = '.'
 
@@ -500,6 +501,17 @@ async function dispatchHybrid(
       details.push({ group: group.name, success: false, attempts: 0, error: 'pending_reply insert failed' })
       failed++
       continue
+    }
+
+    // ─── Human-like pre-send (thinking + typing) ───────
+    // Non-blocking observability: log the computed trace so admins can audit
+    // via dev logs (or /dev if we add it later). Sleeps happen inside.
+    const human = await humanLikePreSend(phrasePick.phrase)
+    if (human.totalMs > 0) {
+      console.log(
+        `[dispatchHybrid] humanlike ${group.name.slice(0, 16)}: ${human.totalMs}ms ` +
+          human.trace.map(t => `${t.label}=${t.ms}`).join(' '),
+      )
     }
 
     // Self-bot sends trigger phrase to get replyToken
