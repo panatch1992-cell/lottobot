@@ -19,7 +19,7 @@ const FETCH_TIMEOUT_MS = 10_000
 const CACHE_TTL_MS = 60_000 // 60 วินาที
 
 const SCRAPER_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 export interface LuckyImageResult {
   imageUrl: string   // absolute URL (https://...)
@@ -71,14 +71,21 @@ function looksLikeContentImage(src: string): boolean {
   if (lower.includes('logo') || lower.includes('icon') ||
       lower.includes('favicon') || lower.includes('banner') ||
       lower.includes('sprite') || lower.includes('avatar')) return false
-  // ต้องเป็น JPEG/PNG/WEBP หรืออยู่ใน path ที่คาดว่าเป็นรูปเนื้อหา
-  return !!(
-    lower.match(/\.(jpe?g|png|webp)(\?[^#]*)?$/i) ||
-    lower.includes('/storage/') ||
-    lower.includes('/uploads/') ||
-    lower.includes('/img/') ||
-    lower.includes('/images/')
-  )
+  // ยอมรับ: extension รู้จัก (jpg/png/webp/gif/avif) + query string + hash
+  if (lower.match(/\.(jpe?g|png|webp|gif|avif)(\?[^#]*)?(#.*)?$/i)) return true
+  // ยอมรับ: path ที่มักเป็นรูปเนื้อหา (CDN / storage / assets / media / ฯลฯ)
+  if (lower.includes('/storage/')) return true
+  if (lower.includes('/uploads/')) return true
+  if (lower.includes('/img/')) return true
+  if (lower.includes('/images/')) return true
+  if (lower.includes('/media/')) return true
+  if (lower.includes('/cdn/')) return true
+  if (lower.includes('/assets/')) return true
+  if (lower.includes('/files/')) return true
+  if (lower.includes('/public/')) return true
+  // ยอมรับ: Next.js image optimizer path
+  if (lower.includes('/_next/image')) return true
+  return false
 }
 
 /**
@@ -136,10 +143,19 @@ async function fetchAndParse(sourceUrl: string): Promise<LuckyImageResult[]> {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
         'User-Agent': SCRAPER_UA,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
         'Referer': HUAYPNK_ORIGIN + '/',
         'Cache-Control': 'no-cache',
+        'Sec-Ch-Ua': '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
       },
     })
     html = data
@@ -149,49 +165,78 @@ async function fetchAndParse(sourceUrl: string): Promise<LuckyImageResult[]> {
 
   const $ = cheerio.load(html)
   const allImages: LuckyImageResult[] = []
+  const seenUrls = new Set<string>()
 
+  function pushImage(src: string, labelHint: string) {
+    if (!src) return
+    if (!looksLikeContentImage(src)) return
+    const absoluteUrl = makeAbsolute(src, sourceUrl)
+    if (!absoluteUrl) return
+    if (seenUrls.has(absoluteUrl)) return
+    seenUrls.add(absoluteUrl)
+    allImages.push({
+      imageUrl: absoluteUrl,
+      lotteryLabel: labelHint.trim(),
+      matched: false,
+    })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function labelNearEl(el: any): string {
+    const el$ = $(el)
+    let label = ''
+    // ลอง parent chain ไม่เกิน 4 ระดับ
+    let node = el$.parent()
+    for (let depth = 0; depth < 4 && node.length; depth++) {
+      const heading = node.find('h1,h2,h3,h4,h5,h6').first().text().trim()
+      if (heading) { label = heading; break }
+      const titled = node.find('[class*="title"],[class*="name"],[class*="label"],[class*="header"],[class*="caption"]').first().text().trim()
+      if (titled) { label = titled; break }
+      node = node.parent()
+    }
+    if (!label) {
+      label = el$.attr('alt') || el$.attr('title') || ''
+    }
+    return label
+  }
+
+  // ─── 1. <img> tags (incl. lazy-load data-src variants) ─
   $('img').each((_, el) => {
     const src = (
       $(el).attr('src') ||
       $(el).attr('data-src') ||
       $(el).attr('data-lazy-src') ||
       $(el).attr('data-original') ||
+      $(el).attr('data-srcset')?.split(',')[0]?.trim().split(/\s+/)[0] ||
       ''
     ).trim()
+    pushImage(src, labelNearEl(el))
+  })
 
-    if (!looksLikeContentImage(src)) return
+  // ─── 2. <source srcset> inside <picture> ───────────────
+  $('source[srcset]').each((_, el) => {
+    const srcset = $(el).attr('srcset') || ''
+    // srcset format: "url1 1x, url2 2x" — take the first one
+    const first = srcset.split(',')[0]?.trim().split(/\s+/)[0]
+    if (first) pushImage(first, labelNearEl(el))
+  })
 
-    const absoluteUrl = makeAbsolute(src, sourceUrl)
-    if (!absoluteUrl) return
-
-    // หา label ที่ใกล้รูปที่สุด
-    let label = ''
-    const el$ = $(el)
-
-    // ลอง parent chain ไม่เกิน 3 ระดับ
-    let node = el$.parent()
-    for (let depth = 0; depth < 4 && node.length; depth++) {
-      // heading ใน element นี้
-      const heading = node.find('h1,h2,h3,h4,h5,h6').first().text().trim()
-      if (heading) { label = heading; break }
-
-      // element ที่มี class title / name / label / header
-      const titled = node.find('[class*="title"],[class*="name"],[class*="label"],[class*="header"],[class*="caption"]').first().text().trim()
-      if (titled) { label = titled; break }
-
-      node = node.parent()
+  // ─── 3. style="background-image: url(...)" ─────────────
+  const bgPattern = /background-image\s*:\s*url\(\s*['"]?([^'")]+)['"]?\s*\)/gi
+  $('[style]').each((_, el) => {
+    const style = $(el).attr('style') || ''
+    let m
+    while ((m = bgPattern.exec(style)) !== null) {
+      pushImage(m[1], labelNearEl(el))
     }
+  })
 
-    // ถ้ายังไม่ได้ → ลอง alt / title attribute
-    if (!label) {
-      label = el$.attr('alt') || el$.attr('title') || ''
+  // ─── 4. <a href="*.jpg"> direct links to images ────────
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || ''
+    if (/\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(href)) {
+      pushImage(href, labelNearEl(el))
     }
-
-    allImages.push({
-      imageUrl: absoluteUrl,
-      lotteryLabel: label.trim(),
-      matched: false,
-    })
   })
 
   return allImages
