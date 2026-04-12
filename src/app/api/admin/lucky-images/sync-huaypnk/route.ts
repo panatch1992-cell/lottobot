@@ -59,13 +59,26 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
 
+  // Allow admin to override the source URL via body or query string
+  let overrideUrl: string | undefined
+  try {
+    const body = await req.json().catch(() => ({}))
+    if (typeof body.url === 'string' && body.url.trim()) overrideUrl = body.url.trim()
+  } catch { /* ignore */ }
+  if (!overrideUrl) {
+    const qp = req.nextUrl.searchParams.get('url')
+    if (qp && qp.trim()) overrideUrl = qp.trim()
+  }
+
   // ─── 1. Try static scraper first ──────────────────
   let images: ScrapedLuckyImage[] = []
   let source: 'static' | 'browser' = 'static'
   let browserError: string | undefined
 
   try {
-    images = await scrapeLuckyImages()
+    images = overrideUrl
+      ? await scrapeLuckyImages(undefined, overrideUrl)
+      : await scrapeLuckyImages()
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'scrape failed' },
@@ -77,7 +90,7 @@ export async function POST(req: NextRequest) {
   if (images.length === 0) {
     source = 'browser'
     try {
-      const browserResult = await browserScrapeHuaypnk()
+      const browserResult = await browserScrapeHuaypnk(overrideUrl)
       if (browserResult.error) browserError = browserResult.error
       images = browserResult.images
     } catch (err) {
@@ -151,6 +164,7 @@ export async function POST(req: NextRequest) {
     skipped,
     failed,
     source,
+    url: overrideUrl || 'https://www.huaypnk.com/top',
     total_scraped: images.length,
     ...(errors.length > 0 && { errors }),
   })
