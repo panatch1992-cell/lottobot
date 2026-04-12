@@ -34,6 +34,8 @@ export default function LuckyImagesPage() {
   const [newCaption, setNewCaption] = useState('')
   const [adding, setAdding] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [debugging, setDebugging] = useState(false)
+  const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null)
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   async function load() {
@@ -96,6 +98,31 @@ export default function LuckyImagesPage() {
       setMessage({ type: 'err', text: data.error || 'sync ล้มเหลว' })
     }
     setSyncing(false)
+  }
+
+  async function runDebug() {
+    setDebugging(true)
+    setDebugResult(null)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/admin/lucky-images/debug-huaypnk')
+      const data = await res.json()
+      setDebugResult(data)
+      if (data.ok) {
+        setMessage({
+          type: 'ok',
+          text: `Debug: HTTP ${data.httpStatus}, ${data.imgTotal} imgs, accepted ${data.imgAccepted}`,
+        })
+      } else {
+        setMessage({
+          type: 'err',
+          text: `Debug: HTTP ${data.httpStatus || '?'}, ${data.imgTotal || 0} imgs, 0 accepted — see details`,
+        })
+      }
+    } catch (err) {
+      setMessage({ type: 'err', text: err instanceof Error ? err.message : 'debug failed' })
+    }
+    setDebugging(false)
   }
 
   async function toggleActive(item: LuckyImage) {
@@ -162,13 +189,56 @@ export default function LuckyImagesPage() {
 
       {/* Actions */}
       <div className="bg-white rounded-lg p-4 mb-4 space-y-3">
-        <button
-          onClick={syncFromHuaypnk}
-          disabled={syncing}
-          className="w-full py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
-        >
-          {syncing ? 'กำลังดึง...' : '🔁 Sync จาก huaypnk.com/top'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={syncFromHuaypnk}
+            disabled={syncing}
+            className="flex-1 py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {syncing ? 'กำลังดึง...' : '🔁 Sync จาก huaypnk.com/top'}
+          </button>
+          <button
+            onClick={runDebug}
+            disabled={debugging}
+            className="py-2 px-3 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium disabled:opacity-50"
+            title="ดูรายละเอียดว่าทำไม sync ได้ 0 รูป"
+          >
+            {debugging ? '...' : '🔍 Debug'}
+          </button>
+        </div>
+
+        {/* Debug result panel */}
+        {debugResult && (
+          <div className="border rounded-lg p-3 bg-gray-50 text-xs space-y-2">
+            <div className="font-semibold flex items-center gap-2">
+              <span>🔬 Debug huaypnk</span>
+              <button
+                onClick={() => setDebugResult(null)}
+                className="ml-auto text-gray-500 hover:text-gray-800"
+              >
+                ✕
+              </button>
+            </div>
+            <pre className="text-[10px] bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(
+                {
+                  httpStatus: debugResult.httpStatus,
+                  contentLength: debugResult.contentLength,
+                  latencyMs: debugResult.latencyMs,
+                  imgTotal: debugResult.imgTotal,
+                  imgWithSrc: debugResult.imgWithSrc,
+                  imgAccepted: debugResult.imgAccepted,
+                  fetchError: debugResult.fetchError,
+                  sampleSrcs: debugResult.sampleSrcs,
+                  bgImageHints: debugResult.bgImageHints,
+                  acceptedImages: debugResult.acceptedImages,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </div>
+        )}
 
         <div className="border-t pt-3">
           <div className="text-sm font-medium mb-2">เพิ่มรูปจาก URL</div>
