@@ -121,7 +121,10 @@ export async function GET(req: NextRequest) {
 
   const settings = await getSettings()
 
-  if (settings.send_countdown !== 'true') {
+  // Default: enabled. Only disabled if EXPLICITLY set to 'false'.
+  // Env var overrides DB (same pattern as LINE_SEND_MODE).
+  const countdownEnabled = (process.env.SEND_COUNTDOWN || settings.send_countdown || 'true') !== 'false'
+  if (!countdownEnabled) {
     return NextResponse.json({ sent: 0, skipped: 'countdown disabled' })
   }
 
