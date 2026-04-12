@@ -82,11 +82,12 @@ async function loadDispatcherOptions(): Promise<DispatcherOptions> {
     console.error('[dispatcher] ⚠️ getSettings() returned EMPTY — using env var fallbacks')
   }
 
+  // Env vars OVERRIDE DB settings (for emergency fixes / stale cache workaround)
   const hybridEnabled =
-    String(settings.hybrid_reply_enabled || process.env.HYBRID_REPLY_ENABLED || 'false').toLowerCase() === 'true'
+    String(process.env.HYBRID_REPLY_ENABLED || settings.hybrid_reply_enabled || 'false').toLowerCase() === 'true'
   const rawMode = (
-    settings.line_send_mode ||
     process.env.LINE_SEND_MODE ||
+    settings.line_send_mode ||
     (hybridEnabled ? 'hybrid' : 'push')
   ).toLowerCase()
   let mode: SendMode =
