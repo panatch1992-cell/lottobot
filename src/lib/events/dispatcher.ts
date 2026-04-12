@@ -78,11 +78,21 @@ async function loadDispatcherOptions(): Promise<DispatcherOptions> {
   const settings = await getSettings()
   const hybridEnabled = String(settings.hybrid_reply_enabled || 'false').toLowerCase() === 'true'
   const rawMode = (settings.line_send_mode || (hybridEnabled ? 'hybrid' : 'push')).toLowerCase()
-  const mode: SendMode =
+  let mode: SendMode =
     rawMode === 'hybrid' ? 'hybrid' :
     rawMode === 'trigger' ? 'trigger' :
     rawMode === 'broadcast' ? 'broadcast' :
     'push'
+
+  // Belt-and-suspenders: force hybrid if hybrid_reply_enabled=true
+  // regardless of line_send_mode (catches stale/empty getSettings)
+  if (mode !== 'hybrid' && hybridEnabled) {
+    console.warn(`[dispatcher] mode=${mode} but hybrid_reply_enabled=true → forcing hybrid`)
+    mode = 'hybrid'
+  }
+
+  console.log(`[dispatcher] loadDispatcherOptions: mode=${mode} (raw=${rawMode}, hybridEnabled=${hybridEnabled}, line_send_mode=${settings.line_send_mode || '(empty)'})`)
+
 
   return {
     mode,
@@ -106,6 +116,13 @@ async function loadTargetGroups(opts: DispatcherOptions): Promise<LineGroup[]> {
   const db = getServiceClient()
   const { data } = await db.from('line_groups').select('*').eq('is_active', true)
   const groups = (data || []) as LineGroup[]
+
+  // Diagnostic: log MID sources so we can see if unofficial_group_id is returned
+  for (const g of groups) {
+    const ug = g.unofficial_group_id
+    const lg = g.line_group_id
+    console.log(`[dispatcher] group "${g.name}": unofficial_group_id=${ug || '(null)'}, line_group_id=${lg || '(null)'}`)
+  }
 
   if (opts.canaryEnabled && opts.canaryGroup) {
     return groups.filter(g => g.name === opts.canaryGroup)
