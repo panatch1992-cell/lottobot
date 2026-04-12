@@ -2,47 +2,34 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatCountdown, formatStats, formatNextLottery, formatClosing } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, pushImageAndText, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
+import { createPendingReply, markTriggerSent, markTriggerFailed } from '@/lib/hybrid/pending-replies'
+import { pickLuckyImage } from '@/lib/hybrid/lucky-image-picker'
 import { nowBangkok, today, timeToMinutes, sleep } from '@/lib/utils'
 import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
-import { getShuffledLuckyImageUrls } from '@/lib/huaypnk-scraper'
 import type { Lottery, LineGroup, Result } from '@/types'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
-// ─── Flow ข้อความก่อนหวยออก ─────────────────────────────
-// 1. 📢 บอกรายการหวยต่อไป (30 นาทีก่อนปิด)
-// 2. 📊 สถิติหวยนั้นๆ (29 นาทีก่อนปิด)
-// 3. 🖼️ รูปสุ่มจากเว็บ (28 นาทีก่อนปิด)
-// 4. ⏰ เตือน 20 นาที + ลิงก์แอดไลน์
-// 5. ⏰ เตือน 10 นาที + ลิงก์แอดไลน์
-// 6. ⏰ เตือน 5 นาที + ลิงก์แอดไลน์
-// 7. 🔒 ปิดรับ (0 นาที)
-// 8. 🎯 ผลหวย (handled by cron/scrape)
+// ─── Hybrid Flow ──────────────────────────────────────────
+// Phase 1 (T-30): Announce → self-bot sends trigger text
+//                  → webhook Reply: stats + lucky image
+// Phase 2 (T-20): self-bot sends countdown text (direct)
+// Phase 3 (T-10): self-bot sends countdown text (direct)
+// Phase 4 (T-5):  self-bot sends countdown text (direct)
+// Phase 5 (T=0):  self-bot sends closing text (direct)
+// Phase 6 (T+result): handled by cron/scrape (already Hybrid)
 
 const FLOW_STEPS = [
-  { type: 'next_lottery', minutesBefore: 30 },
-  { type: 'stats', minutesBefore: 29 },
-  { type: 'random_image', minutesBefore: 28 },
-  { type: 'countdown', minutesBefore: 20 },
-  { type: 'countdown', minutesBefore: 10 },
-  { type: 'countdown', minutesBefore: 5 },
-  { type: 'closing', minutesBefore: 0 },
+  { type: 'announce', minutesBefore: 30, needsReply: true, phraseCategory: 'announce' as const },
+  { type: 'countdown', minutesBefore: 20, needsReply: false, phraseCategory: 'general' as const },
+  { type: 'countdown', minutesBefore: 10, needsReply: false, phraseCategory: 'general' as const },
+  { type: 'countdown', minutesBefore: 5, needsReply: false, phraseCategory: 'general' as const },
+  { type: 'closing', minutesBefore: 0, needsReply: false, phraseCategory: 'general' as const },
 ]
 
-// ─── Scrape random images from web ──────────────────────
-// ใช้ huaypnk-scraper (shared cache + cheerio parser + label matching)
-// แทน regex-based scraper เพื่อหลีกเลี่ยงการ fetch ซ้ำและผลลัพธ์ที่คลาดเคลื่อน
-async function scrapeRandomImages(url: string, count: number): Promise<string[]> {
-  try {
-    return await getShuffledLuckyImageUrls(count, url)
-  } catch (err) {
-    console.error(`[countdown] scrapeRandomImages error: ${err instanceof Error ? err.message : err}`)
-    return []
-  }
-}
-
-// ─── Check if already sent ──────────────────────────────
+// ─── Dedup check ───────────────────────────────────────────
 
 async function alreadySent(
   db: ReturnType<typeof getServiceClient>,
@@ -70,8 +57,6 @@ async function alreadySent(
   return (data || []).length > 0
 }
 
-// ─── Log send ───────────────────────────────────────────
-
 async function logSend(
   db: ReturnType<typeof getServiceClient>,
   lotteryId: string,
@@ -93,51 +78,27 @@ async function logSend(
   })
 }
 
-// ─── Send to all LINE groups ────────────────────────────
+// ─── Load groups with explicit column select ───────────────
 
-async function sendToLineGroups(
-  db: ReturnType<typeof getServiceClient>,
-  lottery: Lottery,
-  groups: LineGroup[],
-  text: string,
-  msgType: string,
-  tag: string,
-  todayStr: string,
-  imageUrl?: string,
-) {
-  const lineToken = 'unused' // backward compat
-  let sentCount = 0
+async function loadActiveGroups(db: ReturnType<typeof getServiceClient>): Promise<LineGroup[]> {
+  const { data, error } = await db.from('line_groups')
+    .select('id, name, line_group_id, unofficial_group_id, is_active, custom_link, custom_message, send_all_lotteries, line_notify_token, member_count, created_at, updated_at')
+    .eq('is_active', true)
 
-  for (const group of groups) {
-    const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
-    const officialId = group.line_group_id || ''
-    const primaryId = unofficialId || officialId
-    if (!primaryId) continue
-
-    // Skip if already sent to this group
-    if (await alreadySent(db, lottery.id, msgType, todayStr, tag, group.id)) continue
-
-    let result
-    if (imageUrl) {
-      result = await pushImageAndText(lineToken, primaryId, imageUrl, text, officialId)
-    } else {
-      result = await pushTextMessage(lineToken, primaryId, text, officialId)
-    }
-
-    if (!result.success && result.error?.includes('monthly limit')) {
-      await flagMonthlyLimitHit()
-    }
-
-    await logSend(db, lottery.id, 'line', msgType, result.success, tag, result.error, group.id)
-    if (result.success) sentCount++
-
-    await sleep(500 + Math.floor(Math.random() * 1000))
+  if (error) {
+    console.error('[countdown] loadActiveGroups error:', error.message)
   }
-
-  return sentCount
+  return (data || []) as LineGroup[]
 }
 
-// ─── Main handler ───────────────────────────────────────
+function getGroupPrimaryId(group: LineGroup): { primaryId: string; officialId: string } {
+  const unofficialId = group.unofficial_group_id || ''
+  const officialId = group.line_group_id || ''
+  const primaryId = unofficialId || officialId.toLowerCase()
+  return { primaryId, officialId }
+}
+
+// ─── Main handler ───────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -151,7 +112,7 @@ export async function GET(req: NextRequest) {
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayStr = today()
 
-  // ─── Config Guard ──────────────────────────────────────
+  // Config Guard
   const configCheck = await validateCronConfig('countdown')
   if (!configCheck.ok) {
     await alertConfigIssues('countdown', configCheck.issues)
@@ -165,11 +126,9 @@ export async function GET(req: NextRequest) {
   }
 
   const addFriendLink = settings.line_add_friend_link || ''
-  const randomImageUrl = settings.random_image_url || 'https://www.huaypnk.com/top'
 
   const { data: lotteries } = await db.from('lotteries').select('*').eq('status', 'active')
-  const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
-  const activeGroups = (groups || []) as LineGroup[]
+  const activeGroups = await loadActiveGroups(db)
 
   const sent: string[] = []
 
@@ -187,115 +146,143 @@ export async function GET(req: NextRequest) {
       const tag = `${step.type}_${step.minutesBefore}min`
       const tgSent = await alreadySent(db, lottery.id, step.type, todayStr, tag)
 
-      // ─── Step 1: 📢 บอกรายการหวยต่อไป ──────
-      if (step.type === 'next_lottery') {
-        const closeTimeStr = closeTime.slice(0, 5) // "HH:MM"
+      // ═══ Phase 1: ANNOUNCE (T-30) ═══
+      // Trigger: self-bot sends next-lottery announcement
+      // Reply: webhook replies with stats + lucky image (via pending_reply)
+      if (step.type === 'announce') {
+        const closeTimeStr = closeTime.slice(0, 5)
         const formatted = formatNextLottery(lottery, closeTimeStr)
 
+        // Telegram admin log
         if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
           const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
           await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
         }
 
-        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
-        sent.push(`${lottery.name} (📢 next)`)
-      }
-
-      // ─── Step 2: 📊 สถิติ ──────────────────
-      if (step.type === 'stats') {
+        // Pre-compute stats text for Reply payload
         const statsCount = Number(settings.stats_count) || 10
         const { data: results } = await db.from('results')
           .select('*')
           .eq('lottery_id', lottery.id)
           .order('draw_date', { ascending: false })
           .limit(statsCount)
+        const statsFormatted = results && results.length > 0
+          ? formatStats(lottery, results as Result[])
+          : null
 
-        if (results && results.length > 0) {
-          const formatted = formatStats(lottery, results as Result[])
+        // Pre-pick lucky image for Reply payload
+        const luckyPick = await pickLuckyImage({
+          category: 'general',
+          lotteryName: lottery.name,
+        })
 
-          if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
-            const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
-            await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
+        // Send to each LINE group via Hybrid
+        for (const group of activeGroups) {
+          const { primaryId, officialId } = getGroupPrimaryId(group)
+          if (!primaryId) continue
+          if (await alreadySent(db, lottery.id, step.type, todayStr, tag, group.id)) continue
+
+          // Build reply payload (stats + lucky image)
+          const replyText = statsFormatted
+            ? `${formatted.line}\n\n${statsFormatted.line}`
+            : formatted.line
+
+          // Create pending_reply for webhook to flush
+          const pending = await createPendingReply({
+            lineGroupId: group.id,
+            lotteryId: lottery.id,
+            intent: 'announce',
+            payload: {
+              text: replyText,
+              stats_text: statsFormatted?.line || undefined,
+              lucky_image_url: luckyPick?.url || null,
+              lottery_name: lottery.name,
+            },
+            triggerText: formatted.line,
+            triggerPhraseUsed: formatted.line.slice(0, 50),
+          })
+
+          // Self-bot sends the announcement as trigger
+          const { result: sendRes } = await sendViaRotation(
+            primaryId,
+            formatted.line,
+            officialId,
+            { noFallback: true },
+          )
+
+          if (sendRes.success && pending) {
+            await markTriggerSent(pending.id)
+          } else if (pending) {
+            await markTriggerFailed(pending.id, sendRes.error || 'unknown')
           }
 
-          await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
-          sent.push(`${lottery.name} (📊 stats)`)
+          await logSend(db, lottery.id, 'line', step.type, sendRes.success, tag, sendRes.error, group.id)
+          await sleep(300 + Math.floor(Math.random() * 500))
         }
+        sent.push(`${lottery.name} (📢 announce+stats+image)`)
       }
 
-      // ─── Step 3: 🖼️ รูปสุ่มจากเว็บ ────────
-      if (step.type === 'random_image') {
-        const images = await scrapeRandomImages(randomImageUrl, activeGroups.length + 5)
-
-        if (images.length > 0) {
-          const lineToken = 'unused'
-          let imgIdx = 0
-          const baseUrl =
-            process.env.NEXT_PUBLIC_SITE_URL ||
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
-
-          for (const group of activeGroups) {
-            const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
-            const officialId = group.line_group_id || ''
-            const primaryId = unofficialId || officialId
-            if (!primaryId) continue
-
-            if (await alreadySent(db, lottery.id, step.type, todayStr, tag, group.id)) continue
-
-            // แต่ละกลุ่มรูปไม่ซ้ำ
-            const imgUrl = images[imgIdx % images.length]
-            imgIdx++
-
-            // ใช้ proxy route เพื่อ relay รูปจาก huaypnk.com → ป้องกัน hotlink block
-            const proxiedUrl = `${baseUrl}/api/lucky-image?url=${encodeURIComponent(imgUrl)}`
-
-            // ใช้ custom_link ของกลุ่ม ถ้ามี ไม่งั้นใช้ URL หลัก
-            const groupLink = group.custom_link || randomImageUrl
-            const caption = `🎰 ${lottery.flag} ${lottery.name}\n🔗 ${groupLink}`
-
-            const result = await pushImageAndText(lineToken, primaryId, proxiedUrl, caption, officialId)
-            if (!result.success && result.error?.includes('monthly limit')) {
-              await flagMonthlyLimitHit()
-            }
-            await logSend(db, lottery.id, 'line', step.type, result.success, tag, result.error, group.id)
-
-            await sleep(500 + Math.floor(Math.random() * 1000))
-          }
-
-          sent.push(`${lottery.name} (🖼️ image)`)
-        } else {
-          // ไม่พบรูป → log 1 แถว เพื่อ observability (ไม่กระทบ flow อื่น)
-          await logSend(db, lottery.id, 'line', step.type, false, tag, 'no_image_found')
-        }
-      }
-
-      // ─── Steps 4-6: ⏰ Countdown ──────────
+      // ═══ Phase 2-4: COUNTDOWN (T-20/10/5) ═══
+      // Direct send: self-bot sends full countdown text
       if (step.type === 'countdown') {
         const formatted = formatCountdown(lottery, step.minutesBefore, addFriendLink)
 
+        // Telegram admin log
         if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
           const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
           await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
         }
 
-        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+        // Send to each LINE group directly via self-bot
+        for (const group of activeGroups) {
+          const { primaryId, officialId } = getGroupPrimaryId(group)
+          if (!primaryId) continue
+          if (await alreadySent(db, lottery.id, step.type, todayStr, tag, group.id)) continue
+
+          const { result: sendRes } = await sendViaRotation(
+            primaryId,
+            formatted.line,
+            officialId,
+            { noFallback: true },
+          )
+
+          await logSend(db, lottery.id, 'line', step.type, sendRes.success, tag, sendRes.error, group.id)
+          await sleep(300 + Math.floor(Math.random() * 500))
+        }
         sent.push(`${lottery.name} (⏰ ${step.minutesBefore}min)`)
       }
 
-      // ─── Step 7: 🔒 ปิดรับ ────────────────
+      // ═══ Phase 5: CLOSING (T=0) ═══
+      // Direct send: self-bot sends closing text
       if (step.type === 'closing') {
         const formatted = formatClosing(lottery)
 
+        // Telegram admin log
         if (!tgSent && settings.telegram_bot_token && settings.telegram_admin_channel) {
           const r = await sendToTelegram(settings.telegram_bot_token, settings.telegram_admin_channel, formatted.tg)
           await logSend(db, lottery.id, 'telegram', step.type, r.success, tag, r.error)
         }
 
-        await sendToLineGroups(db, lottery, activeGroups, formatted.line, step.type, tag, todayStr)
+        // Send to each LINE group directly
+        for (const group of activeGroups) {
+          const { primaryId, officialId } = getGroupPrimaryId(group)
+          if (!primaryId) continue
+          if (await alreadySent(db, lottery.id, step.type, todayStr, tag, group.id)) continue
+
+          const { result: sendRes } = await sendViaRotation(
+            primaryId,
+            formatted.line,
+            officialId,
+            { noFallback: true },
+          )
+
+          await logSend(db, lottery.id, 'line', step.type, sendRes.success, tag, sendRes.error, group.id)
+          await sleep(300 + Math.floor(Math.random() * 500))
+        }
         sent.push(`${lottery.name} (🔒 closed)`)
       }
 
-      // Step 8: 🎯 ผลหวย — handled by cron/scrape
+      // Step 8: 🎯 ผลหวย — handled by cron/scrape (Hybrid mode)
     }
   }
 

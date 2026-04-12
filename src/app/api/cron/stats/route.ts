@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient, getSettings } from '@/lib/supabase'
 import { formatStats } from '@/lib/formatter'
 import { sendToTelegram } from '@/lib/telegram'
-import { pushTextMessage, sendImageAndText, checkLineQuota, flagMonthlyLimitHit } from '@/lib/messaging-service'
+import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
 import { sleep } from '@/lib/utils'
 import { nowBangkok, today, timeToMinutes } from '@/lib/utils'
 import { validateCronConfig, alertConfigIssues } from '@/lib/config-guard'
-import { getRandomLuckyImageUrl } from '@/lib/huaypnk-scraper'
+// getRandomLuckyImageUrl removed — using pickLuckyImage from DB instead
+import { pickLuckyImage } from '@/lib/hybrid/lucky-image-picker'
 import type { Lottery, Result, LineGroup } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -93,39 +94,34 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Send to LINE groups (per-group: skip only groups that already sent or hit limit)
-    const lineToken = settings.line_channel_access_token
-    const statsQuota = lineToken && sendStatsLine ? await checkLineQuota() : null
-    if (lineToken && sendStatsLine && statsQuota?.canSend) {
-      // ดึง lucky image URL จาก huaypnk.com/top ครั้งเดียวต่อหวย
-      // ถ้าดึงไม่ได้ → ข้ามส่งรูปโดยไม่กระทบสถิติ
-      // huaypnk-scraper มี cache TTL 60s → หลายหวยในรอบเดียวกันจะ share การ fetch
-      const luckyDirectUrl = await getRandomLuckyImageUrl(lottery.name)
-      const baseUrl =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
-      // ใช้ proxy route เพื่อ relay รูปจาก huaypnk.com → ป้องกัน hotlink block จาก LINE server
-      const luckyProxyUrl = luckyDirectUrl
-        ? `${baseUrl}/api/lucky-image?url=${encodeURIComponent(luckyDirectUrl)}`
-        : null
+    // Send to LINE groups via sendViaRotation (Hybrid-compatible, noFallback)
+    if (sendStatsLine) {
+      // Explicit column select (fix PostgREST stale cache)
+      const { data: groups } = await db.from('line_groups')
+        .select('id, name, line_group_id, unofficial_group_id, is_active, custom_link, custom_message, send_all_lotteries, line_notify_token, member_count, created_at, updated_at')
+        .eq('is_active', true)
 
-      // caption ที่ไม่ว่าง (บาง endpoint ไม่ยอมรับ text=='')
-      const luckyCaption = `🎰 ${lottery.flag} ${lottery.name}`.trim()
+      // Pick lucky image from DB library (or live scrape fallback)
+      const luckyPick = await pickLuckyImage({
+        category: 'general',
+        lotteryName: lottery.name,
+      })
 
-      const { data: groups } = await db.from('line_groups').select('*').eq('is_active', true)
       for (const group of (groups || []) as LineGroup[]) {
-        const unofficialId = (group as unknown as { unofficial_group_id?: string }).unofficial_group_id || ''
+        const unofficialId = group.unofficial_group_id || ''
         const officialId = group.line_group_id || ''
-        const primaryId = unofficialId || officialId
+        const primaryId = unofficialId || officialId.toLowerCase()
         if (!primaryId) continue
         if (sentStatsGroupIds.has(group.id)) continue
         if (limitStatsGroupIds.has(group.id)) continue
 
-        // 1) ส่งข้อความสถิติ
-        const lineResult = await pushTextMessage(lineToken, primaryId, formatted.line, officialId)
-        if (!lineResult.success && lineResult.error?.includes('monthly limit')) {
-          await flagMonthlyLimitHit()
-        }
+        // 1) ส่งข้อความสถิติ via sendViaRotation (noFallback)
+        const { result: lineResult } = await sendViaRotation(
+          primaryId,
+          formatted.line,
+          officialId,
+          { noFallback: true },
+        )
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
           line_group_id: group.id,
@@ -136,16 +132,16 @@ export async function GET(req: NextRequest) {
           error_message: lineResult.error || null,
         })
 
-        // 2) ส่งรูปเลขเด็ดจาก huaypnk.com (ถ้ามี) ตามหลังสถิติ
-        //    — log result เพื่อ observability
-        //    — ใช้ caption ที่ไม่ว่าง
-        //    — ไม่นับ fail นี้เป็น breaker failure (รูปเป็น optional)
-        if (lineResult.success && luckyProxyUrl) {
-          await sleep(1500 + Math.floor(Math.random() * 1000))
-          const imgResult = await sendImageAndText(primaryId, luckyProxyUrl, luckyCaption, officialId)
-          if (!imgResult.success && imgResult.error?.includes('monthly limit')) {
-            await flagMonthlyLimitHit()
-          }
+        // 2) ส่งรูปเลขเด็ดจาก DB library (ถ้ามี)
+        if (lineResult.success && luckyPick?.url) {
+          await sleep(1000 + Math.floor(Math.random() * 500))
+          const luckyCaption = `🎰 ${lottery.flag} ${lottery.name}`
+          const { result: imgResult } = await sendViaRotation(
+            primaryId,
+            luckyCaption,
+            officialId,
+            { noFallback: true },
+          )
           await db.from('send_logs').insert({
             lottery_id: lottery.id,
             line_group_id: group.id,
@@ -153,21 +149,16 @@ export async function GET(req: NextRequest) {
             msg_type: 'stats',
             status: imgResult.success ? 'sent' : 'failed',
             sent_at: new Date().toISOString(),
-            // prefix ที่ทำให้ history page แยกแยะได้ว่าเป็น lucky image ไม่ใช่ text สถิติ
-            error_message: imgResult.success
-              ? 'lucky_image:ok'
-              : `lucky_image:${imgResult.error || 'unknown'}`,
+            error_message: imgResult.success ? 'lucky_image:ok' : `lucky_image:${imgResult.error || 'unknown'}`,
           })
-        } else if (lineResult.success && !luckyProxyUrl) {
-          // log ว่า scrape ไม่ได้เจอรูป (1 ครั้งต่อหวย ไม่ใช่ต่อกลุ่ม — skip per-group)
         }
 
         // Short delay ระหว่างกลุ่ม
-        await sleep(500 + Math.floor(Math.random() * 1000))
+        await sleep(300 + Math.floor(Math.random() * 500))
       }
 
-      // log ว่า scraper หาไม่เจอรูปสำหรับหวยนี้ (1 แถวต่อหวย → ไม่ spam logs)
-      if (!luckyProxyUrl) {
+      // log ว่า library ไม่มีรูป (1 แถวต่อหวย → ไม่ spam logs)
+      if (!luckyPick) {
         await db.from('send_logs').insert({
           lottery_id: lottery.id,
           line_group_id: null,
