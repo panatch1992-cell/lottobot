@@ -17,8 +17,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
+import { browserScrapeHuaypnk } from '@/lib/huaypnk-browser-scraper'
 
 export const dynamic = 'force-dynamic'
+// Browser scrape needs up to 60s on cold start
+export const maxDuration = 60
 
 function hasAuthCookie(req: NextRequest): boolean {
   const allCookies = req.cookies.getAll()
@@ -76,6 +79,27 @@ export async function GET(req: NextRequest) {
   if (authError) return authError
 
   const url = req.nextUrl.searchParams.get('url') || HUAYPNK_TOP_URL
+  const mode = req.nextUrl.searchParams.get('mode') || 'auto'
+
+  // ─── Browser-only mode ──────────────────────────────
+  // ?mode=browser → bypass static scrape, go straight to Puppeteer
+  if (mode === 'browser') {
+    const t0 = Date.now()
+    const result = await browserScrapeHuaypnk(url)
+    return NextResponse.json({
+      mode: 'browser',
+      url,
+      latencyMs: Date.now() - t0,
+      ok: result.images.length > 0,
+      error: result.error,
+      debug: result.debug,
+      acceptedImages: result.images.slice(0, 10).map(i => ({
+        url: i.imageUrl.slice(0, 200),
+        label: i.lotteryLabel.slice(0, 80),
+      })),
+      imgAccepted: result.images.length,
+    })
+  }
 
   // ── Fetch the page ──
   let httpStatus = 0

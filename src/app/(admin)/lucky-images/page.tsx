@@ -100,23 +100,29 @@ export default function LuckyImagesPage() {
     setSyncing(false)
   }
 
-  async function runDebug() {
+  async function runDebug(browserMode = false) {
     setDebugging(true)
     setDebugResult(null)
     setMessage(null)
     try {
-      const res = await fetch('/api/admin/lucky-images/debug-huaypnk')
+      const url = browserMode
+        ? '/api/admin/lucky-images/debug-huaypnk?mode=browser'
+        : '/api/admin/lucky-images/debug-huaypnk'
+      const res = await fetch(url)
       const data = await res.json()
       setDebugResult(data)
+      const prefix = browserMode ? '🌐 Browser' : '🔍 Static'
       if (data.ok) {
+        const accepted = data.imgAccepted ?? data.acceptedImages?.length ?? 0
+        const total = data.imgTotal ?? data.debug?.totalImgs ?? 0
         setMessage({
           type: 'ok',
-          text: `Debug: HTTP ${data.httpStatus}, ${data.imgTotal} imgs, accepted ${data.imgAccepted}`,
+          text: `${prefix}: ${total} imgs, accepted ${accepted}`,
         })
       } else {
         setMessage({
           type: 'err',
-          text: `Debug: HTTP ${data.httpStatus || '?'}, ${data.imgTotal || 0} imgs, 0 accepted — see details`,
+          text: `${prefix}: ${data.error || 'no images found'} — see details`,
         })
       }
     } catch (err) {
@@ -189,21 +195,29 @@ export default function LuckyImagesPage() {
 
       {/* Actions */}
       <div className="bg-white rounded-lg p-4 mb-4 space-y-3">
+        <button
+          onClick={syncFromHuaypnk}
+          disabled={syncing}
+          className="w-full py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
+        >
+          {syncing ? 'กำลังดึง... (อาจใช้เวลา ~30 วิ ถ้าต้อง fallback browser)' : '🔁 Sync จาก huaypnk.com/top'}
+        </button>
         <div className="flex gap-2">
           <button
-            onClick={syncFromHuaypnk}
-            disabled={syncing}
-            className="flex-1 py-2 px-4 bg-gold text-white rounded-lg font-medium disabled:opacity-50"
+            onClick={() => runDebug(false)}
+            disabled={debugging}
+            className="flex-1 py-2 px-3 bg-gray-200 text-gray-700 rounded-lg text-xs font-medium disabled:opacity-50"
+            title="Static scrape (Cheerio) — เร็ว"
           >
-            {syncing ? 'กำลังดึง...' : '🔁 Sync จาก huaypnk.com/top'}
+            {debugging ? '...' : '🔍 Debug (Static)'}
           </button>
           <button
-            onClick={runDebug}
+            onClick={() => runDebug(true)}
             disabled={debugging}
-            className="py-2 px-3 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium disabled:opacity-50"
-            title="ดูรายละเอียดว่าทำไม sync ได้ 0 รูป"
+            className="flex-1 py-2 px-3 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium disabled:opacity-50"
+            title="Headless browser (Puppeteer) — ช้า ~30 วิ แต่เห็นรูปที่ render โดย JS"
           >
-            {debugging ? '...' : '🔍 Debug'}
+            {debugging ? '...' : '🌐 Debug (Browser)'}
           </button>
         </div>
 

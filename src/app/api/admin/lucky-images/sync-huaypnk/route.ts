@@ -4,16 +4,24 @@
  * Scrape https://www.huaypnk.com/top → upsert เข้า lucky_images
  * ใช้ /api/lucky-image?url=... เป็น proxy URL (หลีกเลี่ยง hotlink block ของ LINE)
  *
+ * Strategy:
+ *   1. Try static Cheerio scrape first (fast, ~1-2s)
+ *   2. If static returns 0 images → fall back to headless Puppeteer
+ *      (slower ~10-30s but handles SPA rendering)
+ *
  * Response:
- *   { added, skipped, failed, errors?: string[] }
+ *   { added, skipped, failed, source: 'static'|'browser', errors?: string[] }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
 import { scrapeLuckyImages } from '@/lib/huaypnk-scraper'
+import { browserScrapeHuaypnk } from '@/lib/huaypnk-browser-scraper'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
+// Allow up to 60s for the headless browser cold-start + page render
+export const maxDuration = 60
 
 function hasAuthCookie(req: NextRequest): boolean {
   const allCookies = req.cookies.getAll()
@@ -36,6 +44,12 @@ function hashUrl(url: string): string {
   return crypto.createHash('sha256').update(url).digest('hex').slice(0, 32)
 }
 
+interface ScrapedLuckyImage {
+  imageUrl: string
+  lotteryLabel: string
+  matched: boolean
+}
+
 export async function POST(req: NextRequest) {
   const authError = requireAuth(req)
   if (authError) return authError
@@ -45,7 +59,11 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://lottobot-chi.vercel.app')
 
-  let images
+  // ─── 1. Try static scraper first ──────────────────
+  let images: ScrapedLuckyImage[] = []
+  let source: 'static' | 'browser' = 'static'
+  let browserError: string | undefined
+
   try {
     images = await scrapeLuckyImages()
   } catch (err) {
@@ -55,8 +73,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ─── 2. If static returns 0 → fall back to headless browser ──
   if (images.length === 0) {
-    return NextResponse.json({ added: 0, skipped: 0, failed: 0, note: 'no images found from huaypnk' })
+    source = 'browser'
+    try {
+      const browserResult = await browserScrapeHuaypnk()
+      if (browserResult.error) browserError = browserResult.error
+      images = browserResult.images
+    } catch (err) {
+      browserError = err instanceof Error ? err.message : 'browser scrape failed'
+    }
+  }
+
+  if (images.length === 0) {
+    return NextResponse.json({
+      added: 0,
+      skipped: 0,
+      failed: 0,
+      source,
+      note: 'no images found from huaypnk (both static and browser)',
+      ...(browserError && { browser_error: browserError }),
+    })
   }
 
   let added = 0
@@ -98,7 +135,7 @@ export async function POST(req: NextRequest) {
       source_hash: hash,
       category,
       caption: img.lotteryLabel || null,
-      uploaded_by: 'huaypnk-sync',
+      uploaded_by: `huaypnk-sync-${source}`,
     })
 
     if (error) {
@@ -113,6 +150,7 @@ export async function POST(req: NextRequest) {
     added,
     skipped,
     failed,
+    source,
     total_scraped: images.length,
     ...(errors.length > 0 && { errors }),
   })
