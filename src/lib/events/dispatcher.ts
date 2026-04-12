@@ -51,7 +51,8 @@ import {
 } from '@/lib/hybrid/trigger-phrases'
 import { pickLuckyImagesForBatch } from '@/lib/hybrid/lucky-image-picker'
 import { sendViaRotation } from '@/lib/hybrid/bot-account-rotation'
-import { humanLikePreSend } from '@/lib/hybrid/humanlike'
+// humanlike delay is handled VPS-side (humanLikeDelay in server.js)
+// import removed to avoid unused-import build error
 
 const TRIGGER_CHAR = '.'
 
