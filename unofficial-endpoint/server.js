@@ -48,7 +48,7 @@ const LINE_CHANNEL_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 // Safe defaults for LINE personal account:
 // - Max 500 msg/day (LINE flags ~1000+)
 // - Max 50 msg/hour (burst protection)
-// - Random 3-8 sec delay between sends
+// - Random 3-8 sec delay between sends (bimodal + occasional breaks)
 // - Circuit breaker: stop sending after 5 consecutive failures
 const ANTI_BAN = {
   MAX_MSG_PER_DAY: parseInt(process.env.MAX_MSG_PER_DAY || '500'),
@@ -58,6 +58,16 @@ const ANTI_BAN = {
   MAX_DELAY_MS: parseInt(process.env.MAX_DELAY_MS || '8000'),
   CIRCUIT_BREAKER_THRESHOLD: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
   CIRCUIT_BREAKER_COOLDOWN_MS: parseInt(process.env.CIRCUIT_BREAKER_COOLDOWN_MS || '300000'), // 5 min
+
+  // Human-like enhancement: 20% of sends get a longer "distracted" pause
+  LONG_PAUSE_RATIO: parseFloat(process.env.HUMANLIKE_LONG_PAUSE_RATIO || '0.2'),
+  LONG_PAUSE_MIN_MS: parseInt(process.env.HUMANLIKE_LONG_PAUSE_MIN_MS || '8000'),
+  LONG_PAUSE_MAX_MS: parseInt(process.env.HUMANLIKE_LONG_PAUSE_MAX_MS || '15000'),
+
+  // Periodic break (every ~N sends, take a longer rest)
+  BREAK_EVERY_N: parseInt(process.env.HUMANLIKE_BREAK_EVERY_N || '15'),
+  BREAK_MIN_MS: parseInt(process.env.HUMANLIKE_BREAK_MIN_MS || '20000'),
+  BREAK_MAX_MS: parseInt(process.env.HUMANLIKE_BREAK_MAX_MS || '60000'),
 }
 
 // Rate limit counters (in-memory, reset on restart)
@@ -76,6 +86,8 @@ const circuitBreaker = {
 
 // Sending queue for delay enforcement
 let lastSendTime = 0
+// Counter for periodic break scheduling
+let sendsSinceBreak = 0
 
 function resetCounterIfExpired(counter, windowMs) {
   if (Date.now() >= counter.resetAt) {
@@ -139,19 +151,51 @@ function recordSendResult(success) {
   }
 }
 
-// Random delay with jitter
+// Random delay with jitter — bimodal + occasional longer break
+// to avoid a fixed send cadence that LINE anti-spam can fingerprint.
+//
+// Three modes (picked randomly each call):
+//   - NORMAL  : 3-8s (uniform) — 80% of sends
+//   - LONG    : 8-15s pause ("distracted user") — 20% of sends
+//   - BREAK   : 20-60s pause ("user walked away") — every ~15 sends
 async function humanLikeDelay() {
   const now = Date.now()
   const timeSinceLastSend = now - lastSendTime
-  const minDelay = ANTI_BAN.MIN_DELAY_MS
-  const maxDelay = ANTI_BAN.MAX_DELAY_MS
 
-  // Random delay within range
-  const targetDelay = minDelay + Math.floor(Math.random() * (maxDelay - minDelay))
+  sendsSinceBreak += 1
+
+  // Pick a target delay based on mode
+  let targetDelay
+  let mode
+
+  // Randomize the break threshold (±3) so it's not a fixed pattern
+  const breakThreshold =
+    ANTI_BAN.BREAK_EVERY_N + Math.floor(Math.random() * 7) - 3
+
+  if (sendsSinceBreak >= breakThreshold) {
+    const min = ANTI_BAN.BREAK_MIN_MS
+    const max = ANTI_BAN.BREAK_MAX_MS
+    targetDelay = min + Math.floor(Math.random() * (max - min))
+    mode = 'BREAK'
+    sendsSinceBreak = 0
+  } else if (Math.random() < ANTI_BAN.LONG_PAUSE_RATIO) {
+    const min = ANTI_BAN.LONG_PAUSE_MIN_MS
+    const max = ANTI_BAN.LONG_PAUSE_MAX_MS
+    targetDelay = min + Math.floor(Math.random() * (max - min))
+    mode = 'LONG'
+  } else {
+    const min = ANTI_BAN.MIN_DELAY_MS
+    const max = ANTI_BAN.MAX_DELAY_MS
+    targetDelay = min + Math.floor(Math.random() * (max - min))
+    mode = 'NORMAL'
+  }
 
   // If less time passed than targetDelay, wait the rest
   const waitMs = Math.max(0, targetDelay - timeSinceLastSend)
   if (waitMs > 0) {
+    console.log(
+      `[anti-ban] ${mode} delay ${waitMs}ms (target ${targetDelay}, since last ${timeSinceLastSend}ms, sends_since_break ${sendsSinceBreak})`,
+    )
     await new Promise(r => setTimeout(r, waitMs))
   }
   lastSendTime = Date.now()

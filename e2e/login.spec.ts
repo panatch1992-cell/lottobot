@@ -34,9 +34,18 @@ test.describe('Login Page', () => {
   })
 
   test('should show error on invalid login', async ({ page }) => {
-    await page.locator('input[type="email"]').fill('test@example.com')
-    await page.locator('input[type="password"]').fill('wrongpassword')
-    await page.locator('button[type="submit"]').click()
+    // Human-like typing pattern (pressSequentially with per-char delay)
+    // instead of fill() to more closely mirror real user input.
+    await page.locator('input[type="email"]').pressSequentially('test@example.com', {
+      delay: 50 + Math.floor(Math.random() * 80),
+    })
+    await page.locator('input[type="password"]').pressSequentially('wrongpassword', {
+      delay: 50 + Math.floor(Math.random() * 80),
+    })
+    // Click slightly off-center so we're not always hitting the exact same pixel
+    await page.locator('button[type="submit"]').click({
+      position: { x: 10 + Math.random() * 20, y: 8 + Math.random() * 12 },
+    })
 
     // Error message should appear — either from mocked Supabase or missing env config
     await expect(
@@ -48,9 +57,15 @@ test.describe('Login Page', () => {
   })
 
   test('should show loading state on submit', async ({ page }) => {
-    await page.locator('input[type="email"]').fill('test@example.com')
-    await page.locator('input[type="password"]').fill('password123')
-    await page.locator('button[type="submit"]').click()
+    await page.locator('input[type="email"]').pressSequentially('test@example.com', {
+      delay: 50 + Math.floor(Math.random() * 80),
+    })
+    await page.locator('input[type="password"]').pressSequentially('password123', {
+      delay: 50 + Math.floor(Math.random() * 80),
+    })
+    await page.locator('button[type="submit"]').click({
+      position: { x: 10 + Math.random() * 20, y: 8 + Math.random() * 12 },
+    })
 
     // Should show loading text or error (env may not be configured in test)
     await expect(
