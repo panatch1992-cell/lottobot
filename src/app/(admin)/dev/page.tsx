@@ -89,6 +89,9 @@ export default function DevDashboard() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [sendingTest, setSendingTest] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  // Hybrid test fire state
+  const [hybridFiring, setHybridFiring] = useState(false)
+  const [hybridResult, setHybridResult] = useState<Record<string, unknown> | null>(null)
 
   async function loadAll() {
     setLoading(true)
@@ -201,6 +204,26 @@ export default function DevDashboard() {
       })
     }
     setSendingTest(false)
+  }
+
+  async function fireHybridTest(groupNames?: string[]) {
+    setHybridFiring(true)
+    setHybridResult(null)
+    try {
+      const body: Record<string, unknown> = { skip_humanlike: true }
+      if (groupNames && groupNames.length > 0) body.group_names = groupNames
+      const res = await fetch('/api/admin/hybrid-test-fire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      setHybridResult(data)
+      setTimeout(() => loadAll(), 2000)
+    } catch (err) {
+      setHybridResult({ error: err instanceof Error ? err.message : 'error' })
+    }
+    setHybridFiring(false)
   }
 
   async function resetAntiBan() {
@@ -388,6 +411,55 @@ export default function DevDashboard() {
             testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
           }`}>
             {testResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* Hybrid Test Fire */}
+      <div className="card space-y-2 border-2 border-purple-200">
+        <h3 className="text-sm font-semibold">🚀 Hybrid Test Fire (End-to-End)</h3>
+        <p className="text-[10px] text-text-secondary">
+          ยิง Hybrid flow แบบเต็ม: self-bot → trigger phrase → webhook → Reply API
+          (text + result card + รูปเลขเด็ด) — bypass canary, dedup, humanlike delay
+          ใช้ผลหวยล่าสุดที่มีใน DB หรือผลปลอม 999-88 ถ้าไม่มี
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => fireHybridTest()}
+            disabled={hybridFiring}
+            className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50 font-medium"
+          >
+            {hybridFiring ? '⏳ กำลังยิง...' : '🚀 Fire ไปทุกกลุ่ม active'}
+          </button>
+          {allGroups.filter(g => g.is_active).map(g => (
+            <button
+              key={g.id}
+              onClick={() => fireHybridTest([g.name])}
+              disabled={hybridFiring}
+              className="px-2 py-1 bg-purple-100 text-purple-700 text-[10px] rounded hover:bg-purple-200 disabled:opacity-50"
+            >
+              🎯 เฉพาะ &quot;{g.name}&quot;
+            </button>
+          ))}
+        </div>
+        {hybridResult && (
+          <div className="border rounded bg-gray-50 p-2 text-[10px] space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">Result:</span>
+              <button
+                onClick={() => setHybridResult(null)}
+                className="ml-auto text-gray-500 hover:text-gray-800"
+              >
+                ✕
+              </button>
+            </div>
+            <pre className="bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(hybridResult, null, 2)}
+            </pre>
+            <p className="text-text-secondary italic">
+              💡 หลัง trigger sent → รอ 2-5 วิ → ดูใน LINE group ควรมี Reply จาก OA
+              (text + result card + lucky image ถ้ามี)
+            </p>
           </div>
         )}
       </div>
